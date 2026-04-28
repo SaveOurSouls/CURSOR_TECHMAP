@@ -23,6 +23,10 @@ const TECHMAP_APP = {
   ],
 };
 
+if (typeof TECHMAP_DATA_MODEL !== 'undefined') {
+  TECHMAP_APP.catalogHeaders = TECHMAP_DATA_MODEL.catalogHeaders.slice();
+}
+
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu(TECHMAP_APP.menuTitle)
