@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top" />
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 16px;
+        color: #1f1f1f;
+      }
+
+      label {
+        display: block;
+        margin: 10px 0 4px;
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      input,
+      textarea {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 8px;
+        border: 1px solid #c7c7c7;
+        border-radius: 6px;
+        font-size: 13px;
+      }
+
+      textarea {
+        min-height: 80px;
+        resize: vertical;
+      }
+
+      .hint {
+        font-size: 12px;
+        color: #5f6368;
+        margin-top: 4px;
+      }
+
+      .actions {
+        margin-top: 16px;
+        display: flex;
+        gap: 8px;
+      }
+
+      button {
+        flex: 1;
+        padding: 9px 10px;
+        border: 0;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+
+      .primary {
+        background: #1a73e8;
+        color: #fff;
+      }
+
+      .secondary {
+        background: #e8f0fe;
+        color: #174ea6;
+      }
+
+      #status {
+        margin-top: 10px;
+        min-height: 18px;
+        font-size: 12px;
+        color: #174ea6;
+      }
+    </style>
+  </head>
+  <body>
+    <div>
+      <label for="title">Название шаблона</label>
+      <input id="title" type="text" placeholder="Например: Монтаж разъема SMA стороны B" />
+
+      <label for="category">Категория</label>
+      <input id="category" type="text" placeholder="Например: COAX" />
+
+      <label for="description">Описание</label>
+      <textarea id="description" placeholder="Краткое описание, когда использовать шаблон"></textarea>
+
+      <div class="hint">
+        Будет сохранен текущий выделенный диапазон: значения, формулы, форматирование, объединения, размеры строк/столбцов, заметки и проверки данных.
+      </div>
+
+      <div class="actions">
+        <button class="secondary" onclick="google.script.host.close()">Отмена</button>
+        <button class="primary" onclick="saveTemplate()">Сохранить</button>
+      </div>
+
+      <div id="status"></div>
+    </div>
+
+    <script>
+      function setStatus(message, isError) {
+        const node = document.getElementById('status');
+        node.textContent = message || '';
+        node.style.color = isError ? '#c5221f' : '#174ea6';
+      }
+
+      function saveTemplate() {
+        const title = document.getElementById('title').value.trim();
+        const category = document.getElementById('category').value.trim();
+        const description = document.getElementById('description').value.trim();
+
+        if (!title) {
+          setStatus('Укажите название шаблона.', true);
+          return;
+        }
+
+        setStatus('Сохраняю шаблон...', false);
+
+        google.script.run
+          .withSuccessHandler((result) => {
+            setStatus(`Шаблон "${result.title}" сохранен.`, false);
+            setTimeout(() => google.script.host.close(), 500);
+          })
+          .withFailureHandler((error) => {
+            setStatus(error.message || 'Не удалось сохранить шаблон.', true);
+          })
+          .saveSelectedRangeAsTemplate({
+            title,
+            category,
+            description,
+          });
+      }
+    </script>
+  </body>
+</html>

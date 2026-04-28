@@ -137,7 +137,6 @@
                 <div class="meta">${escapeHtml(item.category || 'Без категории')}</div>
                 <div class="desc">${escapeHtml(item.description || '')}</div>
                 <button class="btn-primary" onclick="insertTemplate('${escapeHtml(item.id)}')">Вставить в активную ячейку</button>
-                <button class="btn-secondary" onclick="openTemplate('${escapeHtml(item.id)}')">Открыть эталон</button>
               </div>
             `
           )
@@ -161,18 +160,6 @@
             setStatus(error.message || 'Не удалось вставить шаблон.', true);
           })
           .insertTemplate(id);
-      }
-
-      function openTemplate(id) {
-        setStatus('Открываю эталон...', false);
-        google.script.run
-          .withSuccessHandler(() => {
-            setStatus('Эталон открыт. После просмотра вернитесь на рабочий лист.', false);
-          })
-          .withFailureHandler((error) => {
-            setStatus(error.message || 'Не удалось открыть эталон.', true);
-          })
-          .openTemplateSheet(id);
       }
 
       document.getElementById('search').addEventListener('input', render);
