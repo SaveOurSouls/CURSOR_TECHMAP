@@ -365,7 +365,35 @@ function getActiveWorkingRange_() {
     throw new Error('Не выбран диапазон.');
   }
 
+  validateTemplateRange_(range);
   return range;
+}
+
+function validateTemplateRange_(range) {
+  const startRow = range.getRow();
+  const endRow = startRow + range.getNumRows() - 1;
+  const startColumn = range.getColumn();
+  const endColumn = startColumn + range.getNumColumns() - 1;
+
+  const invalidMerge = range.getMergedRanges().find((mergedRange) => {
+    const mergedStartRow = mergedRange.getRow();
+    const mergedEndRow = mergedStartRow + mergedRange.getNumRows() - 1;
+    const mergedStartColumn = mergedRange.getColumn();
+    const mergedEndColumn = mergedStartColumn + mergedRange.getNumColumns() - 1;
+
+    return (
+      mergedStartRow < startRow ||
+      mergedEndRow > endRow ||
+      mergedStartColumn < startColumn ||
+      mergedEndColumn > endColumn
+    );
+  });
+
+  if (invalidMerge) {
+    throw new Error(
+      `Диапазон содержит неполностью захваченное объединение ячеек (${invalidMerge.getA1Notation()}). Выделите шаблон целиком.`
+    );
+  }
 }
 
 function allocateStoreLocation_(range, existingTemplate, catalog) {

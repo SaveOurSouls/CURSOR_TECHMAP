@@ -18,7 +18,8 @@
       }
 
       input,
-      textarea {
+      textarea,
+      select {
         width: 100%;
         box-sizing: border-box;
         padding: 8px;
@@ -36,6 +37,14 @@
         font-size: 12px;
         color: #5f6368;
         margin-top: 4px;
+      }
+
+      .selection {
+        padding: 10px;
+        border-radius: 8px;
+        background: #f8f9fa;
+        font-size: 12px;
+        margin-bottom: 12px;
       }
 
       .actions {
@@ -72,6 +81,13 @@
   </head>
   <body>
     <div>
+      <div class="selection" id="selectionInfo">Загрузка данных о выделении...</div>
+
+      <label for="existingTemplateId">Обновить существующий шаблон</label>
+      <select id="existingTemplateId">
+        <option value="">Создать новый шаблон</option>
+      </select>
+
       <label for="title">Название шаблона</label>
       <input id="title" type="text" placeholder="Например: Монтаж разъема SMA стороны B" />
 
@@ -82,7 +98,7 @@
       <textarea id="description" placeholder="Краткое описание, когда использовать шаблон"></textarea>
 
       <div class="hint">
-        Будет сохранен текущий выделенный диапазон: значения, формулы, форматирование, объединения, размеры строк/столбцов, заметки и проверки данных.
+        Будет сохранен текущий выделенный диапазон: значения, формулы, форматирование, объединения, размеры строк/столбцов, заметки и проверки данных. Для сотен шаблонов этот способ компактнее, чем отдельный лист на каждый шаблон.
       </div>
 
       <div class="actions">
@@ -94,16 +110,54 @@
     </div>
 
     <script>
+      let dialogState = null;
+
       function setStatus(message, isError) {
         const node = document.getElementById('status');
         node.textContent = message || '';
         node.style.color = isError ? '#c5221f' : '#174ea6';
       }
 
+      function escapeHtml(value) {
+        return String(value || '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+      }
+
+      function populateDialog(state) {
+        dialogState = state || {};
+        const selection = dialogState.selection || {};
+        document.getElementById('selectionInfo').innerHTML =
+          `<strong>Выделение:</strong> ${escapeHtml(selection.sheetName || '')}!${escapeHtml(selection.rangeA1 || '')} ` +
+          `(${escapeHtml(selection.height || 0)} x ${escapeHtml(selection.width || 0)})`;
+
+        const select = document.getElementById('existingTemplateId');
+        const templates = dialogState.templates || [];
+        select.innerHTML = '<option value="">Создать новый шаблон</option>' +
+          templates.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.title)} (${escapeHtml(item.sizeLabel || '')})</option>`).join('');
+      }
+
+      function onExistingTemplateChange() {
+        const selectedId = document.getElementById('existingTemplateId').value;
+        const templates = (dialogState && dialogState.templates) || [];
+        const selected = templates.find((item) => item.id === selectedId);
+        if (!selected) {
+          return;
+        }
+
+        document.getElementById('title').value = selected.title || '';
+        document.getElementById('category').value = selected.category || '';
+        document.getElementById('description').value = selected.description || '';
+      }
+
       function saveTemplate() {
         const title = document.getElementById('title').value.trim();
         const category = document.getElementById('category').value.trim();
         const description = document.getElementById('description').value.trim();
+        const existingTemplateId = document.getElementById('existingTemplateId').value;
 
         if (!title) {
           setStatus('Укажите название шаблона.', true);
@@ -124,8 +178,21 @@
             title,
             category,
             description,
+            existingTemplateId,
           });
       }
+
+      document.getElementById('existingTemplateId').addEventListener('change', onExistingTemplateChange);
+
+      google.script.run
+        .withSuccessHandler((state) => {
+          populateDialog(state);
+          setStatus('Можно сохранять шаблон.', false);
+        })
+        .withFailureHandler((error) => {
+          setStatus(error.message || 'Не удалось загрузить состояние диалога.', true);
+        })
+        .getSaveTemplateDialogState();
     </script>
   </body>
 </html>
