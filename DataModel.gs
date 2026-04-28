@@ -6,6 +6,22 @@
  * 2) иметь единый словарь полей для каталога, сохранения и вставки шаблонов.
  */
 const TECHMAP_DATA_MODEL = {
+  materialsSource: {
+    spreadsheetId: '1NExDzeG-vw3zY_ooeXoxRffIARh2wbLJNAHT3FU_Ig8',
+    sheets: ['COMPCON', 'COMPCOAX', 'COMPTERM', 'COMPWIRE', 'COMPACCESS'],
+    searchTagHeader: 'Поисковый тег',
+  },
+
+  materialRecord: {
+    sourceSheet: 'COMPCON',
+    searchTag: '123-ABC | Разъем SMA male | Rosenberger | ELITAN',
+    article: '123-ABC',
+    type: 'Разъем SMA male',
+    manufacturer: 'Rosenberger',
+    supplier: 'ELITAN',
+    normalized: '123-abc|разъемsmamale|rosenberger|elitan',
+  },
+
   catalogRecord: {
     id: 'wire-cutting',
     title: 'Резка провода',

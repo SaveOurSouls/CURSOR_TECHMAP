@@ -31,9 +31,11 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu(TECHMAP_APP.menuTitle)
     .addItem('Открыть библиотеку шаблонов', 'showTemplateSidebar')
+    .addItem('Открыть базу материалов', 'showMaterialsSidebar')
     .addItem('Сохранить выделение как шаблон', 'showSaveTemplateDialog')
     .addSeparator()
     .addItem('Установить демо-библиотеку', 'initializeDemoLibrary')
+    .addItem('Обновить базу материалов', 'refreshMaterialsDatabase')
     .addItem('Показать служебные листы', 'showLibrarySheets')
     .addItem('Скрыть служебные листы', 'hideLibrarySheets')
     .addToUi();
@@ -44,6 +46,16 @@ function showTemplateSidebar() {
 
   const html = HtmlService.createHtmlOutputFromFile('Sidebar')
     .setTitle('Библиотека техкарт')
+    .setWidth(360);
+
+  SpreadsheetApp.getUi().showSidebar(html);
+}
+
+function showMaterialsSidebar() {
+  ensureMaterialsInfrastructure_();
+
+  const html = HtmlService.createHtmlOutputFromFile('MaterialsSidebar')
+    .setTitle('База материалов')
     .setWidth(360);
 
   SpreadsheetApp.getUi().showSidebar(html);

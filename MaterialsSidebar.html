@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top" />
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        padding: 10px;
+        background: #fff;
+        color: #3c4043;
+        display: flex;
+        flex-direction: column;
+        height: 96vh;
+        margin: 0;
+      }
+
+      .tabs {
+        display: flex;
+        border-bottom: 2px solid #e8eaed;
+        margin-bottom: 10px;
+        flex-wrap: wrap;
+        flex-shrink: 0;
+      }
+
+      .tab-btn {
+        flex: 1;
+        padding: 6px 2px;
+        border: none;
+        background: none;
+        cursor: pointer;
+        font-weight: bold;
+        color: #5f6368;
+        font-size: 10px;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+
+      .tab-btn.active {
+        color: #1a73e8;
+        border-bottom: 3px solid #1a73e8;
+        margin-bottom: -2px;
+      }
+
+      .tab-content {
+        display: none;
+        flex-direction: column;
+        flex-grow: 1;
+        overflow-y: auto;
+      }
+
+      .tab-content.active {
+        display: flex;
+      }
+
+      input[type="text"],
+      textarea {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 8px;
+        border: 1px solid #dadce0;
+        border-radius: 4px;
+        outline: none;
+        font-size: 13px;
+        margin-bottom: 6px;
+        font-family: inherit;
+        flex-shrink: 0;
+      }
+
+      input[type="text"]:focus,
+      textarea:focus {
+        border-color: #1a73e8;
+      }
+
+      textarea {
+        resize: vertical;
+        min-height: 42px;
+      }
+
+      label {
+        font-size: 10px;
+        font-weight: bold;
+        color: #1a73e8;
+        margin-bottom: 2px;
+        display: block;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        flex-shrink: 0;
+      }
+
+      .row {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 2px;
+        flex-shrink: 0;
+      }
+
+      .col-half {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .col-half textarea {
+        height: 65px;
+        min-height: 65px;
+        resize: none;
+      }
+
+      .col-half textarea.tall {
+        height: 180px;
+        min-height: 120px;
+      }
+
+      .scroll-area {
+        flex-grow: 1;
+        overflow-y: auto;
+        border: 1px solid #eee;
+        border-radius: 4px;
+        margin-bottom: 5px;
+        min-height: 60px;
+      }
+
+      #results,
+      #basketList {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+
+      #results li {
+        padding: 8px;
+        border-bottom: 1px solid #f1f3f4;
+        cursor: pointer;
+        font-size: 12px;
+      }
+
+      #results li:hover {
+        background: #e8f0fe;
+        color: #1a73e8;
+      }
+
+      .autocomplete-wrapper {
+        position: relative;
+        width: 100%;
+        margin-bottom: 6px;
+        flex-shrink: 0;
+      }
+
+      .autocomplete-wrapper input {
+        margin-bottom: 0 !important;
+      }
+
+      .mini-search-wrapper {
+        position: relative;
+        margin-bottom: 6px;
+        flex-shrink: 0;
+      }
+
+      .mini-search-input {
+        margin-bottom: 0 !important;
+        border-color: #34a853 !important;
+        border-style: dashed !important;
+      }
+
+      .mini-search-input:focus {
+        border-style: solid !important;
+      }
+
+      .mini-search-results {
+        display: none;
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background: white;
+        border: 1px solid #ccc;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        max-height: 150px;
+        overflow-y: auto;
+        z-index: 100;
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        border-radius: 4px;
+      }
+
+      .mini-search-results li {
+        padding: 6px 8px;
+        border-bottom: 1px solid #f1f3f4;
+        cursor: pointer;
+        font-size: 11px;
+      }
+
+      .mini-search-results li:hover {
+        background: #e6f4ea;
+        color: #137333;
+      }
+
+      .basket-container {
+        border-top: 2px solid #1a73e8;
+        padding-top: 10px;
+        height: 35%;
+        display: flex;
+        flex-direction: column;
+        min-height: 180px;
+        flex-shrink: 0;
+      }
+
+      .basket-header {
+        font-weight: bold;
+        font-size: 13px;
+        margin-bottom: 5px;
+        display: flex;
+        justify-content: space-between;
+        flex-shrink: 0;
+      }
+
+      #basketList li {
+        padding: 4px 8px;
+        font-size: 11px;
+        background: #f8f9fa;
+        margin-bottom: 2px;
+        border-radius: 3px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-left: 2px solid #1a73e8;
+      }
+
+      .remove-btn {
+        color: #d93025;
+        cursor: pointer;
+        font-weight: bold;
+        padding: 0 5px;
+        font-size: 16px;
+      }
+
+      .action-btn {
+        width: 100%;
+        padding: 10px;
+        background: #1a73e8;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: bold;
+        margin-top: 5px;
+        flex-shrink: 0;
+      }
+
+      .action-btn.secondary {
+        background: #34a853;
+      }
+
+      .action-btn.purple {
+        background: #9c27b0;
+      }
+
+      .action-btn.gray {
+        background: #5f6368;
+      }
+
+      .action-btn:disabled {
+        background: #dadce0;
+        cursor: default;
+      }
+
+      .status {
+        font-size: 11px;
+        color: #70757a;
+        text-align: center;
+        margin-top: 5px;
+        min-height: 15px;
+        flex-shrink: 0;
+      }
+
+      .warning-box {
+        color: #d93025;
+        font-size: 10px;
+        margin-top: 5px;
+        white-space: pre-wrap;
+        font-weight: bold;
+        flex-shrink: 0;
+      }
+
+      .stats-box {
+        color: #137333;
+        font-size: 10px;
+        margin-top: 5px;
+        white-space: pre-wrap;
+        font-weight: bold;
+        border-top: 1px dashed #ccc;
+        padding-top: 5px;
+        display: none;
+        flex-shrink: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab('searchTab', this)">🔍 Поиск</button>
+      <button class="tab-btn" onclick="switchTab('genTab', this)">⚙️ Шаг XX</button>
+      <button class="tab-btn" onclick="switchTab('coaxTab', this)">📡 Коаксиал</button>
+      <button class="tab-btn" onclick="switchTab('repTab', this)">🔄 Копии</button>
+    </div>
+
+    <div id="searchTab" class="tab-content active">
+      <button class="action-btn gray" onclick="refreshDatabase()">Обновить базу из источника</button>
+      <input type="text" id="searchInput" placeholder="Поиск товара..." />
+      <div class="scroll-area">
+        <ul id="results"></ul>
+      </div>
+    </div>
+
+    <div id="genTab" class="tab-content">
+      <label>Шаблон артикула (XX - переменная):</label>
+      <input type="text" id="gTemplate" value="PHR-XX" />
+
+      <label>Номера XX (столбцом):</label>
+      <textarea id="gVars" rows="2" placeholder="1, 2, 3..."></textarea>
+
+      <div class="row">
+        <div class="col-half">
+          <label>Тип</label>
+          <div class="autocomplete-wrapper">
+            <input type="text" id="gType" placeholder="Например: Терминал" autocomplete="off" />
+            <ul id="gTypeResults" class="mini-search-results"></ul>
+          </div>
+        </div>
+        <div class="col-half">
+          <label>Производитель</label>
+          <div class="autocomplete-wrapper">
+            <input type="text" id="gManuf" placeholder="Например: JST" autocomplete="off" />
+            <ul id="gManufResults" class="mini-search-results"></ul>
+          </div>
+        </div>
+      </div>
+
+      <label>Поставщик (если есть):</label>
+      <div class="autocomplete-wrapper">
+        <input type="text" id="gSupp" placeholder="Например: ELITAN" autocomplete="off" />
+        <ul id="gSuppResults" class="mini-search-results"></ul>
+      </div>
+
+      <label>Комплектующие (статичные):</label>
+      <div class="mini-search-wrapper">
+        <input type="text" id="gStaticSearch" class="mini-search-input" placeholder="🔍 Найти доп. артикул..." autocomplete="off" />
+        <ul id="gStaticResults" class="mini-search-results"></ul>
+      </div>
+      <textarea id="gStatic" rows="3"></textarea>
+
+      <button class="action-btn secondary" onclick="generateAssemblies()">В корзину</button>
+    </div>
+
+    <div id="coaxTab" class="tab-content">
+      <div class="row">
+        <div class="col-half">
+          <label>Разъем 1 (Типы)</label>
+          <textarea id="cType1" placeholder="SMA male RG174&#10;SMA male RG178"></textarea>
+          <label>Производитель 1</label>
+          <div class="autocomplete-wrapper">
+            <input type="text" id="cMan1" placeholder="Выберите..." autocomplete="off" />
+            <ul id="cMan1Results" class="mini-search-results"></ul>
+          </div>
+        </div>
+        <div class="col-half">
+          <label>Разъем 2 (Типы или пусто)</label>
+          <textarea id="cType2" placeholder="Пусто для 1 разъема"></textarea>
+          <label>Производитель 2</label>
+          <div class="autocomplete-wrapper">
+            <input type="text" id="cMan2" placeholder="Выберите..." autocomplete="off" />
+            <ul id="cMan2Results" class="mini-search-results"></ul>
+          </div>
+        </div>
+      </div>
+
+      <label>Постоянные (кабель, трубка...):</label>
+      <div class="mini-search-wrapper">
+        <input type="text" id="cStaticSearch" class="mini-search-input" placeholder="🔍 Найти кабель/трубку..." autocomplete="off" />
+        <ul id="cStaticResults" class="mini-search-results"></ul>
+      </div>
+      <textarea id="cStatic" rows="2" placeholder="RG174 кабель..."></textarea>
+
+      <button class="action-btn secondary" onclick="generateCoax()">Сгенерировать</button>
+
+      <div id="coaxWarnings" class="warning-box"></div>
+      <div id="coaxStats" class="stats-box"></div>
+    </div>
+
+    <div id="repTab" class="tab-content">
+      <div class="row">
+        <div class="col-half">
+          <label>Что копируем (Значения)</label>
+          <textarea id="rValues" class="tall" placeholder="RG316&#10;Термоусадка&#10;SMA male"></textarea>
+        </div>
+        <div class="col-half">
+          <label>Сколько раз (Числа)</label>
+          <textarea id="rCounts" class="tall" placeholder="5&#10;2&#10;1"></textarea>
+        </div>
+      </div>
+      <label>Куда выгружать (например: C2):</label>
+      <input type="text" id="rTarget" placeholder="Оставьте пустым для текущей ячейки" />
+
+      <button class="action-btn purple" onclick="runReplication()">ВЫГРУЗИТЬ СТОЛБЕЦ</button>
+      <div id="repStatus" class="status" style="margin-top: 10px; font-weight: bold;"></div>
+    </div>
+
+    <div class="basket-container">
+      <div class="basket-header">
+        <span>Корзина (<span id="bCount">0</span>)</span>
+        <span style="color:#1a73e8; cursor:pointer; font-size:11px;" onclick="clearBasket()">очистить</span>
+      </div>
+      <div class="scroll-area">
+        <ul id="basketList"></ul>
+      </div>
+      <button id="pushBtn" class="action-btn" disabled onclick="pushToTable()">ВЫГРУЗИТЬ В ТАБЛИЦУ</button>
+      <div id="status" class="status">Загрузка базы...</div>
+    </div>
+
+    <script>
+      let allData = [];
+      let basket = [];
+      let lookupValues = { types: [], manufacturers: [], suppliers: [] };
+
+      function switchTab(tabId, btnElement) {
+        document.querySelectorAll('.tab-content').forEach((el) => el.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach((el) => el.classList.remove('active'));
+        document.getElementById(tabId).classList.add('active');
+        btnElement.classList.add('active');
+      }
+
+      function setStatus(message, isError) {
+        const node = document.getElementById('status');
+        node.innerText = message || '';
+        node.style.color = isError ? '#d93025' : '#70757a';
+      }
+
+      function loadDatabase(forceRefresh) {
+        setStatus(forceRefresh ? 'Обновление базы...' : 'Загрузка базы...', false);
+        google.script.run
+          .withSuccessHandler((payload) => {
+            allData = payload.items || [];
+            lookupValues = payload.lookups || { types: [], manufacturers: [], suppliers: [] };
+            setupAutocompleteSources();
+            setStatus(`База готова: ${allData.length}`, false);
+          })
+          .withFailureHandler((error) => {
+            setStatus(error.message || 'Не удалось загрузить базу.', true);
+          })
+          .getMaterialDatabase(forceRefresh === true);
+      }
+
+      function refreshDatabase() {
+        loadDatabase(true);
+      }
+
+      function setupSmartAutocomplete(inputId, resultsId, dataArray) {
+        const inputEl = document.getElementById(inputId);
+        const resList = document.getElementById(resultsId);
+
+        function render() {
+          const q = inputEl.value.toLowerCase().trim();
+          resList.innerHTML = '';
+          let matches = [];
+
+          if (q.length === 0) {
+            matches = dataArray.map((item) => ({ text: item, index: 0 }));
+            matches.sort((a, b) => a.text.localeCompare(b.text, undefined, { numeric: true, sensitivity: 'base' }));
+          } else {
+            for (let i = 0; i < dataArray.length; i += 1) {
+              const itemText = dataArray[i];
+              const matchIndex = itemText.toLowerCase().indexOf(q);
+              if (matchIndex !== -1) {
+                matches.push({ text: itemText, index: matchIndex });
+              }
+            }
+            matches.sort((a, b) => {
+              if (a.index !== b.index) {
+                return a.index - b.index;
+              }
+              return a.text.localeCompare(b.text, undefined, { numeric: true, sensitivity: 'base' });
+            });
+          }
+
+          matches = matches.slice(0, 20);
+          if (!matches.length) {
+            resList.style.display = 'none';
+            return;
+          }
+
+          resList.style.display = 'block';
+          const fragment = document.createDocumentFragment();
+          matches.forEach((match) => {
+            const li = document.createElement('li');
+            li.textContent = match.text;
+            li.onmousedown = function onMouseDown(event) {
+              event.preventDefault();
+              inputEl.value = this.textContent;
+              resList.style.display = 'none';
+            };
+            fragment.appendChild(li);
+          });
+          resList.appendChild(fragment);
+        }
+
+        inputEl.oninput = render;
+        inputEl.onfocus = render;
+      }
+
+      function setupAutocompleteSources() {
+        setupSmartAutocomplete('gType', 'gTypeResults', lookupValues.types || []);
+        setupSmartAutocomplete('gManuf', 'gManufResults', lookupValues.manufacturers || []);
+        setupSmartAutocomplete('gSupp', 'gSuppResults', lookupValues.suppliers || []);
+        setupSmartAutocomplete('cMan1', 'cMan1Results', lookupValues.manufacturers || []);
+        setupSmartAutocomplete('cMan2', 'cMan2Results', lookupValues.manufacturers || []);
+      }
+
+      function normalize(value) {
+        return String(value || '').toLowerCase().replace(/\s+/g, '');
+      }
+
+      function findMatches(query, limit) {
+        const normalized = normalize(query);
+        if (normalized.length < 2) {
+          return [];
+        }
+
+        const matches = [];
+        for (let i = 0; i < allData.length; i += 1) {
+          const item = allData[i];
+          const matchIndex = item.lowNoSpace.indexOf(normalized);
+          if (matchIndex !== -1) {
+            matches.push({ item, index: matchIndex });
+          }
+        }
+
+        matches.sort((a, b) => {
+          if (a.index !== b.index) {
+            return a.index - b.index;
+          }
+          return a.item.o.localeCompare(b.item.o, undefined, { numeric: true, sensitivity: 'base' });
+        });
+        return matches.slice(0, limit || 30);
+      }
+
+      document.getElementById('searchInput').addEventListener('input', function onSearchInput(event) {
+        const resList = document.getElementById('results');
+        resList.innerHTML = '';
+        const matches = findMatches(event.target.value, 30);
+        const fragment = document.createDocumentFragment();
+        matches.forEach((match) => {
+          const li = document.createElement('li');
+          li.textContent = match.item.o;
+          li.onclick = function onClick() {
+            addToBasket(this.textContent);
+          };
+          fragment.appendChild(li);
+        });
+        resList.appendChild(fragment);
+      });
+
+      function setupMiniSearch(inputId, resultsId, targetTextareaId) {
+        document.getElementById(inputId).addEventListener('input', function onInput(event) {
+          const resList = document.getElementById(resultsId);
+          resList.innerHTML = '';
+          const matches = findMatches(event.target.value, 15);
+
+          if (!matches.length) {
+            resList.style.display = 'none';
+            return;
+          }
+
+          resList.style.display = 'block';
+          const fragment = document.createDocumentFragment();
+          matches.forEach((match) => {
+            const li = document.createElement('li');
+            li.textContent = match.item.o;
+            li.dataset.fullTag = match.item.fullTag;
+            li.onmousedown = function onMouseDown(mouseEvent) {
+              mouseEvent.preventDefault();
+              const textarea = document.getElementById(targetTextareaId);
+              const val = this.dataset.fullTag;
+              textarea.value = textarea.value.trim() === '' ? val : `${textarea.value}\n${val}`;
+              document.getElementById(inputId).value = '';
+              resList.style.display = 'none';
+            };
+            fragment.appendChild(li);
+          });
+          resList.appendChild(fragment);
+        });
+      }
+
+      setupMiniSearch('gStaticSearch', 'gStaticResults', 'gStatic');
+      setupMiniSearch('cStaticSearch', 'cStaticResults', 'cStatic');
+
+      document.addEventListener('click', function onDocumentClick(event) {
+        if (!event.target.closest('.mini-search-wrapper') && !event.target.closest('.autocomplete-wrapper')) {
+          document.querySelectorAll('.mini-search-results').forEach((el) => {
+            el.style.display = 'none';
+          });
+        }
+      });
+
+      function generateAssemblies() {
+        const template = document.getElementById('gTemplate').value.trim();
+        const vars = document.getElementById('gVars').value.split('\n').map((s) => s.trim()).filter(Boolean);
+        const statics = document.getElementById('gStatic').value.split('\n').map((s) => s.trim()).filter(Boolean);
+        const gType = document.getElementById('gType').value.trim();
+        const gManuf = document.getElementById('gManuf').value.trim();
+        const gSupp = document.getElementById('gSupp').value.trim();
+        const regex = /[XxХх]{2}/gi;
+
+        if (!template || vars.length === 0) {
+          alert('Заполните Шаблон и Номера XX');
+          return;
+        }
+
+        vars.forEach((v) => {
+          const generatedArt = template.replace(regex, v);
+          const fullTag = `${generatedArt} | ${gType} | ${gManuf} | ${gSupp}`;
+          basket.push(fullTag);
+          statics.forEach((s) => basket.push(s));
+        });
+
+        document.getElementById('gVars').value = '';
+        updateBasketUI();
+      }
+
+      function generateCoax() {
+        const warningsBox = document.getElementById('coaxWarnings');
+        const statsBox = document.getElementById('coaxStats');
+        warningsBox.innerText = '';
+        statsBox.innerText = '';
+        statsBox.style.display = 'none';
+
+        const t1List = document.getElementById('cType1').value.split('\n').map((s) => s.trim()).filter(Boolean);
+        const t2List = document.getElementById('cType2').value.split('\n').map((s) => s.trim()).filter(Boolean);
+        const m1 = normalize(document.getElementById('cMan1').value);
+        const m2 = normalize(document.getElementById('cMan2').value);
+        const statics = document.getElementById('cStatic').value.split('\n').map((s) => s.trim()).filter(Boolean);
+
+        if (!t1List.length) {
+          alert('Укажите хотя бы Разъем 1');
+          return;
+        }
+
+        const isSingleMode = t2List.length === 0;
+        if (!isSingleMode && t1List.length !== t2List.length) {
+          alert('Ошибка! Количество строк слева и справа должно совпадать.');
+          return;
+        }
+
+        let count = 0;
+        const errorLog = [];
+        const statsLog = [];
+
+        for (let i = 0; i < t1List.length; i += 1) {
+          const t1 = t1List[i];
+          const cleanT1 = normalize(t1);
+          const matches1 = allData.filter((item) => item.typeNoSpace === cleanT1 && item.manufNoSpace.indexOf(m1) !== -1);
+
+          if (!matches1.length) {
+            errorLog.push(`❌ Стр ${i + 1}: Разъем 1 (${t1}) не найден`);
+            continue;
+          }
+
+          if (isSingleMode) {
+            let localCount = 0;
+            matches1.forEach((s1) => {
+              basket.push(s1.fullTag);
+              statics.forEach((st) => basket.push(st));
+              localCount += 1;
+            });
+            count += localCount;
+            statsLog.push(`✓ Стр ${i + 1} (${t1}): ${localCount} шт.`);
+            continue;
+          }
+
+          const t2 = t2List[i];
+          const cleanT2 = normalize(t2);
+          const matches2 = allData.filter((item) => item.typeNoSpace === cleanT2 && item.manufNoSpace.indexOf(m2) !== -1);
+
+          if (!matches2.length) {
+            errorLog.push(`❌ Стр ${i + 1}: Разъем 2 (${t2}) не найден`);
+            continue;
+          }
+
+          let localCount = 0;
+          matches1.forEach((s1) => {
+            matches2.forEach((s2) => {
+              basket.push(s1.fullTag);
+              basket.push(s2.fullTag);
+              statics.forEach((st) => basket.push(st));
+              localCount += 1;
+            });
+          });
+          count += localCount;
+          statsLog.push(`✓ Стр ${i + 1} (${t1} + ${t2}): ${localCount} шт.`);
+        }
+
+        if (errorLog.length) {
+          warningsBox.innerText = `Пропущено:\n${errorLog.join('\n')}`;
+        }
+        if (statsLog.length) {
+          statsBox.style.display = 'block';
+          statsBox.innerText = `Сгенерировано:\n${statsLog.join('\n')}`;
+        }
+
+        document.getElementById('cType1').value = '';
+        document.getElementById('cType2').value = '';
+        updateBasketUI();
+        setStatus(`Создано: ${count}`, false);
+      }
+
+      function runReplication() {
+        const statusEl = document.getElementById('repStatus');
+        statusEl.style.color = '#d93025';
+
+        const vText = document.getElementById('rValues').value;
+        const cText = document.getElementById('rCounts').value;
+        const targetCell = document.getElementById('rTarget').value.trim();
+
+        if (!vText || !cText) {
+          statusEl.innerText = '❌ Заполните обе колонки!';
+          return;
+        }
+
+        const vArr = vText.split(/\r?\n/);
+        const cArr = cText.split(/\r?\n/);
+
+        while (
+          vArr.length > 0 &&
+          vArr[vArr.length - 1].trim() === '' &&
+          cArr.length > 0 &&
+          cArr[cArr.length - 1].trim() === ''
+        ) {
+          vArr.pop();
+          cArr.pop();
+        }
+
+        if (vArr.length !== cArr.length) {
+          statusEl.innerText = `❌ Ошибка: Слева ${vArr.length} строк, справа ${cArr.length} строк!`;
+          return;
+        }
+
+        const resultData = [];
+        let totalCopies = 0;
+        for (let i = 0; i < vArr.length; i += 1) {
+          const val = vArr[i];
+          let count = parseInt(cArr[i].trim(), 10);
+          if (Number.isNaN(count) || count < 0) {
+            count = 0;
+          }
+          for (let j = 0; j < count; j += 1) {
+            resultData.push(val);
+            totalCopies += 1;
+          }
+        }
+
+        if (!resultData.length) {
+          statusEl.innerText = '⚠️ Итоговый список пуст (везде указан 0).';
+          return;
+        }
+
+        statusEl.style.color = '#1a73e8';
+        statusEl.innerText = `⏳ Выгрузка ${totalCopies} строк...`;
+
+        google.script.run
+          .withSuccessHandler((msg) => {
+            statusEl.style.color = '#137333';
+            statusEl.innerText = `✅ ${msg}`;
+            document.getElementById('rValues').value = '';
+            document.getElementById('rCounts').value = '';
+          })
+          .withFailureHandler((err) => {
+            statusEl.style.color = '#d93025';
+            statusEl.innerText = `❌ Системная ошибка: ${err.message}`;
+          })
+          .insertReplicatedData(resultData, targetCell);
+      }
+
+      function addToBasket(val) {
+        basket.push(val);
+        updateBasketUI();
+      }
+
+      function removeFromBasket(index) {
+        basket.splice(index, 1);
+        updateBasketUI();
+      }
+
+      function clearBasket() {
+        basket = [];
+        updateBasketUI();
+      }
+
+      function updateBasketUI() {
+        const bList = document.getElementById('basketList');
+        bList.innerHTML = '';
+        basket.forEach((item, index) => {
+          const li = document.createElement('li');
+          li.innerHTML = `<span>${item}</span><span class="remove-btn" onclick="removeFromBasket(${index})">×</span>`;
+          bList.appendChild(li);
+        });
+        document.getElementById('bCount').innerText = basket.length;
+        document.getElementById('pushBtn').disabled = basket.length === 0;
+      }
+
+      function pushToTable() {
+        const btn = document.getElementById('pushBtn');
+        btn.disabled = true;
+        setStatus('⏳ Выгрузка...', false);
+        google.script.run
+          .withSuccessHandler((msg) => {
+            setStatus(`✅ ${msg}`, false);
+            clearBasket();
+            btn.disabled = false;
+          })
+          .withFailureHandler((err) => {
+            setStatus(`❌ Ошибка: ${err.message}`, true);
+            btn.disabled = false;
+          })
+          .insertBatchIntoCell(basket);
+      }
+
+      loadDatabase(false);
+    </script>
+  </body>
+</html>
