@@ -34,10 +34,7 @@ function onOpen() {
     .addItem('Открыть базу материалов', 'showMaterialsSidebar')
     .addItem('Сохранить выделение как шаблон', 'showSaveTemplateDialog')
     .addSeparator()
-    .addItem('Установить демо-библиотеку', 'initializeDemoLibrary')
     .addItem('Обновить базу материалов', 'refreshMaterialsDatabase')
-    .addItem('Показать служебные листы', 'showLibrarySheets')
-    .addItem('Скрыть служебные листы', 'hideLibrarySheets')
     .addToUi();
 }
 

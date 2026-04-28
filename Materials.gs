@@ -30,11 +30,14 @@ if (typeof TECHMAP_DATA_MODEL !== 'undefined' && TECHMAP_DATA_MODEL.materialData
 }
 
 function showMaterialsSidebar() {
-  ensureMaterialDatabaseReady_();
   const html = HtmlService.createHtmlOutputFromFile('MaterialsSidebar')
     .setTitle('Материалы')
     .setWidth(360);
   SpreadsheetApp.getUi().showSidebar(html);
+}
+
+function refreshMaterialsDatabase() {
+  return syncMaterialDatabaseMenu();
 }
 
 function syncMaterialDatabaseMenu() {
@@ -61,6 +64,25 @@ function getMaterialSearchData() {
   ensureMaterialDatabaseReady_();
   const snapshot = getMaterialSnapshot_();
   return buildMaterialSearchPayload_(snapshot);
+}
+
+function getMaterialDatabase(forceRefresh) {
+  if (forceRefresh) {
+    syncMaterialDatabase();
+  } else {
+    ensureMaterialDatabaseReady_();
+  }
+
+  const payload = buildMaterialSearchPayload_(getMaterialSnapshot_());
+  return {
+    items: payload.records,
+    lookups: {
+      types: payload.uniqueTypes,
+      manufacturers: payload.uniqueManufacturers,
+      suppliers: payload.uniqueSuppliers,
+    },
+    meta: payload.meta,
+  };
 }
 
 /**

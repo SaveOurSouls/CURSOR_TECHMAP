@@ -438,13 +438,16 @@
       }
 
       function loadDatabase(forceRefresh) {
-        setStatus(forceRefresh ? 'Обновление базы...' : 'Загрузка базы...', false);
+        setStatus(forceRefresh ? 'Обновление базы из источника...' : 'Поиск базы...', false);
         google.script.run
           .withSuccessHandler((payload) => {
             allData = payload.items || [];
             lookupValues = payload.lookups || { types: [], manufacturers: [], suppliers: [] };
             setupAutocompleteSources();
-            setStatus(`База готова: ${allData.length}`, false);
+            const sourceInfo = payload.meta && payload.meta.updatedAt
+              ? `, обновлено: ${payload.meta.updatedAt}`
+              : '';
+            setStatus(`База готова: ${allData.length}${sourceInfo}`, false);
           })
           .withFailureHandler((error) => {
             setStatus(error.message || 'Не удалось загрузить базу.', true);
