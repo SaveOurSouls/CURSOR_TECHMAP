@@ -30,12 +30,19 @@ if (typeof TECHMAP_DATA_MODEL !== 'undefined') {
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu(TECHMAP_APP.menuTitle)
-    .addItem('Открыть библиотеку шаблонов', 'showTemplateSidebar')
-    .addItem('Открыть базу материалов', 'showMaterialsSidebar')
+    .addItem('Открыть рабочую панель', 'showWorkspaceSidebar')
     .addItem('Сохранить выделение как шаблон', 'showSaveTemplateDialog')
     .addSeparator()
     .addItem('Обновить базу материалов', 'refreshMaterialsDatabase')
     .addToUi();
+}
+
+function showWorkspaceSidebar() {
+  const html = HtmlService.createHtmlOutputFromFile('WorkspaceSidebar')
+    .setTitle('Техкарты и материалы')
+    .setWidth(420);
+
+  SpreadsheetApp.getUi().showSidebar(html);
 }
 
 function showTemplateSidebar() {
