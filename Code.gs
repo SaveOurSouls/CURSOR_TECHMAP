@@ -89,7 +89,6 @@ function insertTemplate(templateId) {
   sourceRange.copyTo(targetRange, SpreadsheetApp.CopyPasteType.PASTE_NORMAL, false);
 
   clearNotesInTargetHeader_(targetRange);
-  insertConfiguredImages_(sheet, template.images, targetRow - 1, targetColumn - 1);
 
   SpreadsheetApp.flush();
 
@@ -409,16 +408,31 @@ function drawResultSection_(sheet, startRow, results, timings) {
 
 function drawImageZone_(sheet, templateSpec) {
   const placeholders = templateSpec.imagePlaceholders || [];
+  const imagesByAnchor = {};
+  (templateSpec.images || []).forEach((image) => {
+    imagesByAnchor[`${image.row}:${image.column}`] = image;
+  });
+
   placeholders.forEach((placeholder) => {
-    sheet.getRange(placeholder.range).merge();
-    sheet
-      .getRange(placeholder.range)
-      .setValue(placeholder.caption)
+    const range = sheet.getRange(placeholder.range);
+    range.merge();
+    range
       .setHorizontalAlignment('center')
       .setVerticalAlignment('middle')
       .setFontColor('#666666')
       .setBorder(true, true, true, true, true, true, '#9aa0a6', SpreadsheetApp.BorderStyle.DASHED)
       .setBackground('#f7f7f7');
+
+    const anchor = sheet.getRange(range.getRow(), range.getColumn());
+    const image = imagesByAnchor[`${range.getRow()}:${range.getColumn()}`];
+    if (image && image.url) {
+      anchor.setFormula(buildImageFormula_(image.url, image.width || 220, image.height || 120));
+      if (placeholder.caption) {
+        anchor.setNote(placeholder.caption);
+      }
+    } else {
+      anchor.setValue(placeholder.caption || 'Изображение');
+    }
   });
 
   (templateSpec.sideLabels || []).forEach((label) => {
@@ -431,8 +445,6 @@ function drawImageZone_(sheet, templateSpec) {
       .setHorizontalAlignment('center')
       .setFontColor(label.color);
   });
-
-  insertConfiguredImages_(sheet, templateSpec.images || [], 0, 0);
 }
 
 function drawFooterTable_(sheet, templateSpec) {
@@ -449,25 +461,6 @@ function drawFooterTable_(sheet, templateSpec) {
     sheet.getRange(28, header.length - 1, rows.length, 1).setBackground('#d9ead3');
     sheet.getRange(28, header.length, rows.length, 1).setBackground('#e2f0d9');
   }
-}
-
-function insertConfiguredImages_(sheet, images, rowOffset, columnOffset) {
-  (images || []).forEach((image) => {
-    try {
-      const blob = UrlFetchApp.fetch(image.url).getBlob();
-      blob.setName(`${image.label || 'template-image'}.png`);
-      sheet.insertImage(
-        blob,
-        image.column + columnOffset,
-        image.row + rowOffset,
-        image.offsetX || 0,
-        image.offsetY || 0
-      ).setWidth(image.width || 220).setHeight(image.height || 120);
-    } catch (error) {
-      const cell = sheet.getRange(image.row + rowOffset, image.column + columnOffset);
-      cell.setNote(`Не удалось загрузить изображение: ${image.url}\n${error.message}`);
-    }
-  });
 }
 
 function upsertCatalogRecord_(catalogSheet, record) {
@@ -528,6 +521,11 @@ function parseImageConfig_(value) {
   } catch (error) {
     return [];
   }
+}
+
+function buildImageFormula_(url, width, height) {
+  const safeUrl = String(url || '').replace(/"/g, '""');
+  return `=IMAGE("${safeUrl}",4,${height},${width})`;
 }
 
 function isSystemSheet_(sheetName) {
