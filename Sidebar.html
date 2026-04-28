@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top" />
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 12px;
+        color: #1f1f1f;
+      }
+
+      .toolbar {
+        position: sticky;
+        top: 0;
+        background: #ffffff;
+        padding-bottom: 8px;
+      }
+
+      input,
+      select,
+      button {
+        width: 100%;
+        box-sizing: border-box;
+        font-size: 13px;
+      }
+
+      input,
+      select {
+        padding: 8px;
+        margin-bottom: 8px;
+        border: 1px solid #c7c7c7;
+        border-radius: 6px;
+      }
+
+      button {
+        border: 0;
+        border-radius: 6px;
+        padding: 9px 10px;
+        cursor: pointer;
+        margin-top: 6px;
+      }
+
+      .btn-primary {
+        background: #1a73e8;
+        color: #ffffff;
+      }
+
+      .btn-secondary {
+        background: #e8f0fe;
+        color: #174ea6;
+      }
+
+      .card {
+        border: 1px solid #d8d8d8;
+        border-radius: 10px;
+        padding: 10px;
+        margin: 10px 0;
+        background: #fbfbfb;
+      }
+
+      .title {
+        font-weight: 700;
+        margin-bottom: 4px;
+      }
+
+      .meta {
+        color: #5f6368;
+        font-size: 12px;
+        margin-bottom: 8px;
+      }
+
+      .desc {
+        font-size: 12px;
+        line-height: 1.4;
+        margin-bottom: 8px;
+      }
+
+      .status {
+        margin: 8px 0 0;
+        font-size: 12px;
+        color: #174ea6;
+        min-height: 18px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="toolbar">
+      <input id="search" type="text" placeholder="Поиск по названию или операции" />
+      <select id="categoryFilter">
+        <option value="">Все категории</option>
+      </select>
+      <div class="status" id="status">Загрузка шаблонов...</div>
+    </div>
+    <div id="list"></div>
+
+    <script>
+      let templates = [];
+
+      function setStatus(message, isError) {
+        const node = document.getElementById('status');
+        node.textContent = message || '';
+        node.style.color = isError ? '#c5221f' : '#174ea6';
+      }
+
+      function escapeHtml(value) {
+        return String(value || '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+      }
+
+      function render() {
+        const list = document.getElementById('list');
+        const search = document.getElementById('search').value.trim().toLowerCase();
+        const category = document.getElementById('categoryFilter').value;
+
+        const filtered = templates.filter((item) => {
+          const haystack = [item.title, item.category, item.description].join(' ').toLowerCase();
+          const categoryOk = !category || item.category === category;
+          const searchOk = !search || haystack.indexOf(search) >= 0;
+          return categoryOk && searchOk;
+        });
+
+        if (!filtered.length) {
+          list.innerHTML = '<div class="card">Ничего не найдено.</div>';
+          return;
+        }
+
+        list.innerHTML = filtered
+          .map(
+            (item) => `
+              <div class="card">
+                <div class="title">${escapeHtml(item.title)}</div>
+                <div class="meta">${escapeHtml(item.category || 'Без категории')}</div>
+                <div class="desc">${escapeHtml(item.description || '')}</div>
+                <button class="btn-primary" onclick="insertTemplate('${escapeHtml(item.id)}')">Вставить в активную ячейку</button>
+                <button class="btn-secondary" onclick="openTemplate('${escapeHtml(item.id)}')">Открыть эталон</button>
+              </div>
+            `
+          )
+          .join('');
+      }
+
+      function populateCategories() {
+        const select = document.getElementById('categoryFilter');
+        const categories = Array.from(new Set(templates.map((item) => item.category).filter(Boolean))).sort();
+        select.innerHTML = '<option value="">Все категории</option>' +
+          categories.map((category) => `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`).join('');
+      }
+
+      function insertTemplate(id) {
+        setStatus('Вставка шаблона...', false);
+        google.script.run
+          .withSuccessHandler((result) => {
+            setStatus(`Вставлен шаблон "${result.title}" в ${result.sheetName}!${result.insertedRange}`, false);
+          })
+          .withFailureHandler((error) => {
+            setStatus(error.message || 'Не удалось вставить шаблон.', true);
+          })
+          .insertTemplate(id);
+      }
+
+      function openTemplate(id) {
+        setStatus('Открываю эталон...', false);
+        google.script.run
+          .withSuccessHandler(() => {
+            setStatus('Эталон открыт. После просмотра вернитесь на рабочий лист.', false);
+          })
+          .withFailureHandler((error) => {
+            setStatus(error.message || 'Не удалось открыть эталон.', true);
+          })
+          .openTemplateSheet(id);
+      }
+
+      document.getElementById('search').addEventListener('input', render);
+      document.getElementById('categoryFilter').addEventListener('change', render);
+
+      google.script.run
+        .withSuccessHandler((result) => {
+          templates = result || [];
+          populateCategories();
+          render();
+          setStatus(`Шаблонов доступно: ${templates.length}`, false);
+        })
+        .withFailureHandler((error) => {
+          setStatus(error.message || 'Не удалось загрузить шаблоны.', true);
+        })
+        .getTemplateCatalog();
+    </script>
+  </body>
+</html>
