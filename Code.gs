@@ -51,16 +51,6 @@ function showTemplateSidebar() {
   SpreadsheetApp.getUi().showSidebar(html);
 }
 
-function showMaterialsSidebar() {
-  ensureMaterialsInfrastructure_();
-
-  const html = HtmlService.createHtmlOutputFromFile('MaterialsSidebar')
-    .setTitle('База материалов')
-    .setWidth(360);
-
-  SpreadsheetApp.getUi().showSidebar(html);
-}
-
 function showSaveTemplateDialog() {
   ensureDemoLibraryInstalled_();
 
