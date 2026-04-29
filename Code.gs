@@ -47,6 +47,18 @@ function showWorkspaceSidebar() {
   SpreadsheetApp.getUi().showSidebar(html);
 }
 
+function authorizeExternalDatabases() {
+  const ui = SpreadsheetApp.getUi();
+  const materialName = SpreadsheetApp.openById(MATERIAL_DB_APP.sourceSpreadsheetId).getName();
+  const techOpsName = SpreadsheetApp.openById(TECHOPS_DB_APP.sourceSpreadsheetId).getName();
+
+  ui.alert(
+    'Доступ к внешним БД проверен.',
+    `Материалы: ${materialName}\nТехоперации: ${techOpsName}`,
+    ui.ButtonSet.OK
+  );
+}
+
 function showTemplateSidebar() {
   ensureDemoLibraryInstalled_();
 
