@@ -711,7 +711,10 @@
 
           <div id="opDbObTab" class="tab-content active">
             <button class="action-btn gray" onclick="refreshOperationsDatabase()">Обновить базу техопераций</button>
-            <input type="text" id="opDbObSearch" placeholder="Поиск по полю 'Для базы'..." />
+            <div class="mini-search-wrapper">
+              <input type="text" id="opDbObSearch" class="mini-search-input" placeholder="Поиск по полю 'Для базы'..." autocomplete="off" />
+              <ul id="opDbObDropdown" class="mini-search-results"></ul>
+            </div>
             <div class="scroll-area">
               <ul id="opDbObResults"></ul>
             </div>
@@ -719,7 +722,10 @@
 
           <div id="opDbOpTab" class="tab-content">
             <button class="action-btn gray" onclick="refreshOperationsDatabase()">Обновить базу техопераций</button>
-            <input type="text" id="opDbOpSearch" placeholder="Поиск по Номер | Название..." />
+            <div class="mini-search-wrapper">
+              <input type="text" id="opDbOpSearch" class="mini-search-input" placeholder="Поиск по Номер | Название..." autocomplete="off" />
+              <ul id="opDbOpDropdown" class="mini-search-results"></ul>
+            </div>
             <div class="scroll-area">
               <ul id="opDbOpResults"></ul>
             </div>
@@ -727,7 +733,10 @@
 
           <div id="opDbTerTab" class="tab-content">
             <button class="action-btn gray" onclick="refreshOperationsDatabase()">Обновить базу техопераций</button>
-            <input type="text" id="opDbTerSearch" placeholder="Поиск по комплектующим и аналогам..." />
+            <div class="mini-search-wrapper">
+              <input type="text" id="opDbTerSearch" class="mini-search-input" placeholder="Поиск по комплектующим и аналогам..." autocomplete="off" />
+              <ul id="opDbTerDropdown" class="mini-search-results"></ul>
+            </div>
             <div class="scroll-area">
               <ul id="opDbTerResults"></ul>
             </div>
@@ -735,7 +744,10 @@
 
           <div id="opDbKoaxTab" class="tab-content">
             <button class="action-btn gray" onclick="refreshOperationsDatabase()">Обновить базу техопераций</button>
-            <input type="text" id="opDbKoaxSearch" placeholder="Поиск по артикулу, серии, проводу..." />
+            <div class="mini-search-wrapper">
+              <input type="text" id="opDbKoaxSearch" class="mini-search-input" placeholder="Поиск по артикулу, серии, проводу..." autocomplete="off" />
+              <ul id="opDbKoaxDropdown" class="mini-search-results"></ul>
+            </div>
             <div class="scroll-area">
               <ul id="opDbKoaxResults"></ul>
             </div>
@@ -1048,12 +1060,70 @@
 
       function getOperationTabConfig(dbKey) {
         const map = {
-          dbOb: { searchInputId: 'opDbObSearch', resultsId: 'opDbObResults' },
-          dbOp: { searchInputId: 'opDbOpSearch', resultsId: 'opDbOpResults' },
-          dbTer: { searchInputId: 'opDbTerSearch', resultsId: 'opDbTerResults' },
-          dbKoax: { searchInputId: 'opDbKoaxSearch', resultsId: 'opDbKoaxResults' },
+          dbOb: { searchInputId: 'opDbObSearch', resultsId: 'opDbObResults', dropdownId: 'opDbObDropdown' },
+          dbOp: { searchInputId: 'opDbOpSearch', resultsId: 'opDbOpResults', dropdownId: 'opDbOpDropdown' },
+          dbTer: { searchInputId: 'opDbTerSearch', resultsId: 'opDbTerResults', dropdownId: 'opDbTerDropdown' },
+          dbKoax: { searchInputId: 'opDbKoaxSearch', resultsId: 'opDbKoaxResults', dropdownId: 'opDbKoaxDropdown' },
         };
         return map[dbKey];
+      }
+
+      function getFilteredOperationItems(dbKey, limit) {
+        const config = getOperationTabConfig(dbKey);
+        const query = normalizeSearch(document.getElementById(config.searchInputId).value);
+        const rows = operationDb[dbKey] || [];
+        const filtered = !query
+          ? rows.slice(0, limit || 80)
+          : rows.filter((item) => (item.searchText || '').indexOf(query) !== -1).slice(0, limit || 80);
+        return filtered;
+      }
+
+      function renderOperationDropdown(dbKey) {
+        const config = getOperationTabConfig(dbKey);
+        const dropdown = document.getElementById(config.dropdownId);
+        if (!dropdown) {
+          return;
+        }
+
+        dropdown.innerHTML = '';
+        const filtered = getFilteredOperationItems(dbKey, 15);
+        if (!filtered.length) {
+          dropdown.style.display = 'none';
+          return;
+        }
+
+        dropdown.style.display = 'block';
+        const fragment = document.createDocumentFragment();
+        filtered.forEach((item) => {
+          const li = document.createElement('li');
+          li.textContent = item.label;
+          li.onmousedown = function onMouseDown(event) {
+            event.preventDefault();
+            addOperationToQueue(dbKey, item);
+            document.getElementById(config.searchInputId).value = item.label;
+            dropdown.style.display = 'none';
+          };
+          fragment.appendChild(li);
+        });
+        dropdown.appendChild(fragment);
+      }
+
+      function setupOperationSearch(dbKey) {
+        const config = getOperationTabConfig(dbKey);
+        const input = document.getElementById(config.searchInputId);
+        const dropdown = document.getElementById(config.dropdownId);
+        input.addEventListener('input', () => {
+          renderOperationResults(dbKey);
+          renderOperationDropdown(dbKey);
+        });
+        input.addEventListener('focus', () => {
+          renderOperationDropdown(dbKey);
+        });
+        input.addEventListener('blur', () => {
+          window.setTimeout(() => {
+            dropdown.style.display = 'none';
+          }, 150);
+        });
       }
 
       function addOperationToQueue(dbKey, item) {
@@ -1226,6 +1296,10 @@
 
         setupMiniSearch('gStaticSearch', 'gStaticResults', 'gStatic');
         setupMiniSearch('cStaticSearch', 'cStaticResults', 'cStatic');
+        setupOperationSearch('dbOb');
+        setupOperationSearch('dbOp');
+        setupOperationSearch('dbTer');
+        setupOperationSearch('dbKoax');
 
         document.addEventListener('click', function onDocumentClick(event) {
           if (!event.target.closest('.mini-search-wrapper') && !event.target.closest('.autocomplete-wrapper')) {

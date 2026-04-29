@@ -150,6 +150,13 @@ function insertTechOperationMatrix(matrix, targetCellA1) {
   return `Успешно выгружено ${matrix.length} строк.`;
 }
 
+// Backward-compatible alias used by the workspace sidebar.
+function insertOperationRows(matrix, targetCellA1) {
+  return {
+    message: insertTechOperationMatrix(matrix, targetCellA1),
+  };
+}
+
 function ensureTechOperationsDatabaseReady_() {
   ensureTechOperationsInfrastructure_(SpreadsheetApp.getActive());
   const snapshot = getTechOperationsSnapshot_();
@@ -523,6 +530,17 @@ function buildTechOperationsPayload_(snapshot) {
   const payload = {
     meta: buildTechOperationsSummary_(snapshot),
     tabs: {},
+    dbOb: [],
+    dbOp: [],
+    dbTer: [],
+    dbKoax: [],
+  };
+
+  const payloadKeyMap = {
+    ob: 'dbOb',
+    op: 'dbOp',
+    ter: 'dbTer',
+    coax: 'dbKoax',
   };
 
   TECHOPS_DB_APP.tabOrder.forEach((tabKey) => {
@@ -532,8 +550,10 @@ function buildTechOperationsPayload_(snapshot) {
       .map((record, index) => ({
         id: `${tabKey}-${index}`,
         displayText: record.displayText,
+        label: record.displayText,
         searchText: record.normalizedSearch,
         values: record.exportValues || [],
+        outputRow: record.exportValues || [],
         sourceSheet: record.sourceSheet,
       }));
 
@@ -545,6 +565,7 @@ function buildTechOperationsPayload_(snapshot) {
       items,
       count: items.length,
     };
+    payload[payloadKeyMap[tabKey]] = items;
   });
 
   return payload;
