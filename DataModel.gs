@@ -12,6 +12,11 @@ const TECHMAP_DATA_MODEL = {
     searchTagHeader: 'Поисковый тег',
   },
 
+  operationsSource: {
+    spreadsheetId: '1W3VK9Fw71lYdw1Klcsn_za5-2EhvLoXIAKZVYOCnKcs',
+    sheets: ['БД.ОБ', 'БД.ОП', 'БД.ТЕР', 'БД.КОАКС'],
+  },
+
   materialRecord: {
     sourceSheet: 'COMPCON',
     searchTag: '123-ABC | Разъем SMA male | Rosenberger | ELITAN',
@@ -20,6 +25,25 @@ const TECHMAP_DATA_MODEL = {
     manufacturer: 'Rosenberger',
     supplier: 'ELITAN',
     normalized: '123-abc|разъемsmamale|rosenberger|elitan',
+  },
+
+  operationRecord: {
+    sourceSheet: 'БД.ОП',
+    searchKey: '010.005 | Опрессовка наконечника',
+    number: '010.005',
+    title: 'Опрессовка наконечника',
+    operationTime: '12',
+    setupTimeSec: '90',
+    setupConsumption: '1 шт',
+    machineTime: '0',
+    normalizedSearch: '010.005|опрессовканаконечника',
+    payload: {
+      numberAndTitle: '010.005 | Опрессовка наконечника',
+      operationTime: '12',
+      setupTimeSec: '90',
+      setupConsumption: '1 шт',
+      machineTime: '0',
+    },
   },
 
   catalogRecord: {

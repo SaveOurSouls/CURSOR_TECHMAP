@@ -549,6 +549,7 @@
       <div class="main-tabs">
         <button id="mainTabTemplatesBtn" class="main-tab-btn" onclick="switchMainTab('templates')">Техкарты</button>
         <button id="mainTabMaterialsBtn" class="main-tab-btn" onclick="switchMainTab('materials')">Материалы</button>
+        <button id="mainTabOperationsBtn" class="main-tab-btn" onclick="switchMainTab('operations')">Техоперации</button>
       </div>
       <div class="header-controls">
         <label class="compact-toggle">
@@ -698,6 +699,64 @@
       </div>
     </div>
 
+    <div id="operationsSection" class="panel-section">
+      <div class="materials-panel">
+        <div class="material-root">
+          <div class="tabs">
+            <button class="tab-btn active" onclick="switchOperationsTab('opDbObTab', this)">БД.ОБ</button>
+            <button class="tab-btn" onclick="switchOperationsTab('opDbOpTab', this)">БД.ОП</button>
+            <button class="tab-btn" onclick="switchOperationsTab('opDbTerTab', this)">БД.ТЕР</button>
+            <button class="tab-btn" onclick="switchOperationsTab('opDbKoaxTab', this)">БД.КОАКС</button>
+          </div>
+
+          <div id="opDbObTab" class="tab-content active">
+            <button class="action-btn gray" onclick="refreshOperationsDatabase()">Обновить базу техопераций</button>
+            <input type="text" id="opDbObSearch" placeholder="Поиск по полю 'Для базы'..." />
+            <div class="scroll-area">
+              <ul id="opDbObResults"></ul>
+            </div>
+          </div>
+
+          <div id="opDbOpTab" class="tab-content">
+            <button class="action-btn gray" onclick="refreshOperationsDatabase()">Обновить базу техопераций</button>
+            <input type="text" id="opDbOpSearch" placeholder="Поиск по Номер | Название..." />
+            <div class="scroll-area">
+              <ul id="opDbOpResults"></ul>
+            </div>
+          </div>
+
+          <div id="opDbTerTab" class="tab-content">
+            <button class="action-btn gray" onclick="refreshOperationsDatabase()">Обновить базу техопераций</button>
+            <input type="text" id="opDbTerSearch" placeholder="Поиск по комплектующим и аналогам..." />
+            <div class="scroll-area">
+              <ul id="opDbTerResults"></ul>
+            </div>
+          </div>
+
+          <div id="opDbKoaxTab" class="tab-content">
+            <button class="action-btn gray" onclick="refreshOperationsDatabase()">Обновить базу техопераций</button>
+            <input type="text" id="opDbKoaxSearch" placeholder="Поиск по артикулу, серии, проводу..." />
+            <div class="scroll-area">
+              <ul id="opDbKoaxResults"></ul>
+            </div>
+          </div>
+
+          <div class="basket-container">
+            <div class="basket-header">
+              <span>Очередь техопераций (<span id="opQueueCount">0</span>)</span>
+              <span style="color:#1a73e8; cursor:pointer; font-size:11px;" onclick="clearOperationQueue()">очистить</span>
+            </div>
+            <div class="scroll-area">
+              <ul id="opQueueList"></ul>
+            </div>
+            <input type="text" id="opTargetCell" placeholder="Стартовая ячейка, например C5. Пусто = активная." />
+            <button id="opPushBtn" class="action-btn" disabled onclick="pushOperationsQueue()">ВЫГРУЗИТЬ В ТАБЛИЦУ</button>
+            <div id="opStatus" class="status">База техопераций еще не загружена.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <script>
       const INITIAL_MAIN_TAB = '<?= initialTab ?>' || 'templates';
       const STORAGE_KEYS = {
@@ -711,6 +770,16 @@
       let lookupValues = { types: [], manufacturers: [], suppliers: [] };
       let materialsLoaded = false;
       let materialLoading = false;
+      let operationsLoaded = false;
+      let operationsLoading = false;
+      let operationDb = {
+        dbOb: [],
+        dbOp: [],
+        dbTer: [],
+        dbKoax: [],
+        meta: null,
+      };
+      let operationQueue = [];
 
       function escapeHtml(value) {
         return String(value || '')
@@ -752,8 +821,10 @@
       function switchMainTab(tabName) {
         document.getElementById('templatesSection').classList.toggle('active', tabName === 'templates');
         document.getElementById('materialsSection').classList.toggle('active', tabName === 'materials');
+        document.getElementById('operationsSection').classList.toggle('active', tabName === 'operations');
         document.getElementById('mainTabTemplatesBtn').classList.toggle('active', tabName === 'templates');
         document.getElementById('mainTabMaterialsBtn').classList.toggle('active', tabName === 'materials');
+        document.getElementById('mainTabOperationsBtn').classList.toggle('active', tabName === 'operations');
 
         try {
           localStorage.setItem(STORAGE_KEYS.mainTab, tabName);
@@ -761,6 +832,8 @@
 
         if (tabName === 'materials') {
           ensureMaterialsLoaded(false);
+        } else if (tabName === 'operations') {
+          ensureOperationsLoaded(false);
         }
       }
 
@@ -847,8 +920,21 @@
         btnElement.classList.add('active');
       }
 
+      function switchOperationsTab(tabId, btnElement) {
+        document.querySelectorAll('#operationsSection .tab-content').forEach((el) => el.classList.remove('active'));
+        document.querySelectorAll('#operationsSection .tab-btn').forEach((el) => el.classList.remove('active'));
+        document.getElementById(tabId).classList.add('active');
+        btnElement.classList.add('active');
+      }
+
       function setMaterialStatus(message, isError) {
         const node = document.getElementById('status');
+        node.innerText = message || '';
+        node.style.color = isError ? '#d93025' : '#70757a';
+      }
+
+      function setOperationsStatus(message, isError) {
+        const node = document.getElementById('opStatus');
         node.innerText = message || '';
         node.style.color = isError ? '#d93025' : '#70757a';
       }
@@ -891,6 +977,134 @@
 
       function refreshDatabase() {
         ensureMaterialsLoaded(true);
+      }
+
+      function ensureOperationsLoaded(forceRefresh) {
+        if (operationsLoading) {
+          return;
+        }
+        if (operationsLoaded && !forceRefresh) {
+          return;
+        }
+        loadOperationsDatabase(forceRefresh === true);
+      }
+
+      function loadOperationsDatabase(forceRefresh) {
+        operationsLoading = true;
+        setOperationsStatus(forceRefresh ? 'Обновление базы техопераций...' : 'Загрузка базы техопераций...', false);
+        setMainStatus(forceRefresh ? 'Обновление техопераций...' : 'Чтение базы техопераций...', false);
+        google.script.run
+          .withSuccessHandler((payload) => {
+            operationsLoading = false;
+            operationsLoaded = true;
+            operationDb = payload || { dbOb: [], dbOp: [], dbTer: [], dbKoax: [], meta: null };
+            renderOperationResults('dbOb');
+            renderOperationResults('dbOp');
+            renderOperationResults('dbTer');
+            renderOperationResults('dbKoax');
+            const total = (operationDb.meta && operationDb.meta.recordCount) || 0;
+            setOperationsStatus(`База готова: ${total}`, false);
+            setMainStatus(`Техоперации: ${total}`, false);
+          })
+          .withFailureHandler((error) => {
+            operationsLoading = false;
+            operationsLoaded = false;
+            setOperationsStatus(error.message || 'Не удалось загрузить базу техопераций.', true);
+            setMainStatus('Ошибка загрузки техопераций', true);
+          })
+          .getOperationDatabase(forceRefresh === true);
+      }
+
+      function refreshOperationsDatabase() {
+        ensureOperationsLoaded(true);
+      }
+
+      function normalizeSearch(value) {
+        return String(value || '').toLowerCase().replace(/\s+/g, '');
+      }
+
+      function renderOperationResults(dbKey) {
+        const config = getOperationTabConfig(dbKey);
+        const query = normalizeSearch(document.getElementById(config.searchInputId).value);
+        const list = document.getElementById(config.resultsId);
+        const rows = operationDb[dbKey] || [];
+        list.innerHTML = '';
+
+        const filtered = !query
+          ? rows.slice(0, 80)
+          : rows.filter((item) => (item.searchText || '').indexOf(query) !== -1).slice(0, 80);
+
+        const fragment = document.createDocumentFragment();
+        filtered.forEach((item) => {
+          const li = document.createElement('li');
+          li.textContent = item.label;
+          li.onclick = function onClick() {
+            addOperationToQueue(dbKey, item);
+          };
+          fragment.appendChild(li);
+        });
+        list.appendChild(fragment);
+      }
+
+      function getOperationTabConfig(dbKey) {
+        const map = {
+          dbOb: { searchInputId: 'opDbObSearch', resultsId: 'opDbObResults' },
+          dbOp: { searchInputId: 'opDbOpSearch', resultsId: 'opDbOpResults' },
+          dbTer: { searchInputId: 'opDbTerSearch', resultsId: 'opDbTerResults' },
+          dbKoax: { searchInputId: 'opDbKoaxSearch', resultsId: 'opDbKoaxResults' },
+        };
+        return map[dbKey];
+      }
+
+      function addOperationToQueue(dbKey, item) {
+        operationQueue.push({
+          dbKey,
+          label: item.label,
+          outputRow: item.outputRow,
+        });
+        updateOperationQueueUI();
+      }
+
+      function clearOperationQueue() {
+        operationQueue = [];
+        updateOperationQueueUI();
+      }
+
+      function removeOperationFromQueue(index) {
+        operationQueue.splice(index, 1);
+        updateOperationQueueUI();
+      }
+
+      function updateOperationQueueUI() {
+        const list = document.getElementById('opQueueList');
+        list.innerHTML = '';
+        operationQueue.forEach((item, index) => {
+          const li = document.createElement('li');
+          li.innerHTML = `<span>${escapeHtml(item.label)}</span><span class="remove-btn" onclick="removeOperationFromQueue(${index})">×</span>`;
+          list.appendChild(li);
+        });
+        document.getElementById('opQueueCount').innerText = operationQueue.length;
+        document.getElementById('opPushBtn').disabled = operationQueue.length === 0;
+      }
+
+      function pushOperationsQueue() {
+        if (!operationQueue.length) {
+          setOperationsStatus('Очередь пуста.', true);
+          return;
+        }
+
+        const targetCellA1 = document.getElementById('opTargetCell').value.trim();
+        const rows = operationQueue.map((item) => item.outputRow);
+        setOperationsStatus('Выгрузка техопераций...', false);
+        google.script.run
+          .withSuccessHandler((result) => {
+            setOperationsStatus(`✅ ${result.message}`, false);
+            clearOperationQueue();
+          })
+          .withFailureHandler((error) => {
+            setOperationsStatus(error.message || 'Не удалось выгрузить техоперации.', true);
+          })
+          .insertOperationRows(rows, targetCellA1);
       }
 
       function setupSmartAutocomplete(inputId, resultsId, dataArray) {
@@ -1004,6 +1218,11 @@
           });
           resList.appendChild(fragment);
         });
+
+        document.getElementById('opDbObSearch').addEventListener('input', () => renderOperationResults('dbOb'));
+        document.getElementById('opDbOpSearch').addEventListener('input', () => renderOperationResults('dbOp'));
+        document.getElementById('opDbTerSearch').addEventListener('input', () => renderOperationResults('dbTer'));
+        document.getElementById('opDbKoaxSearch').addEventListener('input', () => renderOperationResults('dbKoax'));
 
         setupMiniSearch('gStaticSearch', 'gStaticResults', 'gStatic');
         setupMiniSearch('cStaticSearch', 'cStaticResults', 'cStatic');

@@ -34,6 +34,7 @@ function onOpen() {
     .addItem('Сохранить выделение как шаблон', 'showSaveTemplateDialog')
     .addSeparator()
     .addItem('Обновить базу материалов', 'refreshMaterialsDatabase')
+    .addItem('Обновить базу техопераций', 'refreshOperationDatabase')
     .addToUi();
 }
 
