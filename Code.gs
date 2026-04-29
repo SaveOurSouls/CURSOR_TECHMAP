@@ -33,6 +33,7 @@ function onOpen() {
     .addItem('Открыть рабочую панель', 'showWorkspaceSidebar')
     .addItem('Сохранить выделение как шаблон', 'showSaveTemplateDialog')
     .addSeparator()
+    .addItem('Проверить доступ к внешним БД', 'authorizeExternalDatabases')
     .addItem('Обновить базу материалов', 'refreshMaterialsDatabase')
     .addItem('Обновить базу техопераций', 'refreshOperationDatabase')
     .addToUi();

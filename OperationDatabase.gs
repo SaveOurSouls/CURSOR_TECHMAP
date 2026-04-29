@@ -70,6 +70,11 @@ function refreshTechOperationsDatabase() {
   return syncTechOperationsDatabaseMenu();
 }
 
+// Backward-compatible alias used by menu/sidebar wiring.
+function refreshOperationDatabase() {
+  return refreshTechOperationsDatabase();
+}
+
 function syncTechOperationsDatabaseMenu() {
   const summary = syncTechOperationsDatabase();
   SpreadsheetApp.getUi().alert(
@@ -99,6 +104,11 @@ function getTechOperationsDatabase(forceRefresh) {
   }
 
   return buildTechOperationsPayload_(getTechOperationsSnapshot_());
+}
+
+// Backward-compatible alias used by the workspace sidebar.
+function getOperationDatabase(forceRefresh) {
+  return getTechOperationsDatabase(forceRefresh);
 }
 
 function insertTechOperationMatrix(matrix, targetCellA1) {
