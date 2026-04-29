@@ -12,6 +12,7 @@ const TECHOPS_DB_APP = {
       key: 'ob',
       label: 'БД.ОБ',
       sourceSheetName: 'БД.ОБ',
+      headerRowNumber: 2,
       searchPlaceholder: 'Поиск по полю "Для базы"...',
       outputLabels: ['Для базы'],
     },
@@ -19,6 +20,7 @@ const TECHOPS_DB_APP = {
       key: 'op',
       label: 'БД.ОП',
       sourceSheetName: 'БД.ОП',
+      headerRowNumber: 2,
       searchPlaceholder: 'Поиск по номеру или названию операции...',
       outputLabels: [
         'Номер | Название',
@@ -32,6 +34,7 @@ const TECHOPS_DB_APP = {
       key: 'ter',
       label: 'БД.ТЕР',
       sourceSheetName: 'БД.ТЕР',
+      headerRowNumber: 1,
       searchPlaceholder: 'Поиск по комплектующей, аналогу, серии или производителю...',
       outputLabels: ['Комплектующая', 'Аналог', 'Серия разъемов', 'Производитель'],
     },
@@ -39,6 +42,7 @@ const TECHOPS_DB_APP = {
       key: 'coax',
       label: 'БД.КОАКС',
       sourceSheetName: 'БД.КОАКС',
+      headerRowNumber: 2,
       searchPlaceholder: 'Поиск по артикулам, сериям, проводу, размерам...',
       outputLabels: [
         'Артикул',
@@ -271,6 +275,14 @@ function buildTechOperationsHeaderMap_(headersRow) {
 }
 
 function detectTechOperationsHeaderRow_(values, tabKey) {
+  const config = TECHOPS_DB_APP.tabs[tabKey];
+  if (config && config.headerRowNumber) {
+    const explicitIndex = Number(config.headerRowNumber) - 1;
+    if (explicitIndex >= 0 && explicitIndex < values.length) {
+      return explicitIndex;
+    }
+  }
+
   const aliases = getTechOperationsHeaderAliasesForTab_(tabKey);
   const maxScanRows = Math.min(values.length, 12);
   let bestIndex = -1;
