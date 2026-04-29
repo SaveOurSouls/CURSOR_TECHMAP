@@ -221,8 +221,13 @@ function fetchTechOperationsSnapshotFromSource_() {
       return;
     }
 
-    const headerMap = buildTechOperationsHeaderMap_(values[0]);
-    for (let rowIndex = 1; rowIndex < values.length; rowIndex += 1) {
+    const headerRowIndex = detectTechOperationsHeaderRow_(values, tabKey);
+    if (headerRowIndex < 0) {
+      return;
+    }
+
+    const headerMap = buildTechOperationsHeaderMap_(values[headerRowIndex]);
+    for (let rowIndex = headerRowIndex + 1; rowIndex < values.length; rowIndex += 1) {
       const row = values[rowIndex];
       const record = buildTechOperationsRecordFromRow_(tabKey, row, headerMap, config.sourceSheetName);
       if (!record || !record.displayText) {
@@ -263,6 +268,69 @@ function buildTechOperationsHeaderMap_(headersRow) {
     }
   });
   return map;
+}
+
+function detectTechOperationsHeaderRow_(values, tabKey) {
+  const aliases = getTechOperationsHeaderAliasesForTab_(tabKey);
+  const maxScanRows = Math.min(values.length, 12);
+  let bestIndex = -1;
+  let bestScore = -1;
+
+  for (let rowIndex = 0; rowIndex < maxScanRows; rowIndex += 1) {
+    const headerMap = buildTechOperationsHeaderMap_(values[rowIndex]);
+    let score = 0;
+    aliases.forEach((aliasGroup) => {
+      const found = aliasGroup.some((alias) => {
+        const key = normalizeTechOperationsHeader_(alias);
+        return headerMap[key] === 0 || headerMap[key] > 0;
+      });
+      if (found) {
+        score += 1;
+      }
+    });
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestIndex = rowIndex;
+    }
+  }
+
+  const minimumScore = Math.max(1, Math.min(2, aliases.length));
+  return bestScore >= minimumScore ? bestIndex : -1;
+}
+
+function getTechOperationsHeaderAliasesForTab_(tabKey) {
+  switch (tabKey) {
+    case 'ob':
+      return [['для базы', 'длябазы']];
+    case 'op':
+      return [
+        ['номер', 'number'],
+        ['название', 'name'],
+        ['время операции', 'время операции, сек', 'время операции сек'],
+        ['время подготовки, сек', 'время подготовки сек'],
+        ['время машины, сек/оп; сек/м', 'время машины сек/оп; сек/м', 'время машины'],
+        ['тип операции', 'типоперации'],
+      ];
+    case 'ter':
+      return [
+        ['комплектующая'],
+        ['аналог'],
+        ['серия разъемов', 'серияразъемов'],
+        ['производитель', 'бренд', 'manufacturer'],
+      ];
+    case 'coax':
+      return [
+        ['артикул'],
+        ['тип/серия', 'тип / серия', 'тип серия'],
+        ['производитель', 'бренд', 'manufacturer'],
+        ['поставщик', 'supplier'],
+        ['провод'],
+        ['программа'],
+      ];
+    default:
+      return [];
+  }
 }
 
 function buildTechOperationsRecordFromRow_(tabKey, row, headerMap, sourceSheet) {

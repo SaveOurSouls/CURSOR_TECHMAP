@@ -711,10 +711,7 @@
 
           <div id="opDbObTab" class="tab-content active">
             <button class="action-btn gray" onclick="refreshOperationsDatabase()">Обновить базу техопераций</button>
-            <div class="mini-search-wrapper">
-              <input type="text" id="opDbObSearch" class="mini-search-input" placeholder="Поиск по полю 'Для базы'..." autocomplete="off" />
-              <ul id="opDbObDropdown" class="mini-search-results"></ul>
-            </div>
+            <input type="text" id="opDbObSearch" class="mini-search-input" placeholder="Поиск по полю 'Для базы'..." autocomplete="off" />
             <div class="scroll-area">
               <ul id="opDbObResults"></ul>
             </div>
@@ -722,10 +719,7 @@
 
           <div id="opDbOpTab" class="tab-content">
             <button class="action-btn gray" onclick="refreshOperationsDatabase()">Обновить базу техопераций</button>
-            <div class="mini-search-wrapper">
-              <input type="text" id="opDbOpSearch" class="mini-search-input" placeholder="Поиск по Номер | Название..." autocomplete="off" />
-              <ul id="opDbOpDropdown" class="mini-search-results"></ul>
-            </div>
+            <input type="text" id="opDbOpSearch" class="mini-search-input" placeholder="Поиск по Номер | Название..." autocomplete="off" />
             <div class="scroll-area">
               <ul id="opDbOpResults"></ul>
             </div>
@@ -733,10 +727,7 @@
 
           <div id="opDbTerTab" class="tab-content">
             <button class="action-btn gray" onclick="refreshOperationsDatabase()">Обновить базу техопераций</button>
-            <div class="mini-search-wrapper">
-              <input type="text" id="opDbTerSearch" class="mini-search-input" placeholder="Поиск по комплектующим и аналогам..." autocomplete="off" />
-              <ul id="opDbTerDropdown" class="mini-search-results"></ul>
-            </div>
+            <input type="text" id="opDbTerSearch" class="mini-search-input" placeholder="Поиск по комплектующим и аналогам..." autocomplete="off" />
             <div class="scroll-area">
               <ul id="opDbTerResults"></ul>
             </div>
@@ -744,10 +735,7 @@
 
           <div id="opDbKoaxTab" class="tab-content">
             <button class="action-btn gray" onclick="refreshOperationsDatabase()">Обновить базу техопераций</button>
-            <div class="mini-search-wrapper">
-              <input type="text" id="opDbKoaxSearch" class="mini-search-input" placeholder="Поиск по артикулу, серии, проводу..." autocomplete="off" />
-              <ul id="opDbKoaxDropdown" class="mini-search-results"></ul>
-            </div>
+            <input type="text" id="opDbKoaxSearch" class="mini-search-input" placeholder="Поиск по артикулу, серии, проводу..." autocomplete="off" />
             <div class="scroll-area">
               <ul id="opDbKoaxResults"></ul>
             </div>
@@ -791,7 +779,13 @@
         dbKoax: [],
         meta: null,
       };
-      let operationQueue = [];
+      let activeOperationDbKey = 'dbOb';
+      let operationQueues = {
+        dbOb: [],
+        dbOp: [],
+        dbTer: [],
+        dbKoax: [],
+      };
 
       function escapeHtml(value) {
         return String(value || '')
@@ -937,6 +931,14 @@
         document.querySelectorAll('#operationsSection .tab-btn').forEach((el) => el.classList.remove('active'));
         document.getElementById(tabId).classList.add('active');
         btnElement.classList.add('active');
+        const dbKeyMap = {
+          opDbObTab: 'dbOb',
+          opDbOpTab: 'dbOp',
+          opDbTerTab: 'dbTer',
+          opDbKoaxTab: 'dbKoax',
+        };
+        activeOperationDbKey = dbKeyMap[tabId] || 'dbOb';
+        updateOperationQueueUI();
       }
 
       function setMaterialStatus(message, isError) {
@@ -1060,10 +1062,10 @@
 
       function getOperationTabConfig(dbKey) {
         const map = {
-          dbOb: { searchInputId: 'opDbObSearch', resultsId: 'opDbObResults', dropdownId: 'opDbObDropdown' },
-          dbOp: { searchInputId: 'opDbOpSearch', resultsId: 'opDbOpResults', dropdownId: 'opDbOpDropdown' },
-          dbTer: { searchInputId: 'opDbTerSearch', resultsId: 'opDbTerResults', dropdownId: 'opDbTerDropdown' },
-          dbKoax: { searchInputId: 'opDbKoaxSearch', resultsId: 'opDbKoaxResults', dropdownId: 'opDbKoaxDropdown' },
+          dbOb: { searchInputId: 'opDbObSearch', resultsId: 'opDbObResults' },
+          dbOp: { searchInputId: 'opDbOpSearch', resultsId: 'opDbOpResults' },
+          dbTer: { searchInputId: 'opDbTerSearch', resultsId: 'opDbTerResults' },
+          dbKoax: { searchInputId: 'opDbKoaxSearch', resultsId: 'opDbKoaxResults' },
         };
         return map[dbKey];
       }
@@ -1078,56 +1080,16 @@
         return filtered;
       }
 
-      function renderOperationDropdown(dbKey) {
-        const config = getOperationTabConfig(dbKey);
-        const dropdown = document.getElementById(config.dropdownId);
-        if (!dropdown) {
-          return;
-        }
-
-        dropdown.innerHTML = '';
-        const filtered = getFilteredOperationItems(dbKey, 15);
-        if (!filtered.length) {
-          dropdown.style.display = 'none';
-          return;
-        }
-
-        dropdown.style.display = 'block';
-        const fragment = document.createDocumentFragment();
-        filtered.forEach((item) => {
-          const li = document.createElement('li');
-          li.textContent = item.label;
-          li.onmousedown = function onMouseDown(event) {
-            event.preventDefault();
-            addOperationToQueue(dbKey, item);
-            document.getElementById(config.searchInputId).value = item.label;
-            dropdown.style.display = 'none';
-          };
-          fragment.appendChild(li);
-        });
-        dropdown.appendChild(fragment);
-      }
-
       function setupOperationSearch(dbKey) {
         const config = getOperationTabConfig(dbKey);
         const input = document.getElementById(config.searchInputId);
-        const dropdown = document.getElementById(config.dropdownId);
         input.addEventListener('input', () => {
           renderOperationResults(dbKey);
-          renderOperationDropdown(dbKey);
-        });
-        input.addEventListener('focus', () => {
-          renderOperationDropdown(dbKey);
-        });
-        input.addEventListener('blur', () => {
-          window.setTimeout(() => {
-            dropdown.style.display = 'none';
-          }, 150);
         });
       }
 
       function addOperationToQueue(dbKey, item) {
-        operationQueue.push({
+        operationQueues[dbKey].push({
           dbKey,
           label: item.label,
           outputRow: item.outputRow,
@@ -1136,35 +1098,37 @@
       }
 
       function clearOperationQueue() {
-        operationQueue = [];
+        operationQueues[activeOperationDbKey] = [];
         updateOperationQueueUI();
       }
 
       function removeOperationFromQueue(index) {
-        operationQueue.splice(index, 1);
+        operationQueues[activeOperationDbKey].splice(index, 1);
         updateOperationQueueUI();
       }
 
       function updateOperationQueueUI() {
         const list = document.getElementById('opQueueList');
         list.innerHTML = '';
-        operationQueue.forEach((item, index) => {
+        const currentQueue = operationQueues[activeOperationDbKey] || [];
+        currentQueue.forEach((item, index) => {
           const li = document.createElement('li');
           li.innerHTML = `<span>${escapeHtml(item.label)}</span><span class="remove-btn" onclick="removeOperationFromQueue(${index})">×</span>`;
           list.appendChild(li);
         });
-        document.getElementById('opQueueCount').innerText = operationQueue.length;
-        document.getElementById('opPushBtn').disabled = operationQueue.length === 0;
+        document.getElementById('opQueueCount').innerText = currentQueue.length;
+        document.getElementById('opPushBtn').disabled = currentQueue.length === 0;
       }
 
       function pushOperationsQueue() {
-        if (!operationQueue.length) {
+        const currentQueue = operationQueues[activeOperationDbKey] || [];
+        if (!currentQueue.length) {
           setOperationsStatus('Очередь пуста.', true);
           return;
         }
 
         const targetCellA1 = document.getElementById('opTargetCell').value.trim();
-        const rows = operationQueue.map((item) => item.outputRow);
+        const rows = currentQueue.map((item) => item.outputRow);
         setOperationsStatus('Выгрузка техопераций...', false);
         google.script.run
           .withSuccessHandler((result) => {
