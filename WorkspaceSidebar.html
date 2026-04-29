@@ -467,6 +467,16 @@
         flex-shrink: 0;
       }
 
+      .diag-box {
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px dashed #d0d7de;
+        font-size: 10px;
+        line-height: 1.35;
+        color: #5f6368;
+        white-space: pre-wrap;
+      }
+
       body.compact-mode .main-tab-btn {
         font-size: 11px;
         padding: 8px 6px;
@@ -752,6 +762,7 @@
             <input type="text" id="opTargetCell" placeholder="Стартовая ячейка, например C5. Пусто = активная." />
             <button id="opPushBtn" class="action-btn" disabled onclick="pushOperationsQueue()">ВЫГРУЗИТЬ В ТАБЛИЦУ</button>
             <div id="opStatus" class="status">База техопераций еще не загружена.</div>
+            <div id="opDiagnostics" class="diag-box"></div>
           </div>
         </div>
       </div>
@@ -953,6 +964,28 @@
         node.style.color = isError ? '#d93025' : '#70757a';
       }
 
+      function renderOperationsDiagnostics() {
+        const node = document.getElementById('opDiagnostics');
+        const meta = operationDb.meta || {};
+        const diagnostics = meta.diagnosticsByTab || {};
+        const order = [
+          ['ob', 'БД.ОБ'],
+          ['op', 'БД.ОП'],
+          ['ter', 'БД.ТЕР'],
+          ['coax', 'БД.КОАКС'],
+        ];
+
+        const lines = order.map(([key, label]) => {
+          const info = diagnostics[key] || {};
+          const found = (info.foundHeaders || []).join(', ') || '-';
+          const missing = (info.missingHeaders || []).join(', ') || '-';
+          const headerRow = info.headerRowNumber || '-';
+          const parsed = info.parsedRows || 0;
+          return `${label}: шапка=${headerRow}, строк=${parsed}\nнайдены: ${found}\nнет: ${missing}`;
+        });
+        node.textContent = lines.join('\n\n');
+      }
+
       function ensureMaterialsLoaded(forceRefresh) {
         if (materialLoading) {
           return;
@@ -1016,6 +1049,7 @@
             renderOperationResults('dbOp');
             renderOperationResults('dbTer');
             renderOperationResults('dbKoax');
+            renderOperationsDiagnostics();
             const total = (operationDb.meta && operationDb.meta.recordCount) || 0;
             setOperationsStatus(`База готова: ${total}`, false);
             setMainStatus(`Техоперации: ${total}`, false);

@@ -211,14 +211,26 @@ function fetchTechOperationsSnapshotFromSource_() {
   const sourceSs = SpreadsheetApp.openById(TECHOPS_DB_APP.sourceSpreadsheetId);
   const records = [];
   const countsByTab = {};
+  const diagnosticsByTab = {};
 
   TECHOPS_DB_APP.tabOrder.forEach((tabKey) => {
     const config = TECHOPS_DB_APP.tabs[tabKey];
     countsByTab[tabKey] = 0;
+    diagnosticsByTab[tabKey] = {
+      label: config.label,
+      sourceSheetName: config.sourceSheetName,
+      headerRowNumber: '',
+      foundHeaders: [],
+      matchedGroups: [],
+      missingGroups: [],
+      parsedRows: 0,
+      sheetFound: false,
+    };
     const sheet = sourceSs.getSheetByName(config.sourceSheetName);
     if (!sheet) {
       return;
     }
+    diagnosticsByTab[tabKey].sheetFound = true;
 
     const values = sheet.getDataRange().getDisplayValues();
     if (values.length < 2) {
@@ -229,8 +241,13 @@ function fetchTechOperationsSnapshotFromSource_() {
     if (headerRowIndex < 0) {
       return;
     }
+    diagnosticsByTab[tabKey].headerRowNumber = headerRowIndex + 1;
 
     const headerMap = buildTechOperationsHeaderMap_(values[headerRowIndex]);
+    const diagnostics = buildTechOperationsHeaderDiagnostics_(tabKey, headerMap, values[headerRowIndex]);
+    diagnosticsByTab[tabKey].foundHeaders = diagnostics.foundHeaders;
+    diagnosticsByTab[tabKey].matchedGroups = diagnostics.matchedGroups;
+    diagnosticsByTab[tabKey].missingGroups = diagnostics.missingGroups;
     for (let rowIndex = headerRowIndex + 1; rowIndex < values.length; rowIndex += 1) {
       const row = values[rowIndex];
       const record = buildTechOperationsRecordFromRow_(tabKey, row, headerMap, config.sourceSheetName);
@@ -238,6 +255,7 @@ function fetchTechOperationsSnapshotFromSource_() {
         continue;
       }
       countsByTab[tabKey] += 1;
+      diagnosticsByTab[tabKey].parsedRows += 1;
       records.push(record);
     }
   });
@@ -258,6 +276,7 @@ function fetchTechOperationsSnapshotFromSource_() {
       updatedAt: new Date().toISOString(),
       recordCount: records.length,
       countsByTab,
+      diagnosticsByTab,
     },
     records,
   };
@@ -343,6 +362,33 @@ function getTechOperationsHeaderAliasesForTab_(tabKey) {
     default:
       return [];
   }
+}
+
+function buildTechOperationsHeaderDiagnostics_(tabKey, headerMap, headersRow) {
+  const aliasGroups = getTechOperationsHeaderAliasesForTab_(tabKey);
+  const foundHeaders = (headersRow || [])
+    .map((header) => normalizeString_(header))
+    .filter(Boolean);
+  const matchedGroups = [];
+  const missingGroups = [];
+
+  aliasGroups.forEach((group) => {
+    const matchedAlias = group.find((alias) => {
+      const key = normalizeTechOperationsHeader_(alias);
+      return headerMap[key] === 0 || headerMap[key] > 0;
+    });
+    if (matchedAlias) {
+      matchedGroups.push(group[0]);
+    } else {
+      missingGroups.push(group[0]);
+    }
+  });
+
+  return {
+    foundHeaders,
+    matchedGroups,
+    missingGroups,
+  };
 }
 
 function buildTechOperationsRecordFromRow_(tabKey, row, headerMap, sourceSheet) {
@@ -532,6 +578,7 @@ function writeTechOperationsSnapshotToSheets_(snapshot) {
     ['updatedAt', snapshot.meta.updatedAt],
     ['recordCount', String(snapshot.meta.recordCount || 0)],
     ['countsByTabJson', JSON.stringify(snapshot.meta.countsByTab || {})],
+    ['diagnosticsByTabJson', JSON.stringify(snapshot.meta.diagnosticsByTab || {})],
   ];
   metaSheet.getRange(2, 1, metaRows.length, 2).setValues(metaRows);
   hideTechOperationsSheets_();
@@ -579,6 +626,7 @@ function loadTechOperationsSnapshotFromSheets_() {
     updatedAt: '',
     recordCount: records.length,
     countsByTab: {},
+    diagnosticsByTab: {},
   };
 
   const metaLastRow = metaSheet.getLastRow();
@@ -598,6 +646,12 @@ function loadTechOperationsSnapshotFromSheets_() {
           meta.countsByTab = JSON.parse(value) || {};
         } catch (error) {
           meta.countsByTab = {};
+        }
+      } else if (key === 'diagnosticsByTabJson') {
+        try {
+          meta.diagnosticsByTab = JSON.parse(value) || {};
+        } catch (error) {
+          meta.diagnosticsByTab = {};
         }
       }
     });
@@ -657,6 +711,7 @@ function buildTechOperationsSummary_(snapshot) {
     updatedAt: snapshot.meta.updatedAt || '',
     recordCount: snapshot.meta.recordCount || (snapshot.records ? snapshot.records.length : 0),
     countsByTab: snapshot.meta.countsByTab || {},
+    diagnosticsByTab: snapshot.meta.diagnosticsByTab || {},
   };
 }
 
