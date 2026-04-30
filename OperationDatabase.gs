@@ -687,15 +687,28 @@ function buildTechOperationsPayload_(snapshot) {
     const config = TECHOPS_DB_APP.tabs[tabKey];
     const items = (snapshot.records || [])
       .filter((record) => record.tabKey === tabKey)
-      .map((record, index) => ({
-        id: `${tabKey}-${index}`,
-        displayText: record.displayText,
-        label: record.displayText,
-        searchText: record.normalizedSearch,
-        values: record.exportValues || [],
-        outputRow: record.exportValues || [],
-        sourceSheet: record.sourceSheet,
-      }));
+      .map((record, index) => {
+        const item = {
+          id: `${tabKey}-${index}`,
+          displayText: record.displayText,
+          label: record.displayText,
+          searchText: record.normalizedSearch,
+          values: record.exportValues || [],
+          outputRow: record.exportValues || [],
+          sourceSheet: record.sourceSheet,
+          sortKey: record.sortKey || '',
+        };
+        // For БД.ОП expose opName and opNumber as dedicated fields so the UI
+        // tree never depends on parsing the label string.
+        if (tabKey === 'op') {
+          const exportRow = record.exportValues || [];
+          // exportValues[0] is always "Номер | Название" (the join kept for export)
+          const exportParts = String(exportRow[0] || '').split(' | ');
+          item.opNumber = exportParts[0] || '';
+          item.opName   = exportParts[1] || record.sortKey || '';
+        }
+        return item;
+      });
 
     payload.tabs[tabKey] = {
       key: tabKey,

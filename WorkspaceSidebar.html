@@ -1195,23 +1195,23 @@
           return;
         }
 
-        // Level 1: Название (group header)  →  Level 2: Номер (clickable, adds to queue)
-        // label format is "Название | Номер"
+        // Level 1: Название (group header, collapsible)
+        // Level 2: Номер   (leaf, click adds to queue)
+        // Use dedicated opName / opNumber fields — never parse label string.
         const groups = new Map();
         filtered.forEach((item) => {
-          const parts = (item.label || '').split(' | ');
-          const namePart   = parts[0] || item.label;  // Название → group key
-          const numberPart = parts[1] || namePart;    // Номер    → leaf
-          if (!groups.has(namePart)) {
-            groups.set(namePart, []);
+          const groupKey = item.opName || item.label;
+          const leafText = item.opNumber || item.label;
+          if (!groups.has(groupKey)) {
+            groups.set(groupKey, []);
           }
-          groups.get(namePart).push({ item, numberPart });
+          groups.get(groupKey).push({ item, leafText });
         });
 
         let firstGroup = true;
         const fragment = document.createDocumentFragment();
 
-        groups.forEach((children, groupName) => {
+        groups.forEach((leaves, groupName) => {
           const li = document.createElement('li');
 
           const header = document.createElement('div');
@@ -1226,7 +1226,7 @@
 
           const count = document.createElement('span');
           count.className = 'op-group-count';
-          count.textContent = children.length;
+          count.textContent = leaves.length;
 
           header.appendChild(arrow);
           header.appendChild(nameSpan);
@@ -1235,9 +1235,9 @@
           const childList = document.createElement('ul');
           childList.className = 'op-children' + (firstGroup && query ? ' open' : '');
 
-          children.forEach(({ item, numberPart }) => {
+          leaves.forEach(({ item, leafText }) => {
             const child = document.createElement('li');
-            child.textContent = numberPart;
+            child.textContent = leafText;
             child.title = item.label;
             child.onclick = function onClick() {
               addOperationToQueue('dbOp', item);
