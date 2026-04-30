@@ -70,7 +70,7 @@ function showTemplateSidebar() {
 }
 
 function showSaveTemplateDialog() {
-  ensureDemoLibraryInstalled_();
+  ensureInfrastructure_();
 
   const html = HtmlService.createHtmlOutputFromFile('SaveTemplateDialog')
     .setWidth(460)
@@ -89,7 +89,7 @@ function initializeDemoLibrary() {
 }
 
 function getTemplateCatalog() {
-  ensureDemoLibraryInstalled_();
+  ensureInfrastructure_();
   return readCatalog_().map((item) => ({
     id: item.id,
     title: item.title,
@@ -101,7 +101,7 @@ function getTemplateCatalog() {
 }
 
 function getSaveTemplateDialogState() {
-  ensureDemoLibraryInstalled_();
+  ensureInfrastructure_();
 
   const selection = getActiveWorkingRange_();
   return {
@@ -273,7 +273,7 @@ function ensureInfrastructure_(ssArg) {
   const ss = ssArg || SpreadsheetApp.getActive();
   ensureCatalogSheet_(ss);
   ensureStoreSheet_(ss);
-  ensureCanvasSheet_(ss);
+  removeCanvasSheet_();
 }
 
 function ensureCatalogSheet_(ss) {
@@ -540,7 +540,13 @@ function getColumnWidths_(range) {
 }
 
 function saveRenderedTemplateSpec_(ss, templateSpec) {
-  const canvasSheet = ensureCanvasSheet_(ss);
+  const canvasName = TECHMAP_APP.canvasSheetName;
+  let canvasSheet = ss.getSheetByName(canvasName);
+  if (!canvasSheet) {
+    canvasSheet = ss.insertSheet(canvasName);
+  }
+  canvasSheet.showSheet();
+
   renderTemplateSheet_(canvasSheet, templateSpec);
   const sourceRange = canvasSheet.getRange(TECHMAP_APP.templateRangeA1);
   const catalog = readCatalog_();
@@ -557,12 +563,18 @@ function saveRenderedTemplateSpec_(ss, templateSpec) {
     storeColumn: storeLocation.column,
     height: sourceRange.getNumRows(),
     width: sourceRange.getNumColumns(),
-    sourceSheet: canvasSheet.getName(),
+    sourceSheet: TECHMAP_APP.storeSheetName,
     sourceRange: sourceRange.getA1Notation(),
     updatedAt: new Date().toISOString(),
     rowHeightsJson: JSON.stringify(getRowHeights_(sourceRange)),
     columnWidthsJson: JSON.stringify(getColumnWidths_(sourceRange)),
   });
+
+  try {
+    ss.deleteSheet(canvasSheet);
+  } catch (e) {
+    canvasSheet.hideSheet();
+  }
 }
 
 function renderTemplateSheet_(sheet, templateSpec) {
@@ -965,7 +977,23 @@ function isSystemSheet_(sheetName) {
   return (
     sheetName === TECHMAP_APP.librarySheetName ||
     sheetName === TECHMAP_APP.storeSheetName ||
-    sheetName === TECHMAP_APP.canvasSheetName ||
     sheetName.indexOf(TECHMAP_APP.legacyTemplatePrefix) === 0
   );
+}
+
+function removeCanvasSheet_() {
+  const ss = SpreadsheetApp.getActive();
+  const canvas = ss.getSheetByName(TECHMAP_APP.canvasSheetName);
+  if (!canvas) {
+    return;
+  }
+  const nonSystem = ss.getSheets().filter((s) => !isSystemSheet_(s.getName()) && s.getName() !== TECHMAP_APP.canvasSheetName);
+  if (nonSystem.length > 0) {
+    ss.setActiveSheet(nonSystem[0]);
+  }
+  try {
+    ss.deleteSheet(canvas);
+  } catch (e) {
+    canvas.hideSheet();
+  }
 }
