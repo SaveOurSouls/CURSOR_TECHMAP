@@ -186,6 +186,15 @@
         flex: 1;
       }
 
+      .btn-danger {
+        background: #fce8e6;
+        color: #c5221f;
+      }
+
+      .btn-danger:hover {
+        background: #f5c6c4;
+      }
+
       .section-status {
         margin: 6px 0 0;
         font-size: 12px;
@@ -887,6 +896,7 @@
                 <div class="template-desc">${escapeHtml(item.description || '')}</div>
                 <div class="template-actions">
                   <button class="btn-primary" onclick="insertTemplate('${escapeHtml(item.id)}')">Вставить</button>
+                  <button class="btn-danger" onclick="confirmDeleteTemplate('${escapeHtml(item.id)}', '${escapeHtml(item.title)}')">Удалить</button>
                 </div>
               </div>
             `
@@ -922,12 +932,31 @@
         setTemplateStatus('Вставка шаблона...', false);
         google.script.run
           .withSuccessHandler((result) => {
-            setTemplateStatus(`Вставлен шаблон "${result.title}" в ${result.sheetName}!${result.insertedRange}`, false);
+            setTemplateStatus(`Вставлен "${result.title}" → ${result.sheetName}!${result.insertedRange}`, false);
           })
           .withFailureHandler((error) => {
             setTemplateStatus(error.message || 'Не удалось вставить шаблон.', true);
           })
           .insertTemplate(id);
+      }
+
+      function confirmDeleteTemplate(id, title) {
+        if (!window.confirm(`Удалить шаблон «${title}»?\nЭто действие нельзя отменить.`)) {
+          return;
+        }
+        setTemplateStatus(`Удаление «${title}»...`, false);
+        google.script.run
+          .withSuccessHandler((result) => {
+            templates = templates.filter((item) => item.id !== result.id);
+            populateTemplateCategories();
+            renderTemplates();
+            setTemplateStatus(`Шаблон «${result.title}» удалён. Всего: ${templates.length}`, false);
+            setMainStatus(`Техкарты: ${templates.length}`, false);
+          })
+          .withFailureHandler((error) => {
+            setTemplateStatus(error.message || 'Не удалось удалить шаблон.', true);
+          })
+          .deleteTemplate(id);
       }
 
       function switchMaterialTab(tabId, btnElement) {

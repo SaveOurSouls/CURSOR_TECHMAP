@@ -369,6 +369,47 @@ function upsertCatalogRecord_(catalogSheet, record) {
   catalogSheet.getRange(targetRow, 1, 1, TECHMAP_APP.catalogHeaders.length).setValues(rowValues);
 }
 
+function deleteTemplate(templateId) {
+  if (!templateId) {
+    throw new Error('Не передан идентификатор шаблона.');
+  }
+
+  const ss = SpreadsheetApp.getActive();
+  const catalogSheet = ensureCatalogSheet_(ss);
+  const catalog = readCatalog_();
+  const index = catalog.findIndex((item) => item.id === templateId);
+
+  if (index < 0) {
+    throw new Error(`Шаблон "${templateId}" не найден.`);
+  }
+
+  const template = catalog[index];
+
+  const storeSheet = ensureStoreSheet_(ss);
+  const storeLastRow = storeSheet.getLastRow();
+  const storeLastCol = storeSheet.getLastColumn();
+  if (
+    template.storeRow > 0 &&
+    template.height > 0 &&
+    template.width > 0 &&
+    storeLastRow >= template.storeRow &&
+    storeLastCol >= template.storeColumn
+  ) {
+    const clearRows = Math.min(template.height, storeLastRow - template.storeRow + 1);
+    const clearCols = Math.min(template.width, storeLastCol - template.storeColumn + 1);
+    if (clearRows > 0 && clearCols > 0) {
+      storeSheet
+        .getRange(template.storeRow, template.storeColumn, clearRows, clearCols)
+        .clear({ contentsOnly: false });
+    }
+  }
+
+  const catalogRow = index + 2;
+  catalogSheet.deleteRow(catalogRow);
+
+  return { deleted: true, id: templateId, title: template.title };
+}
+
 function getTemplateById_(templateId) {
   const template = readCatalog_().find((item) => item.id === templateId);
   if (!template) {
