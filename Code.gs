@@ -375,39 +375,47 @@ function deleteTemplate(templateId) {
   }
 
   const ss = SpreadsheetApp.getActive();
-  const catalogSheet = ensureCatalogSheet_(ss);
-  const catalog = readCatalog_();
-  const index = catalog.findIndex((item) => item.id === templateId);
 
-  if (index < 0) {
+  const catalogSheet = ss.getSheetByName(TECHMAP_APP.librarySheetName);
+  if (!catalogSheet) {
+    throw new Error('Каталог шаблонов не найден.');
+  }
+
+  const lastRow = catalogSheet.getLastRow();
+  if (lastRow < 2) {
     throw new Error(`Шаблон "${templateId}" не найден.`);
   }
 
-  const template = catalog[index];
+  const rawIds = catalogSheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  const rowIndex = rawIds.findIndex((r) => String(r[0]).trim() === templateId);
+  if (rowIndex < 0) {
+    throw new Error(`Шаблон "${templateId}" не найден.`);
+  }
 
-  const storeSheet = ensureStoreSheet_(ss);
-  const storeLastRow = storeSheet.getLastRow();
-  const storeLastCol = storeSheet.getLastColumn();
-  if (
-    template.storeRow > 0 &&
-    template.height > 0 &&
-    template.width > 0 &&
-    storeLastRow >= template.storeRow &&
-    storeLastCol >= template.storeColumn
-  ) {
-    const clearRows = Math.min(template.height, storeLastRow - template.storeRow + 1);
-    const clearCols = Math.min(template.width, storeLastCol - template.storeColumn + 1);
-    if (clearRows > 0 && clearCols > 0) {
-      storeSheet
-        .getRange(template.storeRow, template.storeColumn, clearRows, clearCols)
-        .clear({ contentsOnly: false });
+  const catalogDataRow = rowIndex + 2;
+  const rawRow = catalogSheet.getRange(catalogDataRow, 1, 1, TECHMAP_APP.catalogHeaders.length).getValues()[0];
+  const title = String(rawRow[1] || templateId);
+  const storeRow = Number(rawRow[4]) || 0;
+  const storeColumn = Number(rawRow[5]) || 0;
+  const height = Number(rawRow[6]) || 0;
+  const width = Number(rawRow[7]) || 0;
+
+  if (storeRow > 0 && height > 0 && width > 0) {
+    const storeSheet = ss.getSheetByName(TECHMAP_APP.storeSheetName);
+    if (storeSheet) {
+      const storeMaxRow = storeSheet.getLastRow();
+      const storeMaxCol = storeSheet.getLastColumn();
+      const clearRows = Math.min(height, storeMaxRow - storeRow + 1);
+      const clearCols = Math.min(width, storeMaxCol - storeColumn + 1);
+      if (clearRows > 0 && clearCols > 0) {
+        storeSheet.getRange(storeRow, storeColumn, clearRows, clearCols).clearContent();
+      }
     }
   }
 
-  const catalogRow = index + 2;
-  catalogSheet.deleteRow(catalogRow);
+  catalogSheet.deleteRow(catalogDataRow);
 
-  return { deleted: true, id: templateId, title: template.title };
+  return { deleted: true, id: templateId, title };
 }
 
 function getTemplateById_(templateId) {
