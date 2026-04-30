@@ -793,9 +793,9 @@
 
           <div id="opDbTerTab" class="tab-content">
             <button class="action-btn gray" onclick="refreshOperationsDatabase()">Обновить базу техопераций</button>
-            <input type="text" id="opDbTerSearch" class="mini-search-input" placeholder="Поиск по комплектующим и аналогам..." autocomplete="off" />
+            <input type="text" id="opDbTerSearch" class="mini-search-input" placeholder="Поиск по производителю, серии, комплектующей..." autocomplete="off" />
             <div class="scroll-area">
-              <ul id="opDbTerResults"></ul>
+              <ul id="opDbTerResults" class="op-tree"></ul>
             </div>
           </div>
 
@@ -1152,6 +1152,10 @@
           renderOpTree();
           return;
         }
+        if (dbKey === 'dbTer') {
+          renderTerTree();
+          return;
+        }
         const config = getOperationTabConfig(dbKey);
         const query = normalizeSearch(document.getElementById(config.searchInputId).value);
         const list = document.getElementById(config.resultsId);
@@ -1255,6 +1259,123 @@
           li.appendChild(childList);
           fragment.appendChild(li);
           firstGroup = false;
+        });
+
+        list.appendChild(fragment);
+      }
+
+      function renderTerTree() {
+        const list = document.getElementById('opDbTerResults');
+        const query = normalizeSearch(document.getElementById('opDbTerSearch').value);
+        const rows = operationDb.dbTer || [];
+        list.innerHTML = '';
+
+        const filtered = !query
+          ? rows
+          : rows.filter((item) => (item.searchText || '').indexOf(query) !== -1);
+
+        if (!filtered.length) {
+          const empty = document.createElement('li');
+          empty.style.cssText = 'padding:10px;color:#80868b;font-size:12px;';
+          empty.textContent = query ? 'Ничего не найдено.' : 'База не загружена.';
+          list.appendChild(empty);
+          return;
+        }
+
+        // Build 3-level: Производитель → Серия → Комплектующая
+        const manufacturers = new Map();
+        filtered.forEach((item) => {
+          const mfr    = item.terManufacturer || '—';
+          const series = item.terSeries       || '—';
+          const comp   = item.terComponent    || item.label;
+          if (!manufacturers.has(mfr)) manufacturers.set(mfr, new Map());
+          const seriesMap = manufacturers.get(mfr);
+          if (!seriesMap.has(series)) seriesMap.set(series, []);
+          seriesMap.get(series).push({ item, comp });
+        });
+
+        const fragment = document.createDocumentFragment();
+        let firstMfr = true;
+
+        manufacturers.forEach((seriesMap, mfrName) => {
+          const mfrLi = document.createElement('li');
+          const mfrHeader = document.createElement('div');
+          mfrHeader.className = 'op-group-header' + (firstMfr && query ? ' open' : '');
+
+          const mfrArrow = document.createElement('span');
+          mfrArrow.className = 'op-arrow';
+          mfrArrow.textContent = '▶';
+          const mfrSpan = document.createElement('span');
+          mfrSpan.textContent = mfrName;
+          const mfrCount = document.createElement('span');
+          mfrCount.className = 'op-group-count';
+          let totalItems = 0;
+          seriesMap.forEach((items) => { totalItems += items.length; });
+          mfrCount.textContent = totalItems;
+          mfrHeader.appendChild(mfrArrow);
+          mfrHeader.appendChild(mfrSpan);
+          mfrHeader.appendChild(mfrCount);
+
+          const mfrChildren = document.createElement('ul');
+          mfrChildren.className = 'op-children' + (firstMfr && query ? ' open' : '');
+          mfrChildren.style.background = '#fff';
+
+          seriesMap.forEach((leaves, seriesName) => {
+            const serLi = document.createElement('li');
+            serLi.style.padding = '0';
+
+            const serHeader = document.createElement('div');
+            serHeader.className = 'op-group-header';
+            serHeader.style.paddingLeft = '20px';
+            serHeader.style.fontWeight = 'normal';
+            serHeader.style.color = '#3c4043';
+
+            const serArrow = document.createElement('span');
+            serArrow.className = 'op-arrow';
+            serArrow.textContent = '▶';
+            const serSpan = document.createElement('span');
+            serSpan.textContent = seriesName;
+            const serCount = document.createElement('span');
+            serCount.className = 'op-group-count';
+            serCount.textContent = leaves.length;
+            serHeader.appendChild(serArrow);
+            serHeader.appendChild(serSpan);
+            serHeader.appendChild(serCount);
+
+            const serChildren = document.createElement('ul');
+            serChildren.className = 'op-children';
+            serChildren.style.background = '#f1f3f4';
+
+            leaves.forEach(({ item, comp }) => {
+              const child = document.createElement('li');
+              child.style.paddingLeft = '36px';
+              child.textContent = comp;
+              child.title = item.label;
+              child.onclick = function() { addOperationToQueue('dbTer', item); };
+              serChildren.appendChild(child);
+            });
+
+            serHeader.onclick = function() {
+              const isOpen = serHeader.classList.contains('open');
+              serHeader.classList.toggle('open', !isOpen);
+              serChildren.classList.toggle('open', !isOpen);
+            };
+
+            serLi.appendChild(serHeader);
+            serLi.appendChild(serChildren);
+            mfrChildren.appendChild(serLi);
+          });
+
+          mfrHeader.onclick = function() {
+            const isOpen = mfrHeader.classList.contains('open');
+            mfrHeader.classList.toggle('open', !isOpen);
+            mfrChildren.classList.toggle('open', !isOpen);
+          };
+
+          mfrLi.appendChild(mfrHeader);
+          mfrLi.appendChild(mfrChildren);
+          fragment.appendChild(mfrLi);
+          firstMfr = false;
         });
 
         list.appendChild(fragment);

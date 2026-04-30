@@ -92,12 +92,23 @@ function syncTechOperationsDatabaseMenu() {
 function syncTechOperationsDatabase() {
   const ss = SpreadsheetApp.getActive();
   ensureTechOperationsInfrastructure_(ss);
+  clearTechOperationsCache_();
 
   const snapshot = fetchTechOperationsSnapshotFromSource_();
   writeTechOperationsSnapshotToSheets_(snapshot);
   cacheTechOperationsSnapshot_(snapshot);
   hideTechOperationsSheets_();
   return buildTechOperationsSummary_(snapshot);
+}
+
+function clearTechOperationsCache_() {
+  const cache = CacheService.getDocumentCache();
+  const countValue = cache.get(`${TECHOPS_DB_APP.cacheKeyPrefix}:count`);
+  const count = toInt_(countValue) || 0;
+  cache.remove(`${TECHOPS_DB_APP.cacheKeyPrefix}:count`);
+  for (let i = 0; i < count; i += 1) {
+    cache.remove(`${TECHOPS_DB_APP.cacheKeyPrefix}:chunk:${i}`);
+  }
 }
 
 function getTechOperationsDatabase(forceRefresh) {
@@ -465,12 +476,12 @@ function buildTechOperationsOpRecord_(row, headerMap, sourceSheet) {
 }
 
 function buildTechOperationsTerRecord_(row, headerMap, sourceSheet) {
-  const values = [
-    getTechOperationsCellByAliases_(row, headerMap, ['комплектующая']),
-    getTechOperationsCellByAliases_(row, headerMap, ['аналог']),
-    getTechOperationsCellByAliases_(row, headerMap, ['серия разъемов', 'серияразъемов']),
-    getTechOperationsCellByAliases_(row, headerMap, ['производитель', 'бренд', 'manufacturer']),
-  ];
+  const manufacturer = getTechOperationsCellByAliases_(row, headerMap, ['производитель', 'бренд', 'manufacturer']);
+  const series       = getTechOperationsCellByAliases_(row, headerMap, ['серия разъемов', 'серияразъемов', 'серия']);
+  const component    = getTechOperationsCellByAliases_(row, headerMap, ['комплектующая']);
+  const analog       = getTechOperationsCellByAliases_(row, headerMap, ['аналог']);
+
+  const values = [component, analog, series, manufacturer];
   const displayText = joinTechOperationsParts_(values, ' | ');
   if (!displayText) {
     return null;
@@ -478,6 +489,9 @@ function buildTechOperationsTerRecord_(row, headerMap, sourceSheet) {
   return {
     tabKey: 'ter',
     displayText,
+    terManufacturer: manufacturer,
+    terSeries:       series,
+    terComponent:    component,
     normalizedSearch: normalizeTechOperationsSearch_(displayText),
     exportValues: values,
     sourceSheet,
@@ -698,14 +712,16 @@ function buildTechOperationsPayload_(snapshot) {
           sourceSheet: record.sourceSheet,
           sortKey: record.sortKey || '',
         };
-        // For БД.ОП expose opName and opNumber as dedicated fields so the UI
-        // tree never depends on parsing the label string.
         if (tabKey === 'op') {
           const exportRow = record.exportValues || [];
-          // exportValues[0] is always "Номер | Название" (the join kept for export)
           const exportParts = String(exportRow[0] || '').split(' | ');
           item.opNumber = exportParts[0] || '';
           item.opName   = exportParts[1] || record.sortKey || '';
+        }
+        if (tabKey === 'ter') {
+          item.terManufacturer = record.terManufacturer || '';
+          item.terSeries       = record.terSeries       || '';
+          item.terComponent    = record.terComponent    || '';
         }
         return item;
       });

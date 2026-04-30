@@ -34,6 +34,7 @@ function onOpen() {
     .addItem('Сохранить выделение как шаблон', 'showSaveTemplateDialog')
     .addSeparator()
     .addItem('Проверить доступ к внешним БД', 'authorizeExternalDatabases')
+    .addItem('Обновить все базы', 'refreshAllDatabases')
     .addItem('Обновить базу материалов', 'refreshMaterialsDatabase')
     .addItem('Обновить базу техопераций', 'refreshOperationDatabase')
     .addToUi();
@@ -45,6 +46,17 @@ function showWorkspaceSidebar() {
     .setWidth(420);
 
   SpreadsheetApp.getUi().showSidebar(html);
+}
+
+function refreshAllDatabases() {
+  const ui = SpreadsheetApp.getUi();
+  const matSummary = syncMaterialDatabase();
+  const opsSummary = syncTechOperationsDatabase();
+  ui.alert(
+    'Все базы обновлены.',
+    `Материалы: ${matSummary.recordCount} позиций\nТехоперации: ${opsSummary.recordCount} строк`,
+    ui.ButtonSet.OK
+  );
 }
 
 function authorizeExternalDatabases() {

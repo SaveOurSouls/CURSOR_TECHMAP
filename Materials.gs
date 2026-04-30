@@ -52,12 +52,23 @@ function syncMaterialDatabaseMenu() {
 function syncMaterialDatabase() {
   const ss = SpreadsheetApp.getActive();
   ensureMaterialInfrastructure_(ss);
+  clearMaterialCache_();
 
   const snapshot = fetchMaterialSnapshotFromSource_();
   writeMaterialSnapshotToSheets_(snapshot);
   cacheMaterialSnapshot_(snapshot);
   hideMaterialSheets_();
   return buildMaterialSummary_(snapshot);
+}
+
+function clearMaterialCache_() {
+  const cache = CacheService.getDocumentCache();
+  const countValue = cache.get(`${MATERIAL_DB_APP.cacheKeyPrefix}:count`);
+  const count = toInt_(countValue) || 0;
+  cache.remove(`${MATERIAL_DB_APP.cacheKeyPrefix}:count`);
+  for (let i = 0; i < count; i += 1) {
+    cache.remove(`${MATERIAL_DB_APP.cacheKeyPrefix}:chunk:${i}`);
+  }
 }
 
 function getMaterialSearchData() {
