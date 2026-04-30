@@ -195,6 +195,53 @@
         background: #f5c6c4;
       }
 
+      /* Two-level БД.ОП tree */
+      .op-tree { list-style: none; padding: 0; margin: 0; }
+      .op-tree .op-group-header {
+        padding: 7px 10px 7px 8px;
+        border-bottom: 1px solid #e8eaed;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 600;
+        color: #1f1f1f;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        user-select: none;
+      }
+      .op-tree .op-group-header:hover { background: #f1f3f4; }
+      .op-tree .op-group-header .op-arrow {
+        font-size: 9px;
+        color: #80868b;
+        transition: transform 0.15s;
+        flex-shrink: 0;
+      }
+      .op-tree .op-group-header.open .op-arrow { transform: rotate(90deg); }
+      .op-tree .op-group-count {
+        margin-left: auto;
+        font-size: 10px;
+        color: #80868b;
+        font-weight: normal;
+      }
+      .op-tree .op-children {
+        display: none;
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        background: #f8f9fa;
+      }
+      .op-tree .op-children.open { display: block; }
+      .op-tree .op-children li {
+        padding: 5px 10px 5px 26px;
+        border-bottom: 1px solid #f1f3f4;
+        cursor: pointer;
+        font-size: 11px;
+        color: #3c4043;
+      }
+      .op-tree .op-children li:hover { background: #e8f0fe; color: #1a73e8; }
+      body.compact-mode .op-tree .op-group-header { padding: 5px 8px 5px 6px; font-size: 11px; }
+      body.compact-mode .op-tree .op-children li { padding: 4px 8px 4px 20px; font-size: 10px; }
+
       .section-status {
         margin: 6px 0 0;
         font-size: 12px;
@@ -738,9 +785,9 @@
 
           <div id="opDbOpTab" class="tab-content">
             <button class="action-btn gray" onclick="refreshOperationsDatabase()">Обновить базу техопераций</button>
-            <input type="text" id="opDbOpSearch" class="mini-search-input" placeholder="Поиск по Номер | Название..." autocomplete="off" />
+            <input type="text" id="opDbOpSearch" class="mini-search-input" placeholder="Поиск по названию или номеру..." autocomplete="off" />
             <div class="scroll-area">
-              <ul id="opDbOpResults"></ul>
+              <ul id="opDbOpResults" class="op-tree"></ul>
             </div>
           </div>
 
@@ -1101,6 +1148,10 @@
       }
 
       function renderOperationResults(dbKey) {
+        if (dbKey === 'dbOp') {
+          renderOpTree();
+          return;
+        }
         const config = getOperationTabConfig(dbKey);
         const query = normalizeSearch(document.getElementById(config.searchInputId).value);
         const list = document.getElementById(config.resultsId);
@@ -1120,6 +1171,99 @@
           };
           fragment.appendChild(li);
         });
+        list.appendChild(fragment);
+      }
+
+      function renderOpTree() {
+        const list = document.getElementById('opDbOpResults');
+        const query = normalizeSearch(document.getElementById('opDbOpSearch').value);
+        const rows = operationDb.dbOp || [];
+        list.innerHTML = '';
+
+        // Filter rows by query (searches both name and number parts of label)
+        const filtered = !query
+          ? rows
+          : rows.filter((item) => (item.searchText || '').indexOf(query) !== -1);
+
+        if (!filtered.length) {
+          const empty = document.createElement('li');
+          empty.style.padding = '10px';
+          empty.style.color = '#80868b';
+          empty.style.fontSize = '12px';
+          empty.textContent = query ? 'Ничего не найдено.' : 'База не загружена.';
+          list.appendChild(empty);
+          return;
+        }
+
+        // Group by name (part before " | " in label, which is now "Название | Номер")
+        const groups = new Map();
+        filtered.forEach((item) => {
+          const parts = (item.label || '').split(' | ');
+          const groupName = parts[0] || item.label;
+          if (!groups.has(groupName)) {
+            groups.set(groupName, []);
+          }
+          groups.get(groupName).push(item);
+        });
+
+        // Expand the first matching group when searching
+        let firstGroup = true;
+        const fragment = document.createDocumentFragment();
+
+        groups.forEach((items, groupName) => {
+          const li = document.createElement('li');
+
+          const header = document.createElement('div');
+          header.className = 'op-group-header';
+          if (firstGroup && query) {
+            header.classList.add('open');
+          }
+
+          const arrow = document.createElement('span');
+          arrow.className = 'op-arrow';
+          arrow.textContent = '▶';
+
+          const nameSpan = document.createElement('span');
+          nameSpan.textContent = groupName;
+
+          const count = document.createElement('span');
+          count.className = 'op-group-count';
+          count.textContent = items.length;
+
+          header.appendChild(arrow);
+          header.appendChild(nameSpan);
+          header.appendChild(count);
+
+          const children = document.createElement('ul');
+          children.className = 'op-children';
+          if (firstGroup && query) {
+            children.classList.add('open');
+          }
+
+          items.forEach((item) => {
+            const parts = (item.label || '').split(' | ');
+            const numberPart = parts[1] || item.label;
+            const child = document.createElement('li');
+            child.textContent = numberPart;
+            child.title = item.label;
+            child.onclick = function onClick() {
+              addOperationToQueue('dbOp', item);
+            };
+            children.appendChild(child);
+          });
+
+          header.onclick = function onHeaderClick() {
+            const isOpen = header.classList.contains('open');
+            header.classList.toggle('open', !isOpen);
+            children.classList.toggle('open', !isOpen);
+          };
+
+          li.appendChild(header);
+          li.appendChild(children);
+          fragment.appendChild(li);
+          firstGroup = false;
+        });
+
         list.appendChild(fragment);
       }
 
