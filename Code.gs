@@ -280,15 +280,13 @@ function ensureCatalogSheet_(ss) {
   let sheet = ss.getSheetByName(TECHMAP_APP.librarySheetName);
   if (!sheet) {
     sheet = ss.insertSheet(TECHMAP_APP.librarySheetName);
+    sheet
+      .getRange(1, 1, 1, TECHMAP_APP.catalogHeaders.length)
+      .setValues([TECHMAP_APP.catalogHeaders])
+      .setFontWeight('bold')
+      .setBackground('#d9e2f3');
+    sheet.hideSheet();
   }
-
-  ensureSheetCapacity_(sheet, 2, TECHMAP_APP.catalogHeaders.length);
-  sheet
-    .getRange(1, 1, 1, TECHMAP_APP.catalogHeaders.length)
-    .setValues([TECHMAP_APP.catalogHeaders])
-    .setFontWeight('bold')
-    .setBackground('#d9e2f3');
-  sheet.hideSheet();
   return sheet;
 }
 
@@ -296,11 +294,8 @@ function ensureStoreSheet_(ss) {
   let sheet = ss.getSheetByName(TECHMAP_APP.storeSheetName);
   if (!sheet) {
     sheet = ss.insertSheet(TECHMAP_APP.storeSheetName);
+    sheet.hideSheet();
   }
-
-  ensureSheetCapacity_(sheet, 10, 20);
-  sheet.getRange('A1').setNote('Склад шаблонов. Не редактировать вручную.');
-  sheet.hideSheet();
   return sheet;
 }
 
@@ -386,34 +381,44 @@ function deleteTemplate(templateId) {
     throw new Error(`Шаблон "${templateId}" не найден.`);
   }
 
-  const rawIds = catalogSheet.getRange(2, 1, lastRow - 1, 1).getValues();
-  const rowIndex = rawIds.findIndex((r) => String(r[0]).trim() === templateId);
+  // Читаем весь каталог одним вызовом, чтобы исключить гонку состояний
+  const allRows = catalogSheet.getRange(2, 1, lastRow - 1, TECHMAP_APP.catalogHeaders.length).getValues();
+  const rowIndex = allRows.findIndex((r) => String(r[0]).trim() === templateId);
   if (rowIndex < 0) {
     throw new Error(`Шаблон "${templateId}" не найден.`);
   }
 
-  const catalogDataRow = rowIndex + 2;
-  const rawRow = catalogSheet.getRange(catalogDataRow, 1, 1, TECHMAP_APP.catalogHeaders.length).getValues()[0];
+  const rawRow = allRows[rowIndex];
   const title = String(rawRow[1] || templateId);
   const storeRow = Number(rawRow[4]) || 0;
-  const storeColumn = Number(rawRow[5]) || 0;
   const height = Number(rawRow[6]) || 0;
-  const width = Number(rawRow[7]) || 0;
 
-  if (storeRow > 0 && height > 0 && width > 0) {
+  // Удаляем строки из _TC_STORE полностью (а не только контент)
+  if (storeRow > 0 && height > 0) {
     const storeSheet = ss.getSheetByName(TECHMAP_APP.storeSheetName);
     if (storeSheet) {
       const storeMaxRow = storeSheet.getLastRow();
-      const storeMaxCol = storeSheet.getLastColumn();
-      const clearRows = Math.min(height, storeMaxRow - storeRow + 1);
-      const clearCols = Math.min(width, storeMaxCol - storeColumn + 1);
-      if (clearRows > 0 && clearCols > 0) {
-        storeSheet.getRange(storeRow, storeColumn, clearRows, clearCols).clearContent();
+      const deleteFrom = storeRow;
+      const deleteCount = Math.min(height, storeMaxRow - deleteFrom + 1);
+      if (deleteCount > 0) {
+        storeSheet.deleteRows(deleteFrom, deleteCount);
+        // Сдвигаем storeRow в каталоге для всех шаблонов, чьи строки ниже удалённых
+        for (let i = 0; i < allRows.length; i += 1) {
+          if (i === rowIndex) {
+            continue;
+          }
+          const otherStoreRow = Number(allRows[i][4]) || 0;
+          if (otherStoreRow > storeRow) {
+            const catalogRow = i + 2;
+            catalogSheet.getRange(catalogRow, 5).setValue(otherStoreRow - deleteCount);
+          }
+        }
       }
     }
   }
 
-  catalogSheet.deleteRow(catalogDataRow);
+  // Удаляем строку из каталога
+  catalogSheet.deleteRow(rowIndex + 2);
 
   return { deleted: true, id: templateId, title };
 }
