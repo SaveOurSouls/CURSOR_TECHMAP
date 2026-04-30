@@ -1195,22 +1195,16 @@
           return;
         }
 
-        // Group by name (part before " | " in label, which is now "Название | Номер")
-        const groups = new Map();
-        filtered.forEach((item) => {
-          const parts = (item.label || '').split(' | ');
-          const groupName = parts[0] || item.label;
-          if (!groups.has(groupName)) {
-            groups.set(groupName, []);
-          }
-          groups.get(groupName).push(item);
-        });
-
-        // Expand the first matching group when searching
+        // Level 1: Номер  →  Level 2: Название
+        // label format is "Название | Номер"
         let firstGroup = true;
         const fragment = document.createDocumentFragment();
 
-        groups.forEach((items, groupName) => {
+        filtered.forEach((item) => {
+          const parts = (item.label || '').split(' | ');
+          const namePart   = parts[0] || item.label;  // Название
+          const numberPart = parts[1] || '';           // Номер
+
           const li = document.createElement('li');
 
           const header = document.createElement('div');
@@ -1223,16 +1217,11 @@
           arrow.className = 'op-arrow';
           arrow.textContent = '▶';
 
-          const nameSpan = document.createElement('span');
-          nameSpan.textContent = groupName;
-
-          const count = document.createElement('span');
-          count.className = 'op-group-count';
-          count.textContent = items.length;
+          const numSpan = document.createElement('span');
+          numSpan.textContent = numberPart || namePart;
 
           header.appendChild(arrow);
-          header.appendChild(nameSpan);
-          header.appendChild(count);
+          header.appendChild(numSpan);
 
           const children = document.createElement('ul');
           children.className = 'op-children';
@@ -1240,17 +1229,13 @@
             children.classList.add('open');
           }
 
-          items.forEach((item) => {
-            const parts = (item.label || '').split(' | ');
-            const numberPart = parts[1] || item.label;
-            const child = document.createElement('li');
-            child.textContent = numberPart;
-            child.title = item.label;
-            child.onclick = function onClick() {
-              addOperationToQueue('dbOp', item);
-            };
-            children.appendChild(child);
-          });
+          const child = document.createElement('li');
+          child.textContent = namePart;
+          child.title = item.label;
+          child.onclick = function onClick() {
+            addOperationToQueue('dbOp', item);
+          };
+          children.appendChild(child);
 
           header.onclick = function onHeaderClick() {
             const isOpen = header.classList.contains('open');
