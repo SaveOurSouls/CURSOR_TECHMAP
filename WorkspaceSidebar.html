@@ -1195,56 +1195,64 @@
           return;
         }
 
-        // Level 1: Номер  →  Level 2: Название
+        // Level 1: Название (group header)  →  Level 2: Номер (clickable, adds to queue)
         // label format is "Название | Номер"
+        const groups = new Map();
+        filtered.forEach((item) => {
+          const parts = (item.label || '').split(' | ');
+          const namePart   = parts[0] || item.label;  // Название → group key
+          const numberPart = parts[1] || namePart;    // Номер    → leaf
+          if (!groups.has(namePart)) {
+            groups.set(namePart, []);
+          }
+          groups.get(namePart).push({ item, numberPart });
+        });
+
         let firstGroup = true;
         const fragment = document.createDocumentFragment();
 
-        filtered.forEach((item) => {
-          const parts = (item.label || '').split(' | ');
-          const namePart   = parts[0] || item.label;  // Название
-          const numberPart = parts[1] || '';           // Номер
-
+        groups.forEach((children, groupName) => {
           const li = document.createElement('li');
 
           const header = document.createElement('div');
-          header.className = 'op-group-header';
-          if (firstGroup && query) {
-            header.classList.add('open');
-          }
+          header.className = 'op-group-header' + (firstGroup && query ? ' open' : '');
 
           const arrow = document.createElement('span');
           arrow.className = 'op-arrow';
           arrow.textContent = '▶';
 
-          const numSpan = document.createElement('span');
-          numSpan.textContent = numberPart || namePart;
+          const nameSpan = document.createElement('span');
+          nameSpan.textContent = groupName;
+
+          const count = document.createElement('span');
+          count.className = 'op-group-count';
+          count.textContent = children.length;
 
           header.appendChild(arrow);
-          header.appendChild(numSpan);
+          header.appendChild(nameSpan);
+          header.appendChild(count);
 
-          const children = document.createElement('ul');
-          children.className = 'op-children';
-          if (firstGroup && query) {
-            children.classList.add('open');
-          }
+          const childList = document.createElement('ul');
+          childList.className = 'op-children' + (firstGroup && query ? ' open' : '');
 
-          const child = document.createElement('li');
-          child.textContent = namePart;
-          child.title = item.label;
-          child.onclick = function onClick() {
-            addOperationToQueue('dbOp', item);
-          };
-          children.appendChild(child);
+          children.forEach(({ item, numberPart }) => {
+            const child = document.createElement('li');
+            child.textContent = numberPart;
+            child.title = item.label;
+            child.onclick = function onClick() {
+              addOperationToQueue('dbOp', item);
+            };
+            childList.appendChild(child);
+          });
 
           header.onclick = function onHeaderClick() {
             const isOpen = header.classList.contains('open');
             header.classList.toggle('open', !isOpen);
-            children.classList.toggle('open', !isOpen);
+            childList.classList.toggle('open', !isOpen);
           };
 
           li.appendChild(header);
-          li.appendChild(children);
+          li.appendChild(childList);
           fragment.appendChild(li);
           firstGroup = false;
         });
