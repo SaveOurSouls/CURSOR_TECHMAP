@@ -475,26 +475,124 @@ function validateTemplateRange_(range) {
 }
 
 function allocateStoreLocation_(range, existingTemplate, catalog) {
+  // Reuse exact slot when size matches
   if (
     existingTemplate &&
     existingTemplate.height === range.getNumRows() &&
     existingTemplate.width === range.getNumColumns()
   ) {
-    return {
-      row: existingTemplate.storeRow,
-      column: existingTemplate.storeColumn,
-    };
+    return { row: existingTemplate.storeRow, column: existingTemplate.storeColumn };
   }
 
-  const nextRow = catalog.reduce((maxRow, item) => {
-    const itemLastRow = item.storeRow + item.height - 1;
-    return Math.max(maxRow, itemLastRow);
-  }, 0) + TECHMAP_APP.spacerRows + 1;
+  // Compact the store first so there are no phantom empty rows from old deletions
+  compactifyStore_(catalog);
 
-  return {
-    row: nextRow,
-    column: 1,
-  };
+  // After compaction catalog storeRow values are now consecutive;
+  // place new template right after the last live block.
+  const freshCatalog = readCatalog_();
+  const nextRow = freshCatalog.reduce((maxRow, item) => {
+    if (existingTemplate && item.id === existingTemplate.id) {
+      return maxRow; // skip the template being replaced
+    }
+    return Math.max(maxRow, item.storeRow + item.height - 1);
+  }, 0) + 1;
+
+  return { row: nextRow, column: 1 };
+}
+
+/**
+ * Physically rewrites _TC_STORE so it contains only live template blocks
+ * packed together from row 1, and updates storeRow in the catalog.
+ * Should be called before inserting a new template block.
+ */
+function compactifyStore_(catalog) {
+  const ss = SpreadsheetApp.getActive();
+  const storeSheet = ensureStoreSheet_(ss);
+  const catalogSheet = ss.getSheetByName(TECHMAP_APP.librarySheetName);
+  if (!catalogSheet) {
+    return;
+  }
+
+  // Sort live templates by their current storeRow so we rewrite top-to-bottom
+  const live = (catalog || [])
+    .filter((item) => item.storeRow > 0 && item.height > 0 && item.width > 0)
+    .sort((a, b) => a.storeRow - b.storeRow);
+
+  if (!live.length) {
+    // Nothing to keep — clear everything
+    const maxRow = storeSheet.getLastRow();
+    if (maxRow > 0) {
+      storeSheet.deleteRows(1, maxRow);
+    }
+    return;
+  }
+
+  // Check whether store is already compact (no gaps, rows start at 1)
+  let alreadyCompact = true;
+  let cursor = 1;
+  for (const item of live) {
+    if (item.storeRow !== cursor) {
+      alreadyCompact = false;
+      break;
+    }
+    cursor += item.height;
+  }
+  if (alreadyCompact) {
+    return;
+  }
+
+  // Build compacted content by copying each live block in order
+  // We do this on a temp hidden sheet to avoid overwriting source while reading
+  const tempName = '_TC_COMPACT_TMP';
+  let tempSheet = ss.getSheetByName(tempName);
+  if (tempSheet) {
+    ss.deleteSheet(tempSheet);
+  }
+  tempSheet = ss.insertSheet(tempName);
+  tempSheet.hideSheet();
+
+  let writeRow = 1;
+  const newStoreRows = {}; // id -> new storeRow
+
+  live.forEach((item) => {
+    const srcRange = storeSheet.getRange(item.storeRow, item.storeColumn, item.height, item.width);
+    ensureSheetCapacity_(tempSheet, writeRow + item.height - 1, item.width);
+    const destRange = tempSheet.getRange(writeRow, 1, item.height, item.width);
+    destRange.breakApart();
+    srcRange.copyTo(destRange, SpreadsheetApp.CopyPasteType.PASTE_NORMAL, false);
+    newStoreRows[item.id] = writeRow;
+    writeRow += item.height;
+  });
+
+  // Clear old store and copy compacted content back
+  const storeLastRow = storeSheet.getLastRow();
+  if (storeLastRow > 0) {
+    storeSheet.deleteRows(1, storeLastRow);
+  }
+  if (writeRow > 1) {
+    ensureSheetCapacity_(storeSheet, writeRow - 1, live[0].width || 20);
+    const compactedRange = tempSheet.getRange(1, 1, writeRow - 1, live[0].width || 20);
+    compactedRange.copyTo(
+      storeSheet.getRange(1, 1, writeRow - 1, live[0].width || 20),
+      SpreadsheetApp.CopyPasteType.PASTE_NORMAL,
+      false
+    );
+  }
+
+  ss.deleteSheet(tempSheet);
+
+  // Update storeRow in catalog for all items that moved
+  const catalogLastRow = catalogSheet.getLastRow();
+  if (catalogLastRow < 2) {
+    return;
+  }
+  const catalogIds = catalogSheet.getRange(2, 1, catalogLastRow - 1, 1).getValues();
+  catalogIds.forEach((row, idx) => {
+    const id = String(row[0]).trim();
+    if (newStoreRows[id] !== undefined) {
+      catalogSheet.getRange(idx + 2, 5).setValue(newStoreRows[id]);
+    }
+  });
 }
 
 function writeRangeToStore_(sourceRange, storeRow, storeColumn) {
