@@ -3,7 +3,7 @@ const TECHOPS_DB_APP = {
   metaSheetName: '_TC_TECHOPS_META',
   dataSheetName: '_TC_TECHOPS_DB',
   metaHeaders: ['key', 'value'],
-  dataHeaders: ['tabKey', 'displayText', 'normalizedSearch', 'exportJson', 'sourceSheet'],
+  dataHeaders: ['tabKey', 'displayText', 'normalizedSearch', 'exportJson', 'sourceSheet', 'sortKey'],
   cacheKeyPrefix: 'techmap-techops-db-v1',
   cacheChunkSize: 80000,
   cacheTtlSeconds: 21600,
@@ -264,10 +264,9 @@ function fetchTechOperationsSnapshotFromSource_() {
     if (a.tabKey !== b.tabKey) {
       return TECHOPS_DB_APP.tabOrder.indexOf(a.tabKey) - TECHOPS_DB_APP.tabOrder.indexOf(b.tabKey);
     }
-    return String(a.displayText || '').localeCompare(String(b.displayText || ''), undefined, {
-      numeric: true,
-      sensitivity: 'base',
-    });
+    const aKey = String(a.sortKey || a.displayText || '');
+    const bKey = String(b.sortKey || b.displayText || '');
+    return aKey.localeCompare(bKey, undefined, { numeric: true, sensitivity: 'base' });
   });
 
   return {
@@ -423,13 +422,16 @@ function buildTechOperationsObRecord_(row, headerMap, sourceSheet) {
 function buildTechOperationsOpRecord_(row, headerMap, sourceSheet) {
   const number = getTechOperationsCellByAliases_(row, headerMap, ['номер', 'number']);
   const name = getTechOperationsCellByAliases_(row, headerMap, ['название', 'name']);
-  const displayText = joinTechOperationsParts_([number, name], ' | ');
+
+  // Display as "Название | Номер" so list is sorted and shown by name first
+  const displayText = joinTechOperationsParts_([name, number], ' | ');
   if (!displayText) {
     return null;
   }
 
+  const joinedForExport = joinTechOperationsParts_([number, name], ' | ');
   const values = [
-    displayText,
+    joinedForExport,
     getTechOperationsCellByAliases_(row, headerMap, [
       'время операции',
       'время операции, сек',
@@ -454,7 +456,9 @@ function buildTechOperationsOpRecord_(row, headerMap, sourceSheet) {
   return {
     tabKey: 'op',
     displayText,
-    normalizedSearch: normalizeTechOperationsSearch_(joinTechOperationsParts_(values, ' | ')),
+    // sortKey is the name alone so alphabetical sort is by name, not number
+    sortKey: name || number,
+    normalizedSearch: normalizeTechOperationsSearch_(number + ' ' + name),
     exportValues: values,
     sourceSheet,
   };
@@ -561,6 +565,7 @@ function writeTechOperationsSnapshotToSheets_(snapshot) {
       record.normalizedSearch,
       JSON.stringify(record.exportValues || []),
       record.sourceSheet,
+      record.sortKey || '',
     ]);
     dataSheet.getRange(2, 1, rows.length, TECHOPS_DB_APP.dataHeaders.length).setValues(rows);
   }
@@ -617,6 +622,7 @@ function loadTechOperationsSnapshotFromSheets_() {
         normalizedSearch: row[2],
         exportValues: parseJsonArray_(row[3]),
         sourceSheet: row[4],
+        sortKey: row[5] || '',
       });
     });
   }
