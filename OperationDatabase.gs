@@ -3,7 +3,7 @@ const TECHOPS_DB_APP = {
   metaSheetName: '_TC_TECHOPS_META',
   dataSheetName: '_TC_TECHOPS_DB',
   metaHeaders: ['key', 'value'],
-  dataHeaders: ['tabKey', 'displayText', 'normalizedSearch', 'exportJson', 'sourceSheet', 'sortKey'],
+  dataHeaders: ['tabKey', 'displayText', 'normalizedSearch', 'exportJson', 'sourceSheet', 'sortKey', 'extra1', 'extra2', 'extra3'],
   cacheKeyPrefix: 'techmap-techops-db-v1',
   cacheChunkSize: 80000,
   cacheTtlSeconds: 21600,
@@ -580,6 +580,9 @@ function writeTechOperationsSnapshotToSheets_(snapshot) {
       JSON.stringify(record.exportValues || []),
       record.sourceSheet,
       record.sortKey || '',
+      record.terManufacturer || record.opNumber || '',
+      record.terSeries       || record.opName   || '',
+      record.terComponent    || '',
     ]);
     dataSheet.getRange(2, 1, rows.length, TECHOPS_DB_APP.dataHeaders.length).setValues(rows);
   }
@@ -637,6 +640,11 @@ function loadTechOperationsSnapshotFromSheets_() {
         exportValues: parseJsonArray_(row[3]),
         sourceSheet: row[4],
         sortKey: row[5] || '',
+        terManufacturer: row[6] || '',
+        opNumber:        row[6] || '',
+        terSeries:       row[7] || '',
+        opName:          row[7] || '',
+        terComponent:    row[8] || '',
       });
     });
   }
@@ -713,15 +721,21 @@ function buildTechOperationsPayload_(snapshot) {
           sortKey: record.sortKey || '',
         };
         if (tabKey === 'op') {
-          const exportRow = record.exportValues || [];
-          const exportParts = String(exportRow[0] || '').split(' | ');
-          item.opNumber = exportParts[0] || '';
-          item.opName   = exportParts[1] || record.sortKey || '';
+          // Read from stored extra fields first, fall back to parsing exportValues
+          item.opNumber = record.opNumber || '';
+          item.opName   = record.opName   || record.sortKey || '';
+          if (!item.opNumber || !item.opName) {
+            const exp = record.exportValues || [];
+            const parts = String(exp[0] || '').split(' | ');
+            item.opNumber = item.opNumber || parts[0] || '';
+            item.opName   = item.opName   || parts[1] || '';
+          }
         }
         if (tabKey === 'ter') {
-          item.terManufacturer = record.terManufacturer || '';
-          item.terSeries       = record.terSeries       || '';
-          item.terComponent    = record.terComponent    || '';
+          const exp = record.exportValues || [];
+          item.terComponent    = record.terComponent    || exp[0] || '';
+          item.terSeries       = record.terSeries       || exp[2] || '';
+          item.terManufacturer = record.terManufacturer || exp[3] || '';
         }
         return item;
       });
