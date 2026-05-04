@@ -1418,64 +1418,87 @@
           mfrMap.get(m).push(item);
         });
 
-        function makeGroupLi(labelText, count, childUl, depth, autoOpen) {
-          const li = document.createElement('li');
-          li.style.padding = '0';
+        function makeKoaxHeader(labelText, count, autoOpen) {
           const header = document.createElement('div');
           header.className = 'op-group-header' + (autoOpen ? ' open' : '');
-          header.style.paddingLeft = (8 + depth * 12) + 'px';
-          if (depth > 0) { header.style.fontWeight = 'normal'; header.style.color = '#3c4043'; }
           const arrow = document.createElement('span');
           arrow.className = 'op-arrow'; arrow.textContent = '▶';
           const span = document.createElement('span'); span.textContent = labelText;
           const cnt = document.createElement('span');
           cnt.className = 'op-group-count'; cnt.textContent = count;
           header.appendChild(arrow); header.appendChild(span); header.appendChild(cnt);
-          childUl.className = 'op-children' + (autoOpen ? ' open' : '');
-          header.onclick = function() {
-            const open = header.classList.contains('open');
-            header.classList.toggle('open', !open);
-            childUl.classList.toggle('open', !open);
-          };
-          li.appendChild(header); li.appendChild(childUl);
-          return li;
+          return header;
         }
 
         const fragment = document.createDocumentFragment();
         let firstWire = true;
 
         wireMap.forEach((typeMap, wireName) => {
-          const wireUl = document.createElement('ul');
-          wireUl.style.cssText = 'list-style:none;padding:0;margin:0;background:#f8f9fa;';
           let wireTotal = 0;
+          typeMap.forEach((mfrMap) => mfrMap.forEach((items) => { wireTotal += items.length; }));
+
+          const wireLi = document.createElement('li');
+          const wireHeader = makeKoaxHeader(wireName, wireTotal, firstWire && !!query);
+          const wireChildren = document.createElement('ul');
+          wireChildren.className = 'op-children' + (firstWire && query ? ' open' : '');
+          wireChildren.style.background = '#fff';
 
           typeMap.forEach((mfrMap, typeName) => {
-            const typeUl = document.createElement('ul');
-            typeUl.style.cssText = 'list-style:none;padding:0;margin:0;background:#f1f3f4;';
             let typeTotal = 0;
+            mfrMap.forEach((items) => { typeTotal += items.length; });
+
+            const typeLi = document.createElement('li');
+            typeLi.style.padding = '0';
+            const typeHeader = makeKoaxHeader(typeName, typeTotal, false);
+            typeHeader.style.paddingLeft = '20px';
+            typeHeader.style.fontWeight = 'normal';
+            typeHeader.style.color = '#3c4043';
+            const typeChildren = document.createElement('ul');
+            typeChildren.className = 'op-children';
+            typeChildren.style.background = '#f1f3f4';
 
             mfrMap.forEach((items, mfrName) => {
-              const mfrUl = document.createElement('ul');
-              mfrUl.style.cssText = 'list-style:none;padding:0;margin:0;background:#eaf1fb;';
+              const mfrLi = document.createElement('li');
+              mfrLi.style.padding = '0';
+              const mfrHeader = makeKoaxHeader(mfrName, items.length, false);
+              mfrHeader.style.paddingLeft = '32px';
+              mfrHeader.style.fontWeight = 'normal';
+              mfrHeader.style.color = '#5f6368';
+              const mfrChildren = document.createElement('ul');
+              mfrChildren.className = 'op-children';
+              mfrChildren.style.background = '#eaf1fb';
 
               items.forEach((item) => {
                 const leaf = document.createElement('li');
                 leaf.style.paddingLeft = '48px';
-                leaf.textContent = item.coaxArticle || typeName;
+                leaf.textContent = item.coaxArticle || item.coaxType || '—';
                 leaf.title = item.label;
                 leaf.onclick = function() { addOperationToQueue('dbKoax', item); };
-                mfrUl.appendChild(leaf);
+                mfrChildren.appendChild(leaf);
               });
 
-              typeUl.appendChild(makeGroupLi(mfrName, items.length, mfrUl, 2, false));
-              typeTotal += items.length;
+              mfrHeader.onclick = function() {
+                mfrHeader.classList.toggle('open');
+                mfrChildren.classList.toggle('open');
+              };
+              mfrLi.appendChild(mfrHeader); mfrLi.appendChild(mfrChildren);
+              typeChildren.appendChild(mfrLi);
             });
 
-            wireUl.appendChild(makeGroupLi(typeName, typeTotal, typeUl, 1, firstWire && !!query));
-            wireTotal += typeTotal;
+            typeHeader.onclick = function() {
+              typeHeader.classList.toggle('open');
+              typeChildren.classList.toggle('open');
+            };
+            typeLi.appendChild(typeHeader); typeLi.appendChild(typeChildren);
+            wireChildren.appendChild(typeLi);
           });
 
-          fragment.appendChild(makeGroupLi(wireName, wireTotal, wireUl, 0, firstWire && !!query));
+          wireHeader.onclick = function() {
+            wireHeader.classList.toggle('open');
+            wireChildren.classList.toggle('open');
+          };
+          wireLi.appendChild(wireHeader); wireLi.appendChild(wireChildren);
+          fragment.appendChild(wireLi);
           firstWire = false;
         });
 
