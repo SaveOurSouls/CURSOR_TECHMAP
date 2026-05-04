@@ -1385,8 +1385,8 @@
         list.appendChild(fragment);
       }
 
-      // 4-level tree: Провод → Тип/Серия → Производитель → Артикул
-      // Mirrors renderTerTree structure exactly, one extra nesting level.
+      // БД.КОАКС — 4 levels: Провод → Тип/Серия → Производитель → Артикул
+      // Built identically to renderTerTree, one extra level added.
       function renderKoaxTree() {
         const list = document.getElementById('opDbKoaxResults');
         const query = normalizeSearch(document.getElementById('opDbKoaxSearch').value);
@@ -1405,121 +1405,116 @@
           return;
         }
 
-        // Build map: wire → type → mfr → [items]
-        const wireMap = new Map();
+        // wire → type → mfr → [{ item, article }]
+        const wires = new Map();
         filtered.forEach((item) => {
           const w = item.coaxWire || '—';
           const t = item.coaxType || '—';
           const m = item.coaxMfr  || '—';
-          if (!wireMap.has(w)) wireMap.set(w, new Map());
-          const typeMap = wireMap.get(w);
-          if (!typeMap.has(t)) typeMap.set(t, new Map());
-          const mfrMap = typeMap.get(t);
-          if (!mfrMap.has(m)) mfrMap.set(m, []);
-          mfrMap.get(m).push(item);
+          const a = item.coaxArticle || (t + ' ' + w);
+          if (!wires.has(w)) wires.set(w, new Map());
+          const types = wires.get(w);
+          if (!types.has(t)) types.set(t, new Map());
+          const mfrs = types.get(t);
+          if (!mfrs.has(m)) mfrs.set(m, []);
+          mfrs.get(m).push({ item, article: a });
         });
 
         const fragment = document.createDocumentFragment();
-        let firstWire = true;
+        let first = true;
 
-        wireMap.forEach((typeMap, wireName) => {
-          // --- LEVEL 1: Провод ---
-          let wireTotal = 0;
-          typeMap.forEach((mm) => mm.forEach((ii) => { wireTotal += ii.length; }));
+        wires.forEach((types, wireName) => {
+          // L1: Провод
+          let total = 0;
+          types.forEach((mm) => mm.forEach((aa) => { total += aa.length; }));
 
           const wireLi = document.createElement('li');
+          const wireHdr = document.createElement('div');
+          wireHdr.className = 'op-group-header' + (first && query ? ' open' : '');
+          const wa = document.createElement('span'); wa.className = 'op-arrow'; wa.textContent = '▶';
+          const ws = document.createElement('span'); ws.textContent = wireName;
+          const wc = document.createElement('span'); wc.className = 'op-group-count'; wc.textContent = total;
+          wireHdr.appendChild(wa); wireHdr.appendChild(ws); wireHdr.appendChild(wc);
 
-          const wireHeader = document.createElement('div');
-          wireHeader.className = 'op-group-header' + (firstWire && query ? ' open' : '');
-          const wireArrow = document.createElement('span'); wireArrow.className = 'op-arrow'; wireArrow.textContent = '▶';
-          const wireSpan  = document.createElement('span'); wireSpan.textContent = wireName;
-          const wireCnt   = document.createElement('span'); wireCnt.className = 'op-group-count'; wireCnt.textContent = wireTotal;
-          wireHeader.appendChild(wireArrow); wireHeader.appendChild(wireSpan); wireHeader.appendChild(wireCnt);
+          const wireUl = document.createElement('ul');
+          wireUl.className = 'op-children' + (first && query ? ' open' : '');
 
-          const wireChildren = document.createElement('ul');
-          wireChildren.className = 'op-children' + (firstWire && query ? ' open' : '');
-          wireChildren.style.background = '#fff';
-
-          typeMap.forEach((mfrMap, typeName) => {
-            // --- LEVEL 2: Тип/Серия ---
+          types.forEach((mfrs, typeName) => {
+            // L2: Тип/Серия
             let typeTotal = 0;
-            mfrMap.forEach((ii) => { typeTotal += ii.length; });
+            mfrs.forEach((aa) => { typeTotal += aa.length; });
 
             const typeLi = document.createElement('li');
             typeLi.style.padding = '0';
+            const typeHdr = document.createElement('div');
+            typeHdr.className = 'op-group-header';
+            typeHdr.style.paddingLeft = '20px';
+            typeHdr.style.fontWeight = 'normal';
+            typeHdr.style.color = '#3c4043';
+            const ta = document.createElement('span'); ta.className = 'op-arrow'; ta.textContent = '▶';
+            const ts = document.createElement('span'); ts.textContent = typeName;
+            const tc = document.createElement('span'); tc.className = 'op-group-count'; tc.textContent = typeTotal;
+            typeHdr.appendChild(ta); typeHdr.appendChild(ts); typeHdr.appendChild(tc);
 
-            const typeHeader = document.createElement('div');
-            typeHeader.className = 'op-group-header';
-            typeHeader.style.paddingLeft = '20px';
-            typeHeader.style.fontWeight = 'normal';
-            typeHeader.style.color = '#3c4043';
-            const typeArrow = document.createElement('span'); typeArrow.className = 'op-arrow'; typeArrow.textContent = '▶';
-            const typeSpan  = document.createElement('span'); typeSpan.textContent = typeName;
-            const typeCnt   = document.createElement('span'); typeCnt.className = 'op-group-count'; typeCnt.textContent = typeTotal;
-            typeHeader.appendChild(typeArrow); typeHeader.appendChild(typeSpan); typeHeader.appendChild(typeCnt);
+            const typeUl = document.createElement('ul');
+            typeUl.className = 'op-children';
 
-            const typeChildren = document.createElement('ul');
-            typeChildren.className = 'op-children';
-            typeChildren.style.background = '#f1f3f4';
-
-            mfrMap.forEach((items, mfrName) => {
-              // --- LEVEL 3: Производитель ---
+            mfrs.forEach((leaves, mfrName) => {
+              // L3: Производитель
               const mfrLi = document.createElement('li');
               mfrLi.style.padding = '0';
+              const mfrHdr = document.createElement('div');
+              mfrHdr.className = 'op-group-header';
+              mfrHdr.style.paddingLeft = '32px';
+              mfrHdr.style.fontWeight = 'normal';
+              mfrHdr.style.color = '#5f6368';
+              const ma = document.createElement('span'); ma.className = 'op-arrow'; ma.textContent = '▶';
+              const ms = document.createElement('span'); ms.textContent = mfrName;
+              const mc = document.createElement('span'); mc.className = 'op-group-count'; mc.textContent = leaves.length;
+              mfrHdr.appendChild(ma); mfrHdr.appendChild(ms); mfrHdr.appendChild(mc);
 
-              const mfrHeader = document.createElement('div');
-              mfrHeader.className = 'op-group-header';
-              mfrHeader.style.paddingLeft = '32px';
-              mfrHeader.style.fontWeight = 'normal';
-              mfrHeader.style.color = '#5f6368';
-              const mfrArrow = document.createElement('span'); mfrArrow.className = 'op-arrow'; mfrArrow.textContent = '▶';
-              const mfrSpan  = document.createElement('span'); mfrSpan.textContent = mfrName;
-              const mfrCnt   = document.createElement('span'); mfrCnt.className = 'op-group-count'; mfrCnt.textContent = items.length;
-              mfrHeader.appendChild(mfrArrow); mfrHeader.appendChild(mfrSpan); mfrHeader.appendChild(mfrCnt);
+              const mfrUl = document.createElement('ul');
+              mfrUl.className = 'op-children';
 
-              const mfrChildren = document.createElement('ul');
-              mfrChildren.className = 'op-children';
-              mfrChildren.style.background = '#eaf1fb';
-
-              // --- LEVEL 4: Артикул (leaf) ---
-              items.forEach((item) => {
-                const leaf = document.createElement('li');
-                leaf.style.paddingLeft = '48px';
-                leaf.textContent = item.coaxArticle || item.coaxType || '—';
-                leaf.title = item.label;
-                leaf.onclick = function() { addOperationToQueue('dbKoax', item); };
-                mfrChildren.appendChild(leaf);
+              // L4: Артикул (leaf, clickable)
+              leaves.forEach(({ item, article }) => {
+                const child = document.createElement('li');
+                child.style.paddingLeft = '36px';
+                child.textContent = article;
+                child.title = item.label;
+                child.onclick = function() { addOperationToQueue('dbKoax', item); };
+                mfrUl.appendChild(child);
               });
 
-              mfrHeader.onclick = function() {
-                const isOpen = mfrHeader.classList.contains('open');
-                mfrHeader.classList.toggle('open', !isOpen);
-                mfrChildren.classList.toggle('open', !isOpen);
+              mfrHdr.onclick = function() {
+                const o = mfrHdr.classList.contains('open');
+                mfrHdr.classList.toggle('open', !o);
+                mfrUl.classList.toggle('open', !o);
               };
-              mfrLi.appendChild(mfrHeader);
-              mfrLi.appendChild(mfrChildren);
-              typeChildren.appendChild(mfrLi);
+              mfrLi.appendChild(mfrHdr);
+              mfrLi.appendChild(mfrUl);
+              typeUl.appendChild(mfrLi);
             });
 
-            typeHeader.onclick = function() {
-              const isOpen = typeHeader.classList.contains('open');
-              typeHeader.classList.toggle('open', !isOpen);
-              typeChildren.classList.toggle('open', !isOpen);
+            typeHdr.onclick = function() {
+              const o = typeHdr.classList.contains('open');
+              typeHdr.classList.toggle('open', !o);
+              typeUl.classList.toggle('open', !o);
             };
-            typeLi.appendChild(typeHeader);
-            typeLi.appendChild(typeChildren);
-            wireChildren.appendChild(typeLi);
+            typeLi.appendChild(typeHdr);
+            typeLi.appendChild(typeUl);
+            wireUl.appendChild(typeLi);
           });
 
-          wireHeader.onclick = function() {
-            const isOpen = wireHeader.classList.contains('open');
-            wireHeader.classList.toggle('open', !isOpen);
-            wireChildren.classList.toggle('open', !isOpen);
+          wireHdr.onclick = function() {
+            const o = wireHdr.classList.contains('open');
+            wireHdr.classList.toggle('open', !o);
+            wireUl.classList.toggle('open', !o);
           };
-          wireLi.appendChild(wireHeader);
-          wireLi.appendChild(wireChildren);
+          wireLi.appendChild(wireHdr);
+          wireLi.appendChild(wireUl);
           fragment.appendChild(wireLi);
-          firstWire = false;
+          first = false;
         });
 
         list.appendChild(fragment);
