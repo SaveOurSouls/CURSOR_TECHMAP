@@ -518,20 +518,21 @@ function buildTechOperationsCoaxRecord_(row, headerMap, sourceSheet) {
     return null;
   }
 
-  const values = [article, typeSeries, mfr, supplier, wire, program, d1, d2, d3, l1, l2, l3];
+  // Export only columns E–K: Программа, D1, D2, D3, L1, L2, L3
+  const exportValues = [program, d1, d2, d3, l1, l2, l3];
 
   return {
     tabKey: 'coax',
     displayText,
     coaxWire:     wire,
     coaxType:     typeSeries,
-    coaxSupplier: supplier,
-    // sortKey: wire first, then type
-    sortKey: `${wire}\u0000${typeSeries}`,
+    coaxMfr:      mfr,
+    coaxArticle:  article,
+    sortKey: `${wire}\u0000${typeSeries}\u0000${mfr}\u0000${article}`,
     normalizedSearch: normalizeTechOperationsSearch_(
       [article, typeSeries, mfr, supplier, wire, program].join(' ')
     ),
-    exportValues: values,
+    exportValues,
     sourceSheet,
   };
 }
@@ -595,7 +596,8 @@ function writeTechOperationsSnapshotToSheets_(snapshot) {
       record.terComponent    || '',
       record.coaxWire        || '',
       record.coaxType        || '',
-      record.coaxSupplier    || '',
+      record.coaxMfr         || '',
+      record.coaxArticle     || '',
     ]);
     dataSheet.getRange(2, 1, rows.length, TECHOPS_DB_APP.dataHeaders.length).setValues(rows);
   }
@@ -658,9 +660,10 @@ function loadTechOperationsSnapshotFromSheets_() {
         terSeries:       row[7] || '',
         opName:          row[7] || '',
         terComponent:    row[8] || '',
-        coaxWire:        row[9]  || '',
-        coaxType:        row[10] || '',
-        coaxSupplier:    row[11] || '',
+        coaxWire:    row[9]  || '',
+        coaxType:    row[10] || '',
+        coaxMfr:     row[11] || '',
+        coaxArticle: row[12] || '',
       });
     });
   }
@@ -754,13 +757,14 @@ function buildTechOperationsPayload_(snapshot) {
           item.terManufacturer = record.terManufacturer || exp[3] || '';
         }
         if (tabKey === 'coax') {
-          const exp = record.exportValues || [];
-          item.coaxWire     = record.coaxWire     || exp[4] || '';
-          item.coaxType     = record.coaxType     || exp[1] || '';
-          item.coaxSupplier = record.coaxSupplier || exp[3] || '';
-          // Display: Тип/Серия | Провод | Поставщик
-          item.label = joinTechOperationsParts_([item.coaxType, item.coaxWire, item.coaxSupplier], ' | ');
-          item.sortKey = `${item.coaxWire}\u0000${item.coaxType}`;
+          item.coaxWire    = record.coaxWire    || '';
+          item.coaxType    = record.coaxType    || '';
+          item.coaxMfr     = record.coaxMfr     || '';
+          item.coaxArticle = record.coaxArticle || '';
+          // Leaf label shown at level 4 (Артикул); if empty use Тип+Провод
+          item.label = item.coaxArticle ||
+            joinTechOperationsParts_([item.coaxType, item.coaxWire], ' | ');
+          item.sortKey = `${item.coaxWire}\u0000${item.coaxType}\u0000${item.coaxMfr}\u0000${item.coaxArticle}`;
         }
         return item;
       });

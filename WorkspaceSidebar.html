@@ -1156,6 +1156,10 @@
           renderTerTree();
           return;
         }
+        if (dbKey === 'dbKoax') {
+          renderKoaxTree();
+          return;
+        }
         const config = getOperationTabConfig(dbKey);
         const query = normalizeSearch(document.getElementById(config.searchInputId).value);
         const list = document.getElementById(config.resultsId);
@@ -1376,6 +1380,103 @@
           mfrLi.appendChild(mfrChildren);
           fragment.appendChild(mfrLi);
           firstMfr = false;
+        });
+
+        list.appendChild(fragment);
+      }
+
+      // 4-level tree: Провод → Тип/Серия → Производитель → Артикул
+      function renderKoaxTree() {
+        const list = document.getElementById('opDbKoaxResults');
+        const query = normalizeSearch(document.getElementById('opDbKoaxSearch').value);
+        const rows = operationDb.dbKoax || [];
+        list.innerHTML = '';
+
+        const filtered = !query
+          ? rows
+          : rows.filter((item) => (item.searchText || '').indexOf(query) !== -1);
+
+        if (!filtered.length) {
+          const empty = document.createElement('li');
+          empty.style.cssText = 'padding:10px;color:#80868b;font-size:12px;';
+          empty.textContent = query ? 'Ничего не найдено.' : 'База не загружена.';
+          list.appendChild(empty);
+          return;
+        }
+
+        // Build 4-level map: wire → type → mfr → [items]
+        const wireMap = new Map();
+        filtered.forEach((item) => {
+          const w = item.coaxWire || '—';
+          const t = item.coaxType || '—';
+          const m = item.coaxMfr  || '—';
+          if (!wireMap.has(w)) wireMap.set(w, new Map());
+          const typeMap = wireMap.get(w);
+          if (!typeMap.has(t)) typeMap.set(t, new Map());
+          const mfrMap = typeMap.get(t);
+          if (!mfrMap.has(m)) mfrMap.set(m, []);
+          mfrMap.get(m).push(item);
+        });
+
+        function makeGroupLi(labelText, count, childUl, depth, autoOpen) {
+          const li = document.createElement('li');
+          li.style.padding = '0';
+          const header = document.createElement('div');
+          header.className = 'op-group-header' + (autoOpen ? ' open' : '');
+          header.style.paddingLeft = (8 + depth * 12) + 'px';
+          if (depth > 0) { header.style.fontWeight = 'normal'; header.style.color = '#3c4043'; }
+          const arrow = document.createElement('span');
+          arrow.className = 'op-arrow'; arrow.textContent = '▶';
+          const span = document.createElement('span'); span.textContent = labelText;
+          const cnt = document.createElement('span');
+          cnt.className = 'op-group-count'; cnt.textContent = count;
+          header.appendChild(arrow); header.appendChild(span); header.appendChild(cnt);
+          childUl.className = 'op-children' + (autoOpen ? ' open' : '');
+          header.onclick = function() {
+            const open = header.classList.contains('open');
+            header.classList.toggle('open', !open);
+            childUl.classList.toggle('open', !open);
+          };
+          li.appendChild(header); li.appendChild(childUl);
+          return li;
+        }
+
+        const fragment = document.createDocumentFragment();
+        let firstWire = true;
+
+        wireMap.forEach((typeMap, wireName) => {
+          const wireUl = document.createElement('ul');
+          wireUl.style.cssText = 'list-style:none;padding:0;margin:0;background:#f8f9fa;';
+          let wireTotal = 0;
+
+          typeMap.forEach((mfrMap, typeName) => {
+            const typeUl = document.createElement('ul');
+            typeUl.style.cssText = 'list-style:none;padding:0;margin:0;background:#f1f3f4;';
+            let typeTotal = 0;
+
+            mfrMap.forEach((items, mfrName) => {
+              const mfrUl = document.createElement('ul');
+              mfrUl.style.cssText = 'list-style:none;padding:0;margin:0;background:#eaf1fb;';
+
+              items.forEach((item) => {
+                const leaf = document.createElement('li');
+                leaf.style.paddingLeft = '48px';
+                leaf.textContent = item.coaxArticle || typeName;
+                leaf.title = item.label;
+                leaf.onclick = function() { addOperationToQueue('dbKoax', item); };
+                mfrUl.appendChild(leaf);
+              });
+
+              typeUl.appendChild(makeGroupLi(mfrName, items.length, mfrUl, 2, false));
+              typeTotal += items.length;
+            });
+
+            wireUl.appendChild(makeGroupLi(typeName, typeTotal, typeUl, 1, firstWire && !!query));
+            wireTotal += typeTotal;
+          });
+
+          fragment.appendChild(makeGroupLi(wireName, wireTotal, wireUl, 0, firstWire && !!query));
+          firstWire = false;
         });
 
         list.appendChild(fragment);
