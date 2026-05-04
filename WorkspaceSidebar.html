@@ -1007,8 +1007,8 @@
       }
 
       function switchMaterialTab(tabId, btnElement) {
-        document.querySelectorAll('.tab-content').forEach((el) => el.classList.remove('active'));
-        document.querySelectorAll('.tab-btn').forEach((el) => el.classList.remove('active'));
+        document.querySelectorAll('#materialsSection .tab-content').forEach((el) => el.classList.remove('active'));
+        document.querySelectorAll('#materialsSection .tab-btn').forEach((el) => el.classList.remove('active'));
         document.getElementById(tabId).classList.add('active');
         btnElement.classList.add('active');
       }
