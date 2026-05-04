@@ -1386,6 +1386,7 @@
       }
 
       // 4-level tree: Провод → Тип/Серия → Производитель → Артикул
+      // Mirrors renderTerTree structure exactly, one extra nesting level.
       function renderKoaxTree() {
         const list = document.getElementById('opDbKoaxResults');
         const query = normalizeSearch(document.getElementById('opDbKoaxSearch').value);
@@ -1404,7 +1405,7 @@
           return;
         }
 
-        // Build 4-level map: wire → type → mfr → [items]
+        // Build map: wire → type → mfr → [items]
         const wireMap = new Map();
         filtered.forEach((item) => {
           const w = item.coaxWire || '—';
@@ -1418,56 +1419,69 @@
           mfrMap.get(m).push(item);
         });
 
-        function makeKoaxHeader(labelText, count, autoOpen) {
-          const header = document.createElement('div');
-          header.className = 'op-group-header' + (autoOpen ? ' open' : '');
-          const arrow = document.createElement('span');
-          arrow.className = 'op-arrow'; arrow.textContent = '▶';
-          const span = document.createElement('span'); span.textContent = labelText;
-          const cnt = document.createElement('span');
-          cnt.className = 'op-group-count'; cnt.textContent = count;
-          header.appendChild(arrow); header.appendChild(span); header.appendChild(cnt);
-          return header;
-        }
-
         const fragment = document.createDocumentFragment();
         let firstWire = true;
 
         wireMap.forEach((typeMap, wireName) => {
+          // --- LEVEL 1: Провод ---
           let wireTotal = 0;
-          typeMap.forEach((mfrMap) => mfrMap.forEach((items) => { wireTotal += items.length; }));
+          typeMap.forEach((mm) => mm.forEach((ii) => { wireTotal += ii.length; }));
 
           const wireLi = document.createElement('li');
-          const wireHeader = makeKoaxHeader(wireName, wireTotal, firstWire && !!query);
+
+          const wireHeader = document.createElement('div');
+          wireHeader.className = 'op-group-header' + (firstWire && query ? ' open' : '');
+          const wireArrow = document.createElement('span'); wireArrow.className = 'op-arrow'; wireArrow.textContent = '▶';
+          const wireSpan  = document.createElement('span'); wireSpan.textContent = wireName;
+          const wireCnt   = document.createElement('span'); wireCnt.className = 'op-group-count'; wireCnt.textContent = wireTotal;
+          wireHeader.appendChild(wireArrow); wireHeader.appendChild(wireSpan); wireHeader.appendChild(wireCnt);
+
           const wireChildren = document.createElement('ul');
           wireChildren.className = 'op-children' + (firstWire && query ? ' open' : '');
           wireChildren.style.background = '#fff';
 
           typeMap.forEach((mfrMap, typeName) => {
+            // --- LEVEL 2: Тип/Серия ---
             let typeTotal = 0;
-            mfrMap.forEach((items) => { typeTotal += items.length; });
+            mfrMap.forEach((ii) => { typeTotal += ii.length; });
 
             const typeLi = document.createElement('li');
             typeLi.style.padding = '0';
-            const typeHeader = makeKoaxHeader(typeName, typeTotal, false);
+
+            const typeHeader = document.createElement('div');
+            typeHeader.className = 'op-group-header';
             typeHeader.style.paddingLeft = '20px';
             typeHeader.style.fontWeight = 'normal';
             typeHeader.style.color = '#3c4043';
+            const typeArrow = document.createElement('span'); typeArrow.className = 'op-arrow'; typeArrow.textContent = '▶';
+            const typeSpan  = document.createElement('span'); typeSpan.textContent = typeName;
+            const typeCnt   = document.createElement('span'); typeCnt.className = 'op-group-count'; typeCnt.textContent = typeTotal;
+            typeHeader.appendChild(typeArrow); typeHeader.appendChild(typeSpan); typeHeader.appendChild(typeCnt);
+
             const typeChildren = document.createElement('ul');
             typeChildren.className = 'op-children';
             typeChildren.style.background = '#f1f3f4';
 
             mfrMap.forEach((items, mfrName) => {
+              // --- LEVEL 3: Производитель ---
               const mfrLi = document.createElement('li');
               mfrLi.style.padding = '0';
-              const mfrHeader = makeKoaxHeader(mfrName, items.length, false);
+
+              const mfrHeader = document.createElement('div');
+              mfrHeader.className = 'op-group-header';
               mfrHeader.style.paddingLeft = '32px';
               mfrHeader.style.fontWeight = 'normal';
               mfrHeader.style.color = '#5f6368';
+              const mfrArrow = document.createElement('span'); mfrArrow.className = 'op-arrow'; mfrArrow.textContent = '▶';
+              const mfrSpan  = document.createElement('span'); mfrSpan.textContent = mfrName;
+              const mfrCnt   = document.createElement('span'); mfrCnt.className = 'op-group-count'; mfrCnt.textContent = items.length;
+              mfrHeader.appendChild(mfrArrow); mfrHeader.appendChild(mfrSpan); mfrHeader.appendChild(mfrCnt);
+
               const mfrChildren = document.createElement('ul');
               mfrChildren.className = 'op-children';
               mfrChildren.style.background = '#eaf1fb';
 
+              // --- LEVEL 4: Артикул (leaf) ---
               items.forEach((item) => {
                 const leaf = document.createElement('li');
                 leaf.style.paddingLeft = '48px';
@@ -1478,26 +1492,32 @@
               });
 
               mfrHeader.onclick = function() {
-                mfrHeader.classList.toggle('open');
-                mfrChildren.classList.toggle('open');
+                const isOpen = mfrHeader.classList.contains('open');
+                mfrHeader.classList.toggle('open', !isOpen);
+                mfrChildren.classList.toggle('open', !isOpen);
               };
-              mfrLi.appendChild(mfrHeader); mfrLi.appendChild(mfrChildren);
+              mfrLi.appendChild(mfrHeader);
+              mfrLi.appendChild(mfrChildren);
               typeChildren.appendChild(mfrLi);
             });
 
             typeHeader.onclick = function() {
-              typeHeader.classList.toggle('open');
-              typeChildren.classList.toggle('open');
+              const isOpen = typeHeader.classList.contains('open');
+              typeHeader.classList.toggle('open', !isOpen);
+              typeChildren.classList.toggle('open', !isOpen);
             };
-            typeLi.appendChild(typeHeader); typeLi.appendChild(typeChildren);
+            typeLi.appendChild(typeHeader);
+            typeLi.appendChild(typeChildren);
             wireChildren.appendChild(typeLi);
           });
 
           wireHeader.onclick = function() {
-            wireHeader.classList.toggle('open');
-            wireChildren.classList.toggle('open');
+            const isOpen = wireHeader.classList.contains('open');
+            wireHeader.classList.toggle('open', !isOpen);
+            wireChildren.classList.toggle('open', !isOpen);
           };
-          wireLi.appendChild(wireHeader); wireLi.appendChild(wireChildren);
+          wireLi.appendChild(wireHeader);
+          wireLi.appendChild(wireChildren);
           fragment.appendChild(wireLi);
           firstWire = false;
         });
