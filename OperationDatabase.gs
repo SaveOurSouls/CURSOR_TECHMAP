@@ -3,7 +3,7 @@ const TECHOPS_DB_APP = {
   metaSheetName: '_TC_TECHOPS_META',
   dataSheetName: '_TC_TECHOPS_DB',
   metaHeaders: ['key', 'value'],
-  dataHeaders: ['tabKey', 'displayText', 'normalizedSearch', 'exportJson', 'sourceSheet', 'sortKey', 'extra1', 'extra2', 'extra3'],
+  dataHeaders: ['tabKey', 'displayText', 'normalizedSearch', 'exportJson', 'sourceSheet', 'sortKey', 'extra1', 'extra2', 'extra3', 'extra4', 'extra5', 'extra6'],
   cacheKeyPrefix: 'techmap-techops-db-v1',
   cacheChunkSize: 80000,
   cacheTtlSeconds: 21600,
@@ -499,28 +499,38 @@ function buildTechOperationsTerRecord_(row, headerMap, sourceSheet) {
 }
 
 function buildTechOperationsCoaxRecord_(row, headerMap, sourceSheet) {
-  const values = [
-    getTechOperationsCellByAliases_(row, headerMap, ['артикул']),
-    getTechOperationsCellByAliases_(row, headerMap, ['тип/серия', 'тип / серия', 'тип серия']),
-    getTechOperationsCellByAliases_(row, headerMap, ['производитель', 'бренд', 'manufacturer']),
-    getTechOperationsCellByAliases_(row, headerMap, ['поставщик', 'supplier']),
-    getTechOperationsCellByAliases_(row, headerMap, ['провод']),
-    getTechOperationsCellByAliases_(row, headerMap, ['программа']),
-    getTechOperationsCellByAliases_(row, headerMap, ['d1']),
-    getTechOperationsCellByAliases_(row, headerMap, ['d2']),
-    getTechOperationsCellByAliases_(row, headerMap, ['d3']),
-    getTechOperationsCellByAliases_(row, headerMap, ['l1']),
-    getTechOperationsCellByAliases_(row, headerMap, ['l2']),
-    getTechOperationsCellByAliases_(row, headerMap, ['l3']),
-  ];
-  const displayText = joinTechOperationsParts_(values, ' | ');
+  const article    = getTechOperationsCellByAliases_(row, headerMap, ['артикул']);
+  const typeSeries = getTechOperationsCellByAliases_(row, headerMap, ['тип/серия', 'тип / серия', 'тип серия']);
+  const mfr        = getTechOperationsCellByAliases_(row, headerMap, ['производитель', 'бренд', 'manufacturer']);
+  const supplier   = getTechOperationsCellByAliases_(row, headerMap, ['поставщик', 'supplier']);
+  const wire       = getTechOperationsCellByAliases_(row, headerMap, ['провод']);
+  const program    = getTechOperationsCellByAliases_(row, headerMap, ['программа']);
+  const d1         = getTechOperationsCellByAliases_(row, headerMap, ['d1']);
+  const d2         = getTechOperationsCellByAliases_(row, headerMap, ['d2']);
+  const d3         = getTechOperationsCellByAliases_(row, headerMap, ['d3']);
+  const l1         = getTechOperationsCellByAliases_(row, headerMap, ['l1']);
+  const l2         = getTechOperationsCellByAliases_(row, headerMap, ['l2']);
+  const l3         = getTechOperationsCellByAliases_(row, headerMap, ['l3']);
+
+  // Use Тип/Серия + Провод as the primary identity — Артикул is often empty
+  const displayText = joinTechOperationsParts_([typeSeries, wire, supplier], ' | ');
   if (!displayText) {
     return null;
   }
+
+  const values = [article, typeSeries, mfr, supplier, wire, program, d1, d2, d3, l1, l2, l3];
+
   return {
     tabKey: 'coax',
     displayText,
-    normalizedSearch: normalizeTechOperationsSearch_(displayText),
+    coaxWire:     wire,
+    coaxType:     typeSeries,
+    coaxSupplier: supplier,
+    // sortKey: wire first, then type
+    sortKey: `${wire}\u0000${typeSeries}`,
+    normalizedSearch: normalizeTechOperationsSearch_(
+      [article, typeSeries, mfr, supplier, wire, program].join(' ')
+    ),
     exportValues: values,
     sourceSheet,
   };
@@ -583,6 +593,9 @@ function writeTechOperationsSnapshotToSheets_(snapshot) {
       record.terManufacturer || record.opNumber || '',
       record.terSeries       || record.opName   || '',
       record.terComponent    || '',
+      record.coaxWire        || '',
+      record.coaxType        || '',
+      record.coaxSupplier    || '',
     ]);
     dataSheet.getRange(2, 1, rows.length, TECHOPS_DB_APP.dataHeaders.length).setValues(rows);
   }
@@ -645,6 +658,9 @@ function loadTechOperationsSnapshotFromSheets_() {
         terSeries:       row[7] || '',
         opName:          row[7] || '',
         terComponent:    row[8] || '',
+        coaxWire:        row[9]  || '',
+        coaxType:        row[10] || '',
+        coaxSupplier:    row[11] || '',
       });
     });
   }
@@ -736,6 +752,15 @@ function buildTechOperationsPayload_(snapshot) {
           item.terComponent    = record.terComponent    || exp[0] || '';
           item.terSeries       = record.terSeries       || exp[2] || '';
           item.terManufacturer = record.terManufacturer || exp[3] || '';
+        }
+        if (tabKey === 'coax') {
+          const exp = record.exportValues || [];
+          item.coaxWire     = record.coaxWire     || exp[4] || '';
+          item.coaxType     = record.coaxType     || exp[1] || '';
+          item.coaxSupplier = record.coaxSupplier || exp[3] || '';
+          // Display: Тип/Серия | Провод | Поставщик
+          item.label = joinTechOperationsParts_([item.coaxType, item.coaxWire, item.coaxSupplier], ' | ');
+          item.sortKey = `${item.coaxWire}\u0000${item.coaxType}`;
         }
         return item;
       });
