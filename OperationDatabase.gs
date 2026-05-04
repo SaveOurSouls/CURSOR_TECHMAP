@@ -3,7 +3,7 @@ const TECHOPS_DB_APP = {
   metaSheetName: '_TC_TECHOPS_META',
   dataSheetName: '_TC_TECHOPS_DB',
   metaHeaders: ['key', 'value'],
-  dataHeaders: ['tabKey', 'displayText', 'normalizedSearch', 'exportJson', 'sourceSheet', 'sortKey', 'extra1', 'extra2', 'extra3', 'extra4', 'extra5', 'extra6'],
+  dataHeaders: ['tabKey', 'displayText', 'normalizedSearch', 'exportJson', 'sourceSheet', 'sortKey', 'extra1', 'extra2', 'extra3', 'extra4', 'extra5', 'extra6', 'extra7'],
   cacheKeyPrefix: 'techmap-techops-db-v1',
   cacheChunkSize: 80000,
   cacheTtlSeconds: 21600,
@@ -206,6 +206,19 @@ function ensureTechOperationsDataSheet_(ss) {
   let sheet = ss.getSheetByName(TECHOPS_DB_APP.dataSheetName);
   if (!sheet) {
     sheet = ss.insertSheet(TECHOPS_DB_APP.dataSheetName);
+    sheet.hideSheet();
+  }
+
+  // If schema changed (column count mismatch) — wipe and rebuild
+  const existingCols = sheet.getLastColumn();
+  if (existingCols > 0 && existingCols !== TECHOPS_DB_APP.dataHeaders.length) {
+    sheet.clear();
+    // Adjust column count to match new schema
+    if (existingCols < TECHOPS_DB_APP.dataHeaders.length) {
+      sheet.insertColumnsAfter(existingCols, TECHOPS_DB_APP.dataHeaders.length - existingCols);
+    } else {
+      sheet.deleteColumns(TECHOPS_DB_APP.dataHeaders.length + 1, existingCols - TECHOPS_DB_APP.dataHeaders.length);
+    }
   }
 
   ensureSheetCapacity_(sheet, 2, TECHOPS_DB_APP.dataHeaders.length);
