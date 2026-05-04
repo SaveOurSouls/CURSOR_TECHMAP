@@ -44,20 +44,7 @@ const TECHOPS_DB_APP = {
       sourceSheetName: 'БД.КОАКС',
       headerRowNumber: 2,
       searchPlaceholder: 'Поиск по артикулам, сериям, проводу, размерам...',
-      outputLabels: [
-        'Артикул',
-        'Тип/Серия',
-        'Производитель',
-        'Поставщик',
-        'Провод',
-        'Программа',
-        'D1',
-        'D2',
-        'D3',
-        'L1',
-        'L2',
-        'L3',
-      ],
+      outputLabels: ['Артикул', 'Программа', 'D1', 'D2', 'D3', 'L1', 'L2', 'L3'],
     },
   },
   tabOrder: ['ob', 'op', 'ter', 'coax'],
@@ -531,8 +518,8 @@ function buildTechOperationsCoaxRecord_(row, headerMap, sourceSheet) {
     return null;
   }
 
-  // Export only columns E–K: Программа, D1, D2, D3, L1, L2, L3
-  const exportValues = [program, d1, d2, d3, l1, l2, l3];
+  // Export columns A, E–K: Артикул, Программа, D1, D2, D3, L1, L2, L3
+  const exportValues = [article, program, d1, d2, d3, l1, l2, l3];
 
   return {
     tabKey: 'coax',
