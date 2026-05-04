@@ -4,7 +4,8 @@ const TECHOPS_DB_APP = {
   dataSheetName: '_TC_TECHOPS_DB',
   metaHeaders: ['key', 'value'],
   dataHeaders: ['tabKey', 'displayText', 'normalizedSearch', 'exportJson', 'sourceSheet', 'sortKey', 'extra1', 'extra2', 'extra3', 'extra4', 'extra5', 'extra6', 'extra7'],
-  cacheKeyPrefix: 'techmap-techops-db-v1',
+  cacheKeyPrefix: 'techmap-techops-db-v3',
+  schemaVersion: 3,
   cacheChunkSize: 80000,
   cacheTtlSeconds: 21600,
   tabs: {
@@ -103,9 +104,32 @@ function getTechOperationsDatabase(forceRefresh) {
     syncTechOperationsDatabase();
   } else {
     ensureTechOperationsDatabaseReady_();
+    // Auto-resync if schema version in stored meta doesn't match current version
+    if (!isTechOperationsSchemaFresh_()) {
+      syncTechOperationsDatabase();
+    }
   }
 
   return buildTechOperationsPayload_(getTechOperationsSnapshot_());
+}
+
+function isTechOperationsSchemaFresh_() {
+  const ss = SpreadsheetApp.getActive();
+  const metaSheet = ss.getSheetByName(TECHOPS_DB_APP.metaSheetName);
+  if (!metaSheet) {
+    return false;
+  }
+  const lastRow = metaSheet.getLastRow();
+  if (lastRow < 2) {
+    return false;
+  }
+  const rows = metaSheet.getRange(2, 1, lastRow - 1, 2).getValues();
+  for (let i = 0; i < rows.length; i += 1) {
+    if (String(rows[i][0]) === 'schemaVersion') {
+      return String(rows[i][1]) === String(TECHOPS_DB_APP.schemaVersion);
+    }
+  }
+  return false;
 }
 
 // Backward-compatible alias used by the workspace sidebar.
@@ -616,6 +640,7 @@ function writeTechOperationsSnapshotToSheets_(snapshot) {
     ['recordCount', String(snapshot.meta.recordCount || 0)],
     ['countsByTabJson', JSON.stringify(snapshot.meta.countsByTab || {})],
     ['diagnosticsByTabJson', JSON.stringify(snapshot.meta.diagnosticsByTab || {})],
+    ['schemaVersion', String(TECHOPS_DB_APP.schemaVersion)],
   ];
   metaSheet.getRange(2, 1, metaRows.length, 2).setValues(metaRows);
   hideTechOperationsSheets_();
