@@ -193,6 +193,14 @@ function saveSelectedRangeAsTemplate(formData) {
 
   const catalogSheet = ensureCatalogSheet_(SpreadsheetApp.getActive());
   runWithSheetVisible_(catalogSheet, () => {
+    let rowHeightsJson = '[]';
+    let columnWidthsJson = '[]';
+    try {
+      rowHeightsJson = JSON.stringify(getRowHeights_(range));
+    } catch (e) {}
+    try {
+      columnWidthsJson = JSON.stringify(getColumnWidths_(range));
+    } catch (e) {}
     upsertCatalogRecord_(catalogSheet, {
       id: recordId,
       title,
@@ -205,8 +213,8 @@ function saveSelectedRangeAsTemplate(formData) {
       sourceSheet: range.getSheet().getName(),
       sourceRange: range.getA1Notation(),
       updatedAt: new Date().toISOString(),
-      rowHeightsJson: JSON.stringify(getRowHeights_(range)),
-      columnWidthsJson: JSON.stringify(getColumnWidths_(range)),
+      rowHeightsJson,
+      columnWidthsJson,
     });
   });
 
@@ -666,6 +674,7 @@ function writeRangeToStore_(sourceRange, storeRow, storeColumn) {
     const targetRange = storeSheet.getRange(storeRow, storeColumn, height, width);
     targetRange.breakApart();
     clearStoreSlotForWrite_(targetRange);
+    SpreadsheetApp.flush();
     copyRangePreservingFormulas_(sourceRange, targetRange);
     targetRange.getCell(1, 1).setNote('techmap-template-store');
   });
@@ -685,7 +694,59 @@ function clearStoreSlotForWrite_(targetRange) {
     try {
       targetRange.clearContent();
     } catch (e4) {}
+    try {
+      targetRange.removeCheckboxes();
+    } catch (e5) {}
   }
+}
+
+/**
+ * Один setValues на большой сетке иногда даёт «Ошибка службы: Таблицы» — режем на полосы.
+ */
+function setRangeValuesChunked_(targetRange, values) {
+  if (!values || !values.length) {
+    return;
+  }
+  const numRows = values.length;
+  const numCols = values[0].length;
+  const maxChunk = 25;
+  if (numRows <= maxChunk) {
+    targetRange.setValues(values);
+    return;
+  }
+  const startRow = targetRange.getRow();
+  const startCol = targetRange.getColumn();
+  const sheet = targetRange.getSheet();
+  for (let r = 0; r < numRows; r += maxChunk) {
+    const h = Math.min(maxChunk, numRows - r);
+    const slice = values.slice(r, r + h);
+    sheet.getRange(startRow + r, startCol, h, numCols).setValues(slice);
+    SpreadsheetApp.flush();
+  }
+}
+
+function applySourceFormulasCellwise_(targetRange, formulas) {
+  if (!formulas || !formulas.length) {
+    return;
+  }
+  let sleepCounter = 0;
+  formulas.forEach((row, r) => {
+    row.forEach((formula, c) => {
+      if (formula === '') {
+        return;
+      }
+      try {
+        targetRange.getCell(r + 1, c + 1).setFormula(formula);
+      } catch (fe) {
+        // Ячейка сохраняет отображаемое значение из setValues.
+      }
+      sleepCounter += 1;
+      if (sleepCounter % 40 === 0) {
+        SpreadsheetApp.flush();
+        Utilities.sleep(30);
+      }
+    });
+  });
 }
 
 /**
@@ -713,18 +774,35 @@ function copyRangePreservingFormulas_(sourceRange, targetRange) {
   try {
     targetRange.breakApart();
 
-    const values   = sourceRange.getValues();
-    const formulas = sourceRange.getFormulas();
+    let values;
+    let formulas;
+    try {
+      values = sourceRange.getValues();
+    } catch (e) {
+      throw new Error(
+        `Не удалось прочитать значения выделения (${sourceRange.getA1Notation()}). Уменьшите диапазон или скопируйте шаблон на новый лист без лишних строк. ${e.message || ''}`
+      );
+    }
+    try {
+      formulas = sourceRange.getFormulas();
+    } catch (e) {
+      const emptyRow = [];
+      for (let c = 0; c < (values[0] ? values[0].length : 0); c += 1) {
+        emptyRow.push('');
+      }
+      formulas = values.map(() => emptyRow.slice());
+    }
 
-    targetRange.setValues(values);
+    try {
+      setRangeValuesChunked_(targetRange, values);
+    } catch (e) {
+      throw new Error(
+        `Не удалось записать значения в склад шаблонов. Попробуйте выделить только область карточки без пустых хвостов строк. ${e.message || ''}`
+      );
+    }
+    SpreadsheetApp.flush();
 
-    formulas.forEach((row, r) => {
-      row.forEach((formula, c) => {
-        if (formula !== '') {
-          targetRange.getCell(r + 1, c + 1).setFormula(formula);
-        }
-      });
-    });
+    applySourceFormulasCellwise_(targetRange, formulas);
 
     copyRangeFormatPreservingMerges_(sourceRange, targetRange, ss, priorActive, srcSheet, dstSheet);
   } finally {
