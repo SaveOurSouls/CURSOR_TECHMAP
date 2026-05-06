@@ -634,31 +634,48 @@ function writeRangeToStore_(sourceRange, storeRow, storeColumn) {
 
 /**
  * Copies a range to a target range without adjusting formula references.
- * Uses PASTE_FORMAT for formatting, then setValues + setFormulas for content
- * so that formula strings are transferred verbatim (no offset recalculation).
+ * Writes values and formulas first on a broken-apart grid, then pastes format
+ * (including merges) last. PASTE_FORMAT before setValues recreates merges and
+ * makes setValues hit merged cells — that triggers "Ошибка службы: Таблицы" and
+ * can leave blocks without visible text.
  */
 function copyRangePreservingFormulas_(sourceRange, targetRange) {
-  // 1. Formatting (borders, background, font, merges, number formats)
-  sourceRange.copyTo(targetRange, SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
+  const srcSheet = sourceRange.getSheet();
+  const dstSheet = targetRange.getSheet();
+  const hideSrc = srcSheet.isSheetHidden();
+  const hideDst = dstSheet.isSheetHidden();
+  if (hideSrc) {
+    srcSheet.showSheet();
+  }
+  if (hideDst) {
+    dstSheet.showSheet();
+  }
 
-  const values   = sourceRange.getValues();
-  const formulas = sourceRange.getFormulas();
+  try {
+    targetRange.breakApart();
 
-  // 2. Set all values. This correctly fills every cell including formula cells
-  //    with their last calculated value (needed as a safe fallback).
-  targetRange.setValues(values);
+    const values   = sourceRange.getValues();
+    const formulas = sourceRange.getFormulas();
 
-  // 3. For cells that actually have a formula: set the exact formula text
-  //    one cell at a time so that empty strings in `formulas` do NOT clear
-  //    the values we just wrote in step 2.
-  //    setFormulas() treats "" as "clear cell" — that's the bug we avoid here.
-  formulas.forEach((row, r) => {
-    row.forEach((formula, c) => {
-      if (formula !== '') {
-        targetRange.getCell(r + 1, c + 1).setFormula(formula);
-      }
+    targetRange.setValues(values);
+
+    formulas.forEach((row, r) => {
+      row.forEach((formula, c) => {
+        if (formula !== '') {
+          targetRange.getCell(r + 1, c + 1).setFormula(formula);
+        }
+      });
     });
-  });
+
+    sourceRange.copyTo(targetRange, SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
+  } finally {
+    if (hideSrc) {
+      srcSheet.hideSheet();
+    }
+    if (hideDst) {
+      dstSheet.hideSheet();
+    }
+  }
 }
 
 function applyStoredDimensions_(targetSheet, targetRow, targetColumn, template) {
