@@ -638,20 +638,27 @@ function writeRangeToStore_(sourceRange, storeRow, storeColumn) {
  * so that formula strings are transferred verbatim (no offset recalculation).
  */
 function copyRangePreservingFormulas_(sourceRange, targetRange) {
-  // 1. Copy all non-content formatting: borders, background, font, merges, etc.
+  // 1. Formatting (borders, background, font, merges, number formats)
   sourceRange.copyTo(targetRange, SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
 
-  // 2. Copy values first (sets non-formula cells)
-  const values = sourceRange.getValues();
+  const values   = sourceRange.getValues();
+  const formulas = sourceRange.getFormulas();
+
+  // 2. Set all values. This correctly fills every cell including formula cells
+  //    with their last calculated value (needed as a safe fallback).
   targetRange.setValues(values);
 
-  // 3. Overwrite with exact formula strings where the source cell has a formula.
-  //    setFormulas() writes the formula text verbatim — no position adjustment.
-  const formulas = sourceRange.getFormulas();
-  const hasAnyFormula = formulas.some((row) => row.some((f) => f !== ''));
-  if (hasAnyFormula) {
-    targetRange.setFormulas(formulas);
-  }
+  // 3. For cells that actually have a formula: set the exact formula text
+  //    one cell at a time so that empty strings in `formulas` do NOT clear
+  //    the values we just wrote in step 2.
+  //    setFormulas() treats "" as "clear cell" — that's the bug we avoid here.
+  formulas.forEach((row, r) => {
+    row.forEach((formula, c) => {
+      if (formula !== '') {
+        targetRange.getCell(r + 1, c + 1).setFormula(formula);
+      }
+    });
+  });
 }
 
 function applyStoredDimensions_(targetSheet, targetRow, targetColumn, template) {
