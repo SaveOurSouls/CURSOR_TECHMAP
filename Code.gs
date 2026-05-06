@@ -133,10 +133,40 @@ function getSaveTemplateDialogState() {
   };
 }
 
+/**
+ * Диапазон для сохранения: из данных диалога (на момент открытия), иначе текущее выделение.
+ * Повторный getActiveWorkingRange_ при открытом модальном окне нестабилен и может давать сбои API.
+ */
+function resolveTemplateSourceRange_(formData) {
+  const sel = formData && formData.selection;
+  if (sel && sel.sheetName && sel.rangeA1) {
+    const ss = SpreadsheetApp.getActive();
+    const sheet = ss.getSheetByName(sel.sheetName);
+    if (!sheet || isSystemSheet_(sheet.getName())) {
+      throw new Error(
+        'Неверный лист выделения. Закройте окно, выделите шаблон на рабочем листе и откройте «Сохранить шаблон» снова.'
+      );
+    }
+    const range = sheet.getRange(sel.rangeA1);
+    if (
+      sel.height &&
+      sel.width &&
+      (range.getNumRows() !== sel.height || range.getNumColumns() !== sel.width)
+    ) {
+      throw new Error(
+        'Выделение изменилось с момента открытия окна. Закройте диалог и откройте «Сохранить шаблон» заново.'
+      );
+    }
+    validateTemplateRange_(range);
+    return range;
+  }
+  return getActiveWorkingRange_();
+}
+
 function saveSelectedRangeAsTemplate(formData) {
   ensureInfrastructure_();
 
-  const range = getActiveWorkingRange_();
+  const range = resolveTemplateSourceRange_(formData);
   const title = normalizeString_(formData && formData.title);
   if (!title) {
     throw new Error('Укажите название шаблона.');
@@ -655,10 +685,27 @@ function writeRangeToStore_(sourceRange, storeRow, storeColumn) {
   runWithSheetVisible_(storeSheet, () => {
     const targetRange = storeSheet.getRange(storeRow, storeColumn, height, width);
     targetRange.breakApart();
-    targetRange.clear({ contentsOnly: false });
+    clearStoreSlotForWrite_(targetRange);
     copyRangePreservingFormulas_(sourceRange, targetRange);
     targetRange.getCell(1, 1).setNote('techmap-template-store');
   });
+}
+
+/** Очистка слота _TC_STORE перед записью; полный clear() по скрытому листу иногда падает в API. */
+function clearStoreSlotForWrite_(targetRange) {
+  try {
+    targetRange.clear({ contentsOnly: false });
+  } catch (e) {
+    try {
+      targetRange.clearDataValidations();
+    } catch (e2) {}
+    try {
+      targetRange.clearFormat();
+    } catch (e3) {}
+    try {
+      targetRange.clearContent();
+    } catch (e4) {}
+  }
 }
 
 /**
@@ -680,6 +727,9 @@ function copyRangePreservingFormulas_(sourceRange, targetRange) {
     dstSheet.showSheet();
   }
 
+  const ss = SpreadsheetApp.getActive();
+  const priorActive = ss.getActiveSheet();
+
   try {
     targetRange.breakApart();
 
@@ -696,7 +746,7 @@ function copyRangePreservingFormulas_(sourceRange, targetRange) {
       });
     });
 
-    sourceRange.copyTo(targetRange, SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
+    copyRangeFormatPreservingMerges_(sourceRange, targetRange, ss, priorActive, srcSheet, dstSheet);
   } finally {
     if (hideSrc) {
       srcSheet.hideSheet();
@@ -704,6 +754,50 @@ function copyRangePreservingFormulas_(sourceRange, targetRange) {
     if (hideDst) {
       dstSheet.hideSheet();
     }
+  }
+}
+
+/**
+ * PASTE_FORMAT после записи значений; copyTo между листами иногда нестабилен, если активен «чужой» лист.
+ * При неудаче остаются значения и формулы (без объединений/рамок).
+ */
+function copyRangeFormatPreservingMerges_(sourceRange, targetRange, ss, priorActive, srcSheet, dstSheet) {
+  const restorePrior = () => {
+    if (
+      priorActive &&
+      !isSystemSheet_(priorActive.getName()) &&
+      ss.getActiveSheet().getSheetId() !== priorActive.getSheetId()
+    ) {
+      try {
+        ss.setActiveSheet(priorActive);
+      } catch (e) {}
+    }
+  };
+
+  const attempt = (sheetToActivate) => {
+    if (sheetToActivate && ss.getActiveSheet().getSheetId() !== sheetToActivate.getSheetId()) {
+      ss.setActiveSheet(sheetToActivate);
+    }
+    SpreadsheetApp.flush();
+    sourceRange.copyTo(targetRange, SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
+  };
+
+  try {
+    attempt(srcSheet);
+  } catch (e1) {
+    try {
+      attempt(dstSheet);
+    } catch (e2) {
+      try {
+        Utilities.sleep(200);
+        SpreadsheetApp.flush();
+        attempt(dstSheet);
+      } catch (e3) {
+        // В целевом диапазоне уже есть значения и формулы.
+      }
+    }
+  } finally {
+    restorePrior();
   }
 }
 
