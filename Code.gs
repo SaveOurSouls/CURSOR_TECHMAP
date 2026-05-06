@@ -228,7 +228,7 @@ function insertTemplate(templateId) {
     template.width
   );
   targetRange.breakApart();
-  sourceRange.copyTo(targetRange, SpreadsheetApp.CopyPasteType.PASTE_NORMAL, false);
+  copyRangePreservingFormulas_(sourceRange, targetRange);
   clearTemplateMarkerNote_(targetRange);
 
   SpreadsheetApp.flush();
@@ -578,7 +578,7 @@ function compactifyStore_(catalog) {
     ensureSheetCapacity_(tempSheet, writeRow + item.height - 1, item.width);
     const destRange = tempSheet.getRange(writeRow, 1, item.height, item.width);
     destRange.breakApart();
-    srcRange.copyTo(destRange, SpreadsheetApp.CopyPasteType.PASTE_NORMAL, false);
+    copyRangePreservingFormulas_(srcRange, destRange);
     newStoreRows[item.id] = writeRow;
     writeRow += item.height;
   });
@@ -589,13 +589,10 @@ function compactifyStore_(catalog) {
     storeSheet.deleteRows(1, storeLastRow);
   }
   if (writeRow > 1) {
-    ensureSheetCapacity_(storeSheet, writeRow - 1, live[0].width || 20);
-    const compactedRange = tempSheet.getRange(1, 1, writeRow - 1, live[0].width || 20);
-    compactedRange.copyTo(
-      storeSheet.getRange(1, 1, writeRow - 1, live[0].width || 20),
-      SpreadsheetApp.CopyPasteType.PASTE_NORMAL,
-      false
-    );
+    const cols = live[0].width || 20;
+    ensureSheetCapacity_(storeSheet, writeRow - 1, cols);
+    const compactedRange = tempSheet.getRange(1, 1, writeRow - 1, cols);
+    copyRangePreservingFormulas_(compactedRange, storeSheet.getRange(1, 1, writeRow - 1, cols));
   }
 
   ss.deleteSheet(tempSheet);
@@ -631,8 +628,30 @@ function writeRangeToStore_(sourceRange, storeRow, storeColumn) {
   const targetRange = storeSheet.getRange(storeRow, storeColumn, height, width);
   targetRange.breakApart();
   targetRange.clear({ contentsOnly: false });
-  sourceRange.copyTo(targetRange, SpreadsheetApp.CopyPasteType.PASTE_NORMAL, false);
+  copyRangePreservingFormulas_(sourceRange, targetRange);
   targetRange.getCell(1, 1).setNote('techmap-template-store');
+}
+
+/**
+ * Copies a range to a target range without adjusting formula references.
+ * Uses PASTE_FORMAT for formatting, then setValues + setFormulas for content
+ * so that formula strings are transferred verbatim (no offset recalculation).
+ */
+function copyRangePreservingFormulas_(sourceRange, targetRange) {
+  // 1. Copy all non-content formatting: borders, background, font, merges, etc.
+  sourceRange.copyTo(targetRange, SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
+
+  // 2. Copy values first (sets non-formula cells)
+  const values = sourceRange.getValues();
+  targetRange.setValues(values);
+
+  // 3. Overwrite with exact formula strings where the source cell has a formula.
+  //    setFormulas() writes the formula text verbatim — no position adjustment.
+  const formulas = sourceRange.getFormulas();
+  const hasAnyFormula = formulas.some((row) => row.some((f) => f !== ''));
+  if (hasAnyFormula) {
+    targetRange.setFormulas(formulas);
+  }
 }
 
 function applyStoredDimensions_(targetSheet, targetRow, targetColumn, template) {
