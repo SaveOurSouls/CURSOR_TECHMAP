@@ -185,18 +185,25 @@ function insertTemplate(templateId) {
     throw new Error('Не передан идентификатор шаблона.');
   }
 
-  ensureDemoLibraryInstalled_();
-
   const ss = SpreadsheetApp.getActive();
+
+  // Capture target sheet and cell BEFORE any infrastructure calls that might
+  // change the active sheet (canvas creation, compaction, hide/show operations).
   const targetSheet = ss.getActiveSheet();
   if (isSystemSheet_(targetSheet.getName())) {
     throw new Error('Вставка шаблонов на служебные листы запрещена. Перейдите на рабочий лист.');
   }
-
   const activeRange = targetSheet.getActiveRange();
   if (!activeRange) {
     throw new Error('Не выбрана ячейка для вставки.');
   }
+  const targetRow = activeRange.getRow();
+  const targetColumn = activeRange.getColumn();
+
+  // Only ensure infrastructure (catalog + store sheets exist). Do NOT call
+  // ensureDemoLibraryInstalled_ here — that recreates deleted demo templates,
+  // triggers compactifyStore_, creates _TC_CANVAS, changes the active sheet.
+  ensureInfrastructure_();
 
   const template = getTemplateById_(templateId);
   const sourceSheet = ensureStoreSheet_(ss);
@@ -206,8 +213,6 @@ function insertTemplate(templateId) {
     template.height,
     template.width
   );
-  const targetRow = activeRange.getRow();
-  const targetColumn = activeRange.getColumn();
 
   ensureSheetCapacity_(
     targetSheet,
@@ -519,6 +524,8 @@ function allocateStoreLocation_(range, existingTemplate, catalog) {
  */
 function compactifyStore_(catalog) {
   const ss = SpreadsheetApp.getActive();
+  const savedSheet = ss.getActiveSheet();
+
   const storeSheet = ensureStoreSheet_(ss);
   const catalogSheet = ss.getSheetByName(TECHMAP_APP.librarySheetName);
   if (!catalogSheet) {
@@ -596,6 +603,9 @@ function compactifyStore_(catalog) {
   // Update storeRow in catalog for all items that moved
   const catalogLastRow = catalogSheet.getLastRow();
   if (catalogLastRow < 2) {
+    if (!isSystemSheet_(savedSheet.getName())) {
+      ss.setActiveSheet(savedSheet);
+    }
     return;
   }
   const catalogIds = catalogSheet.getRange(2, 1, catalogLastRow - 1, 1).getValues();
@@ -605,6 +615,11 @@ function compactifyStore_(catalog) {
       catalogSheet.getRange(idx + 2, 5).setValue(newStoreRows[id]);
     }
   });
+
+  // Restore the active sheet that was active before compaction
+  if (!isSystemSheet_(savedSheet.getName())) {
+    ss.setActiveSheet(savedSheet);
+  }
 }
 
 function writeRangeToStore_(sourceRange, storeRow, storeColumn) {
@@ -655,6 +670,8 @@ function getColumnWidths_(range) {
 }
 
 function saveRenderedTemplateSpec_(ss, templateSpec) {
+  const savedSheet = ss.getActiveSheet();
+
   const canvasName = TECHMAP_APP.canvasSheetName;
   let canvasSheet = ss.getSheetByName(canvasName);
   if (!canvasSheet) {
@@ -689,6 +706,13 @@ function saveRenderedTemplateSpec_(ss, templateSpec) {
     ss.deleteSheet(canvasSheet);
   } catch (e) {
     canvasSheet.hideSheet();
+  }
+
+  // Restore active sheet — canvas operations change which sheet is active
+  if (savedSheet && !isSystemSheet_(savedSheet.getName())) {
+    try {
+      ss.setActiveSheet(savedSheet);
+    } catch (e) {}
   }
 }
 
