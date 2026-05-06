@@ -51,10 +51,11 @@ const TECHOPS_DB_APP = {
   tabOrder: ['ob', 'op', 'ter', 'coax'],
 };
 
-if (typeof TECHMAP_DATA_MODEL !== 'undefined' && TECHMAP_DATA_MODEL.techOperationsSource) {
-  const techOpsModel = TECHMAP_DATA_MODEL.techOperationsSource;
-  if (techOpsModel.spreadsheetId) {
-    TECHOPS_DB_APP.sourceSpreadsheetId = techOpsModel.spreadsheetId;
+if (typeof TECHMAP_DATA_MODEL !== 'undefined') {
+  const opsSrc =
+    TECHMAP_DATA_MODEL.operationsSource || TECHMAP_DATA_MODEL.techOperationsSource;
+  if (opsSrc && opsSrc.spreadsheetId) {
+    TECHOPS_DB_APP.sourceSpreadsheetId = opsSrc.spreadsheetId;
   }
 }
 

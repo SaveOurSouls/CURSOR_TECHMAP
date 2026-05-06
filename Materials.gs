@@ -21,9 +21,18 @@ const MATERIAL_DB_APP = {
   cacheTtlSeconds: 21600,
 };
 
-if (typeof TECHMAP_DATA_MODEL !== 'undefined' && TECHMAP_DATA_MODEL.materialDatabase) {
+if (typeof TECHMAP_DATA_MODEL !== 'undefined') {
+  if (TECHMAP_DATA_MODEL.materialsSource) {
+    const src = TECHMAP_DATA_MODEL.materialsSource;
+    if (src.spreadsheetId) {
+      MATERIAL_DB_APP.sourceSpreadsheetId = src.spreadsheetId;
+    }
+    if (src.sheets && src.sheets.length) {
+      MATERIAL_DB_APP.sourceSheetNames = src.sheets.slice();
+    }
+  }
   const materialModel = TECHMAP_DATA_MODEL.materialDatabase;
-  if (materialModel.serviceSheets) {
+  if (materialModel && materialModel.serviceSheets) {
     MATERIAL_DB_APP.metaSheetName = materialModel.serviceSheets.metaSheetName;
     MATERIAL_DB_APP.dataSheetName = materialModel.serviceSheets.dataSheetName;
   }

@@ -23,7 +23,11 @@ const TECHMAP_APP = {
   ],
 };
 
-if (typeof TECHMAP_DATA_MODEL !== 'undefined') {
+if (
+  typeof TECHMAP_DATA_MODEL !== 'undefined' &&
+  TECHMAP_DATA_MODEL.catalogHeaders &&
+  Array.isArray(TECHMAP_DATA_MODEL.catalogHeaders)
+) {
   TECHMAP_APP.catalogHeaders = TECHMAP_DATA_MODEL.catalogHeaders.slice();
 }
 
@@ -41,7 +45,10 @@ function onOpen() {
 }
 
 function showWorkspaceSidebar() {
-  const html = HtmlService.createHtmlOutputFromFile('WorkspaceSidebar')
+  const template = HtmlService.createTemplateFromFile('WorkspaceSidebar');
+  template.initialTab = 'templates';
+  const html = template
+    .evaluate()
     .setTitle('Техкарты и материалы')
     .setWidth(420);
 

@@ -6,6 +6,23 @@
  * 2) иметь единый словарь полей для каталога, сохранения и вставки шаблонов.
  */
 const TECHMAP_DATA_MODEL = {
+  /** Согласовано с TECHMAP_APP.catalogHeaders в Code.gs */
+  catalogHeaders: [
+    'id',
+    'title',
+    'category',
+    'description',
+    'storeRow',
+    'storeColumn',
+    'height',
+    'width',
+    'sourceSheet',
+    'sourceRange',
+    'updatedAt',
+    'rowHeightsJson',
+    'columnWidthsJson',
+  ],
+
   materialsSource: {
     spreadsheetId: '1NExDzeG-vw3zY_ooeXoxRffIARh2wbLJNAHT3FU_Ig8',
     sheets: ['COMPCON', 'COMPCOAX', 'COMPTERM', 'COMPWIRE', 'COMPACCESS'],

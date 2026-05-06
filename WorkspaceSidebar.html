@@ -825,7 +825,7 @@
     </div>
 
     <script>
-      const INITIAL_MAIN_TAB = '<?= initialTab ?>' || 'templates';
+      const INITIAL_MAIN_TAB = "<?= initialTab ?>";
       const STORAGE_KEYS = {
         mainTab: 'techmap-workspace-main-tab',
         compactMode: 'techmap-workspace-compact',
@@ -912,9 +912,15 @@
 
       function restoreMainTab() {
         let tabName = INITIAL_MAIN_TAB || 'templates';
+        if (tabName !== 'templates' && tabName !== 'materials' && tabName !== 'operations') {
+          tabName = 'templates';
+        }
         try {
           tabName = localStorage.getItem(STORAGE_KEYS.mainTab) || tabName;
         } catch (error) {}
+        if (tabName !== 'templates' && tabName !== 'materials' && tabName !== 'operations') {
+          tabName = 'templates';
+        }
         switchMainTab(tabName);
       }
 
