@@ -154,20 +154,23 @@ function saveSelectedRangeAsTemplate(formData) {
   const storeLocation = allocateStoreLocation_(range, existingTemplate, catalog);
   writeRangeToStore_(range, storeLocation.row, storeLocation.column);
 
-  upsertCatalogRecord_(ensureCatalogSheet_(SpreadsheetApp.getActive()), {
-    id: recordId,
-    title,
-    category,
-    description,
-    storeRow: storeLocation.row,
-    storeColumn: storeLocation.column,
-    height: range.getNumRows(),
-    width: range.getNumColumns(),
-    sourceSheet: range.getSheet().getName(),
-    sourceRange: range.getA1Notation(),
-    updatedAt: new Date().toISOString(),
-    rowHeightsJson: JSON.stringify(getRowHeights_(range)),
-    columnWidthsJson: JSON.stringify(getColumnWidths_(range)),
+  const catalogSheet = ensureCatalogSheet_(SpreadsheetApp.getActive());
+  runWithSheetVisible_(catalogSheet, () => {
+    upsertCatalogRecord_(catalogSheet, {
+      id: recordId,
+      title,
+      category,
+      description,
+      storeRow: storeLocation.row,
+      storeColumn: storeLocation.column,
+      height: range.getNumRows(),
+      width: range.getNumColumns(),
+      sourceSheet: range.getSheet().getName(),
+      sourceRange: range.getA1Notation(),
+      updatedAt: new Date().toISOString(),
+      rowHeightsJson: JSON.stringify(getRowHeights_(range)),
+      columnWidthsJson: JSON.stringify(getColumnWidths_(range)),
+    });
   });
 
   hideLibrarySheets();
@@ -518,6 +521,28 @@ function allocateStoreLocation_(range, existingTemplate, catalog) {
 }
 
 /**
+ * Временно показывает скрытый лист на время callback.
+ * Служба «Таблицы» часто возвращает «Ошибка службы: Таблицы» для операций
+ * clear, copyTo и deleteRows по полностью скрытому листу (в т.ч. _TC_STORE).
+ */
+function runWithSheetVisible_(sheet, fn) {
+  if (!sheet) {
+    return fn();
+  }
+  const wasHidden = sheet.isSheetHidden();
+  if (wasHidden) {
+    sheet.showSheet();
+  }
+  try {
+    return fn();
+  } finally {
+    if (wasHidden) {
+      sheet.hideSheet();
+    }
+  }
+}
+
+/**
  * Physically rewrites _TC_STORE so it contains only live template blocks
  * packed together from row 1, and updates storeRow in the catalog.
  * Should be called before inserting a new template block.
@@ -532,6 +557,7 @@ function compactifyStore_(catalog) {
     return;
   }
 
+  runWithSheetVisible_(storeSheet, () => {
   // Sort live templates by their current storeRow so we rewrite top-to-bottom
   const live = (catalog || [])
     .filter((item) => item.storeRow > 0 && item.height > 0 && item.width > 0)
@@ -617,6 +643,7 @@ function compactifyStore_(catalog) {
   if (!isSystemSheet_(savedSheet.getName())) {
     ss.setActiveSheet(savedSheet);
   }
+  });
 }
 
 function writeRangeToStore_(sourceRange, storeRow, storeColumn) {
@@ -625,11 +652,13 @@ function writeRangeToStore_(sourceRange, storeRow, storeColumn) {
   const width = sourceRange.getNumColumns();
   ensureSheetCapacity_(storeSheet, storeRow + height - 1, storeColumn + width - 1);
 
-  const targetRange = storeSheet.getRange(storeRow, storeColumn, height, width);
-  targetRange.breakApart();
-  targetRange.clear({ contentsOnly: false });
-  copyRangePreservingFormulas_(sourceRange, targetRange);
-  targetRange.getCell(1, 1).setNote('techmap-template-store');
+  runWithSheetVisible_(storeSheet, () => {
+    const targetRange = storeSheet.getRange(storeRow, storeColumn, height, width);
+    targetRange.breakApart();
+    targetRange.clear({ contentsOnly: false });
+    copyRangePreservingFormulas_(sourceRange, targetRange);
+    targetRange.getCell(1, 1).setNote('techmap-template-store');
+  });
 }
 
 /**
