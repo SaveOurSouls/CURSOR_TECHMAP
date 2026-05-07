@@ -711,7 +711,13 @@ function setRangeValuesChunked_(targetRange, values) {
   const numCols = values[0].length;
   const maxChunk = 25;
   if (numRows <= maxChunk) {
-    targetRange.setValues(values);
+    try {
+      targetRange.setValues(values);
+    } catch (e) {
+      Utilities.sleep(120);
+      SpreadsheetApp.flush();
+      setRangeValuesRowByRow_(targetRange, values);
+    }
     return;
   }
   const startRow = targetRange.getRow();
@@ -720,8 +726,38 @@ function setRangeValuesChunked_(targetRange, values) {
   for (let r = 0; r < numRows; r += maxChunk) {
     const h = Math.min(maxChunk, numRows - r);
     const slice = values.slice(r, r + h);
-    sheet.getRange(startRow + r, startCol, h, numCols).setValues(slice);
-    SpreadsheetApp.flush();
+    try {
+      sheet.getRange(startRow + r, startCol, h, numCols).setValues(slice);
+      SpreadsheetApp.flush();
+    } catch (e) {
+      setRangeValuesRowByRow_(sheet.getRange(startRow + r, startCol, h, numCols), slice);
+    }
+  }
+}
+
+/**
+ * Резервная запись значений построчно/поячеечно, когда setValues на блоке падает.
+ */
+function setRangeValuesRowByRow_(targetRange, values) {
+  const sheet = targetRange.getSheet();
+  const startRow = targetRange.getRow();
+  const startCol = targetRange.getColumn();
+  const numCols = values[0] ? values[0].length : 0;
+  for (let r = 0; r < values.length; r += 1) {
+    const rowValues = [values[r]];
+    try {
+      sheet.getRange(startRow + r, startCol, 1, numCols).setValues(rowValues);
+    } catch (e) {
+      for (let c = 0; c < numCols; c += 1) {
+        try {
+          sheet.getRange(startRow + r, startCol + c).setValue(values[r][c]);
+        } catch (e2) {}
+      }
+    }
+    if (r % 20 === 0) {
+      SpreadsheetApp.flush();
+      Utilities.sleep(20);
+    }
   }
 }
 
