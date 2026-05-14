@@ -21,29 +21,6 @@ const MATERIAL_DB_APP = {
   cacheTtlSeconds: 21600,
 };
 
-if (typeof TECHMAP_DATA_MODEL !== 'undefined') {
-  if (TECHMAP_DATA_MODEL.materialsSource) {
-    const src = TECHMAP_DATA_MODEL.materialsSource;
-    if (src.spreadsheetId) {
-      MATERIAL_DB_APP.sourceSpreadsheetId = src.spreadsheetId;
-    }
-    if (src.sheets && src.sheets.length) {
-      MATERIAL_DB_APP.sourceSheetNames = src.sheets.slice();
-    }
-  }
-  const materialModel = TECHMAP_DATA_MODEL.materialDatabase;
-  if (materialModel && materialModel.serviceSheets) {
-    MATERIAL_DB_APP.metaSheetName = materialModel.serviceSheets.metaSheetName;
-    MATERIAL_DB_APP.dataSheetName = materialModel.serviceSheets.dataSheetName;
-  }
-}
-
-function showMaterialsSidebar() {
-  const html = HtmlService.createHtmlOutputFromFile('MaterialsSidebar')
-    .setTitle('Материалы')
-    .setWidth(360);
-  SpreadsheetApp.getUi().showSidebar(html);
-}
 
 function refreshMaterialsDatabase() {
   return syncMaterialDatabaseMenu();
@@ -66,7 +43,6 @@ function syncMaterialDatabase() {
   const snapshot = fetchMaterialSnapshotFromSource_();
   writeMaterialSnapshotToSheets_(snapshot);
   cacheMaterialSnapshot_(snapshot);
-  hideMaterialSheets_();
   return buildMaterialSummary_(snapshot);
 }
 
@@ -80,20 +56,32 @@ function clearMaterialCache_() {
   }
 }
 
-function getMaterialSearchData() {
-  ensureMaterialDatabaseReady_();
-  const snapshot = getMaterialSnapshot_();
-  return buildMaterialSearchPayload_(snapshot);
-}
-
 function getMaterialDatabase(forceRefresh) {
+  let snapshot;
+
   if (forceRefresh) {
     syncMaterialDatabase();
+    snapshot = getMaterialSnapshot_();
   } else {
-    ensureMaterialDatabaseReady_();
+    // Fast path: if cache is warm, skip all sheet reads entirely
+    const cached = loadMaterialSnapshotFromCache_();
+    if (cached && cached.records && cached.records.length) {
+      snapshot = cached;
+    } else {
+      // Cache miss: load from sheets, sync if empty
+      ensureMaterialInfrastructure_(SpreadsheetApp.getActive());
+      const stored = loadMaterialSnapshotFromSheets_();
+      if (!stored.records.length) {
+        syncMaterialDatabase();
+        snapshot = getMaterialSnapshot_();
+      } else {
+        cacheMaterialSnapshot_(stored);
+        snapshot = stored;
+      }
+    }
   }
 
-  const payload = buildMaterialSearchPayload_(getMaterialSnapshot_());
+  const payload = buildMaterialSearchPayload_(snapshot);
   return {
     items: payload.records,
     lookups: {
@@ -103,19 +91,6 @@ function getMaterialDatabase(forceRefresh) {
     },
     meta: payload.meta,
   };
-}
-
-/**
- * Совместимость со старой HTML-панелью пользователя.
- * Возвращает строку формата "tag|||tag|||tag".
- */
-function getSearchData() {
-  const payload = getMaterialSearchData();
-  const tags = payload.records.map((item) => item.fullTag);
-  if (!tags.length) {
-    return "ОШИБКА: База материалов пуста.";
-  }
-  return tags.join('|||');
 }
 
 function insertBatchIntoCell(valuesArray) {
@@ -172,12 +147,6 @@ function insertReplicatedData(valuesArray, targetCellA1) {
   return `Успешно выгружено ${matrix.length} строк.`;
 }
 
-function getMaterialDatabaseInfo() {
-  ensureMaterialDatabaseReady_();
-  const snapshot = getMaterialSnapshot_();
-  return buildMaterialSummary_(snapshot);
-}
-
 function ensureMaterialDatabaseReady_() {
   ensureMaterialInfrastructure_(SpreadsheetApp.getActive());
   const snapshot = getMaterialSnapshot_();
@@ -196,15 +165,14 @@ function ensureMaterialMetaSheet_(ss) {
   let sheet = ss.getSheetByName(MATERIAL_DB_APP.metaSheetName);
   if (!sheet) {
     sheet = ss.insertSheet(MATERIAL_DB_APP.metaSheetName);
+    ensureSheetCapacity_(sheet, 2, MATERIAL_DB_APP.metaHeaders.length);
+    sheet
+      .getRange(1, 1, 1, MATERIAL_DB_APP.metaHeaders.length)
+      .setValues([MATERIAL_DB_APP.metaHeaders])
+      .setFontWeight('bold')
+      .setBackground('#f3f6fc');
+    sheet.hideSheet();
   }
-
-  ensureSheetCapacity_(sheet, 2, MATERIAL_DB_APP.metaHeaders.length);
-  sheet
-    .getRange(1, 1, 1, MATERIAL_DB_APP.metaHeaders.length)
-    .setValues([MATERIAL_DB_APP.metaHeaders])
-    .setFontWeight('bold')
-    .setBackground('#f3f6fc');
-  sheet.hideSheet();
   return sheet;
 }
 
@@ -212,15 +180,14 @@ function ensureMaterialDataSheet_(ss) {
   let sheet = ss.getSheetByName(MATERIAL_DB_APP.dataSheetName);
   if (!sheet) {
     sheet = ss.insertSheet(MATERIAL_DB_APP.dataSheetName);
+    ensureSheetCapacity_(sheet, 2, MATERIAL_DB_APP.dataHeaders.length);
+    sheet
+      .getRange(1, 1, 1, MATERIAL_DB_APP.dataHeaders.length)
+      .setValues([MATERIAL_DB_APP.dataHeaders])
+      .setFontWeight('bold')
+      .setBackground('#f3f6fc');
+    sheet.hideSheet();
   }
-
-  ensureSheetCapacity_(sheet, 2, MATERIAL_DB_APP.dataHeaders.length);
-  sheet
-    .getRange(1, 1, 1, MATERIAL_DB_APP.dataHeaders.length)
-    .setValues([MATERIAL_DB_APP.dataHeaders])
-    .setFontWeight('bold')
-    .setBackground('#f3f6fc');
-  sheet.hideSheet();
   return sheet;
 }
 
@@ -433,31 +400,32 @@ function getMaterialSnapshot_() {
 
 function loadMaterialSnapshotFromSheets_() {
   const ss = SpreadsheetApp.getActive();
-  const dataSheet = ensureMaterialDataSheet_(ss);
-  const metaSheet = ensureMaterialMetaSheet_(ss);
+  const dataSheet = ss.getSheetByName(MATERIAL_DB_APP.dataSheetName);
+  const metaSheet = ss.getSheetByName(MATERIAL_DB_APP.metaSheetName);
 
   const records = [];
-  const lastRow = dataSheet.getLastRow();
-  if (lastRow >= 2) {
-    const values = dataSheet
-      .getRange(2, 1, lastRow - 1, MATERIAL_DB_APP.dataHeaders.length)
-      .getValues()
-      .filter((row) => row[0]);
-
-    values.forEach((row) => {
-      records.push({
-        tag: row[0],
-        article: row[1],
-        type: row[2],
-        manufacturer: row[3],
-        supplier: row[4],
-        sourceSheet: row[5],
-        normalizedTag: row[6],
-        normalizedType: row[7],
-        normalizedManufacturer: row[8],
-        normalizedSupplier: row[9],
-      });
-    });
+  if (dataSheet) {
+    const lastRow = dataSheet.getLastRow();
+    if (lastRow >= 2) {
+      dataSheet
+        .getRange(2, 1, lastRow - 1, MATERIAL_DB_APP.dataHeaders.length)
+        .getValues()
+        .filter((row) => row[0])
+        .forEach((row) => {
+          records.push({
+            tag: row[0],
+            article: row[1],
+            type: row[2],
+            manufacturer: row[3],
+            supplier: row[4],
+            sourceSheet: row[5],
+            normalizedTag: row[6],
+            normalizedType: row[7],
+            normalizedManufacturer: row[8],
+            normalizedSupplier: row[9],
+          });
+        });
+    }
   }
 
   const meta = {
@@ -467,29 +435,26 @@ function loadMaterialSnapshotFromSheets_() {
     recordCount: records.length,
   };
 
-  const metaLastRow = metaSheet.getLastRow();
-  if (metaLastRow >= 2) {
-    const metaRows = metaSheet.getRange(2, 1, metaLastRow - 1, 2).getValues();
-    metaRows.forEach((row) => {
-      const key = row[0];
-      const value = row[1];
-      if (key === 'sourceSpreadsheetId') {
-        meta.sourceSpreadsheetId = value || MATERIAL_DB_APP.sourceSpreadsheetId;
-      } else if (key === 'sourceSheetsJson') {
-        try {
-          const parsed = JSON.parse(value);
-          if (Array.isArray(parsed) && parsed.length) {
-            meta.sourceSheets = parsed;
-          }
-        } catch (error) {
-          meta.sourceSheets = MATERIAL_DB_APP.sourceSheetNames.slice();
+  if (metaSheet) {
+    const metaLastRow = metaSheet.getLastRow();
+    if (metaLastRow >= 2) {
+      metaSheet.getRange(2, 1, metaLastRow - 1, 2).getValues().forEach((row) => {
+        const key = row[0];
+        const value = row[1];
+        if (key === 'sourceSpreadsheetId') {
+          meta.sourceSpreadsheetId = value || MATERIAL_DB_APP.sourceSpreadsheetId;
+        } else if (key === 'sourceSheetsJson') {
+          try {
+            const parsed = JSON.parse(value);
+            if (Array.isArray(parsed) && parsed.length) meta.sourceSheets = parsed;
+          } catch (e) {}
+        } else if (key === 'updatedAt') {
+          meta.updatedAt = value || '';
+        } else if (key === 'recordCount') {
+          meta.recordCount = toInt_(value);
         }
-      } else if (key === 'updatedAt') {
-        meta.updatedAt = value || '';
-      } else if (key === 'recordCount') {
-        meta.recordCount = toInt_(value);
-      }
-    });
+      });
+    }
   }
 
   return { meta, records };

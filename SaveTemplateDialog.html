@@ -138,6 +138,12 @@
         const templates = dialogState.templates || [];
         select.innerHTML = '<option value="">Создать новый шаблон</option>' +
           templates.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.title)} (${escapeHtml(item.sizeLabel || '')})</option>`).join('');
+
+        // Pre-fill title and category from sheet name (e.g. "CUT_WIRE | Резка")
+        const sheetName = selection.sheetName || '';
+        const sepIdx = sheetName.indexOf(' | ');
+        document.getElementById('title').value = sheetName;
+        document.getElementById('category').value = sepIdx >= 0 ? sheetName.substring(sepIdx + 3) : '';
       }
 
       function onExistingTemplateChange() {
@@ -185,15 +191,9 @@
 
       document.getElementById('existingTemplateId').addEventListener('change', onExistingTemplateChange);
 
-      google.script.run
-        .withSuccessHandler((state) => {
-          populateDialog(state);
-          setStatus('Можно сохранять шаблон.', false);
-        })
-        .withFailureHandler((error) => {
-          setStatus(error.message || 'Не удалось загрузить состояние диалога.', true);
-        })
-        .getSaveTemplateDialogState();
+      // State is embedded by the server — no extra round-trip needed
+      populateDialog(<?!= initialState ?>);
+      setStatus('Можно сохранять шаблон.', false);
     </script>
   </body>
 </html>

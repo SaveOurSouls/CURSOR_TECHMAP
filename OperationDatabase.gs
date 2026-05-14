@@ -51,13 +51,6 @@ const TECHOPS_DB_APP = {
   tabOrder: ['ob', 'op', 'ter', 'coax'],
 };
 
-if (typeof TECHMAP_DATA_MODEL !== 'undefined') {
-  const opsSrc =
-    TECHMAP_DATA_MODEL.operationsSource || TECHMAP_DATA_MODEL.techOperationsSource;
-  if (opsSrc && opsSrc.spreadsheetId) {
-    TECHOPS_DB_APP.sourceSpreadsheetId = opsSrc.spreadsheetId;
-  }
-}
 
 function refreshTechOperationsDatabase() {
   return syncTechOperationsDatabaseMenu();
@@ -86,7 +79,6 @@ function syncTechOperationsDatabase() {
   const snapshot = fetchTechOperationsSnapshotFromSource_();
   writeTechOperationsSnapshotToSheets_(snapshot);
   cacheTechOperationsSnapshot_(snapshot);
-  hideTechOperationsSheets_();
   return buildTechOperationsSummary_(snapshot);
 }
 
@@ -103,34 +95,26 @@ function clearTechOperationsCache_() {
 function getTechOperationsDatabase(forceRefresh) {
   if (forceRefresh) {
     syncTechOperationsDatabase();
-  } else {
-    ensureTechOperationsDatabaseReady_();
-    // Auto-resync if schema version in stored meta doesn't match current version
-    if (!isTechOperationsSchemaFresh_()) {
-      syncTechOperationsDatabase();
-    }
+    return buildTechOperationsPayload_(loadTechOperationsSnapshotFromCache_() || loadTechOperationsSnapshotFromSheets_());
   }
 
-  return buildTechOperationsPayload_(getTechOperationsSnapshot_());
-}
+  // Fast path: cache warm and schema version matches — no sheet reads at all
+  const cached = loadTechOperationsSnapshotFromCache_();
+  if (cached && cached.records && cached.records.length &&
+      String(cached.meta && cached.meta.schemaVersion) === String(TECHOPS_DB_APP.schemaVersion)) {
+    return buildTechOperationsPayload_(cached);
+  }
 
-function isTechOperationsSchemaFresh_() {
-  const ss = SpreadsheetApp.getActive();
-  const metaSheet = ss.getSheetByName(TECHOPS_DB_APP.metaSheetName);
-  if (!metaSheet) {
-    return false;
+  // Cache miss or stale schema: load from sheets
+  ensureTechOperationsInfrastructure_(SpreadsheetApp.getActive());
+  const stored = loadTechOperationsSnapshotFromSheets_();
+  if (!stored.records.length ||
+      String(stored.meta.schemaVersion) !== String(TECHOPS_DB_APP.schemaVersion)) {
+    syncTechOperationsDatabase();
+    return buildTechOperationsPayload_(loadTechOperationsSnapshotFromCache_() || loadTechOperationsSnapshotFromSheets_());
   }
-  const lastRow = metaSheet.getLastRow();
-  if (lastRow < 2) {
-    return false;
-  }
-  const rows = metaSheet.getRange(2, 1, lastRow - 1, 2).getValues();
-  for (let i = 0; i < rows.length; i += 1) {
-    if (String(rows[i][0]) === 'schemaVersion') {
-      return String(rows[i][1]) === String(TECHOPS_DB_APP.schemaVersion);
-    }
-  }
-  return false;
+  cacheTechOperationsSnapshot_(stored);
+  return buildTechOperationsPayload_(stored);
 }
 
 // Backward-compatible alias used by the workspace sidebar.
@@ -202,15 +186,14 @@ function ensureTechOperationsMetaSheet_(ss) {
   let sheet = ss.getSheetByName(TECHOPS_DB_APP.metaSheetName);
   if (!sheet) {
     sheet = ss.insertSheet(TECHOPS_DB_APP.metaSheetName);
+    ensureSheetCapacity_(sheet, 2, TECHOPS_DB_APP.metaHeaders.length);
+    sheet
+      .getRange(1, 1, 1, TECHOPS_DB_APP.metaHeaders.length)
+      .setValues([TECHOPS_DB_APP.metaHeaders])
+      .setFontWeight('bold')
+      .setBackground('#f3f6fc');
+    sheet.hideSheet();
   }
-
-  ensureSheetCapacity_(sheet, 2, TECHOPS_DB_APP.metaHeaders.length);
-  sheet
-    .getRange(1, 1, 1, TECHOPS_DB_APP.metaHeaders.length)
-    .setValues([TECHOPS_DB_APP.metaHeaders])
-    .setFontWeight('bold')
-    .setBackground('#f3f6fc');
-  sheet.hideSheet();
   return sheet;
 }
 
@@ -218,28 +201,34 @@ function ensureTechOperationsDataSheet_(ss) {
   let sheet = ss.getSheetByName(TECHOPS_DB_APP.dataSheetName);
   if (!sheet) {
     sheet = ss.insertSheet(TECHOPS_DB_APP.dataSheetName);
+    ensureSheetCapacity_(sheet, 2, TECHOPS_DB_APP.dataHeaders.length);
+    sheet
+      .getRange(1, 1, 1, TECHOPS_DB_APP.dataHeaders.length)
+      .setValues([TECHOPS_DB_APP.dataHeaders])
+      .setFontWeight('bold')
+      .setBackground('#f3f6fc');
     sheet.hideSheet();
+    return sheet;
   }
 
-  // If schema changed (column count mismatch) — wipe and rebuild
+  // Schema check: rebuild only when column count changed
   const existingCols = sheet.getLastColumn();
   if (existingCols > 0 && existingCols !== TECHOPS_DB_APP.dataHeaders.length) {
     sheet.clear();
-    // Adjust column count to match new schema
     if (existingCols < TECHOPS_DB_APP.dataHeaders.length) {
       sheet.insertColumnsAfter(existingCols, TECHOPS_DB_APP.dataHeaders.length - existingCols);
     } else {
       sheet.deleteColumns(TECHOPS_DB_APP.dataHeaders.length + 1, existingCols - TECHOPS_DB_APP.dataHeaders.length);
     }
+    ensureSheetCapacity_(sheet, 2, TECHOPS_DB_APP.dataHeaders.length);
+    sheet
+      .getRange(1, 1, 1, TECHOPS_DB_APP.dataHeaders.length)
+      .setValues([TECHOPS_DB_APP.dataHeaders])
+      .setFontWeight('bold')
+      .setBackground('#f3f6fc');
+    sheet.hideSheet();
   }
 
-  ensureSheetCapacity_(sheet, 2, TECHOPS_DB_APP.dataHeaders.length);
-  sheet
-    .getRange(1, 1, 1, TECHOPS_DB_APP.dataHeaders.length)
-    .setValues([TECHOPS_DB_APP.dataHeaders])
-    .setFontWeight('bold')
-    .setBackground('#f3f6fc');
-  sheet.hideSheet();
   return sheet;
 }
 
@@ -310,6 +299,7 @@ function fetchTechOperationsSnapshotFromSource_() {
       sourceSpreadsheetId: TECHOPS_DB_APP.sourceSpreadsheetId,
       updatedAt: new Date().toISOString(),
       recordCount: records.length,
+      schemaVersion: TECHOPS_DB_APP.schemaVersion,
       countsByTab,
       diagnosticsByTab,
     },
@@ -662,72 +652,69 @@ function getTechOperationsSnapshot_() {
 
 function loadTechOperationsSnapshotFromSheets_() {
   const ss = SpreadsheetApp.getActive();
-  const dataSheet = ensureTechOperationsDataSheet_(ss);
-  const metaSheet = ensureTechOperationsMetaSheet_(ss);
+  const dataSheet = ss.getSheetByName(TECHOPS_DB_APP.dataSheetName);
+  const metaSheet = ss.getSheetByName(TECHOPS_DB_APP.metaSheetName);
 
   const records = [];
-  const lastRow = dataSheet.getLastRow();
-  if (lastRow >= 2) {
-    const values = dataSheet
-      .getRange(2, 1, lastRow - 1, TECHOPS_DB_APP.dataHeaders.length)
-      .getValues()
-      .filter((row) => row[0] && row[1]);
-
-    values.forEach((row) => {
-      records.push({
-        tabKey: row[0],
-        displayText: row[1],
-        normalizedSearch: row[2],
-        exportValues: parseJsonArray_(row[3]),
-        sourceSheet: row[4],
-        sortKey: row[5] || '',
-        terManufacturer: row[6] || '',
-        opNumber:        row[6] || '',
-        terSeries:       row[7] || '',
-        opName:          row[7] || '',
-        terComponent:    row[8] || '',
-        coaxWire:    row[9]  || '',
-        coaxType:    row[10] || '',
-        coaxMfr:     row[11] || '',
-        coaxArticle: row[12] || '',
-      });
-    });
+  if (dataSheet) {
+    const lastRow = dataSheet.getLastRow();
+    if (lastRow >= 2) {
+      dataSheet
+        .getRange(2, 1, lastRow - 1, TECHOPS_DB_APP.dataHeaders.length)
+        .getValues()
+        .filter((row) => row[0] && row[1])
+        .forEach((row) => {
+          records.push({
+            tabKey: row[0],
+            displayText: row[1],
+            normalizedSearch: row[2],
+            exportValues: parseJsonArray_(row[3]),
+            sourceSheet: row[4],
+            sortKey: row[5] || '',
+            terManufacturer: row[6] || '',
+            opNumber:        row[6] || '',
+            terSeries:       row[7] || '',
+            opName:          row[7] || '',
+            terComponent:    row[8] || '',
+            coaxWire:    row[9]  || '',
+            coaxType:    row[10] || '',
+            coaxMfr:     row[11] || '',
+            coaxArticle: row[12] || '',
+          });
+        });
+    }
   }
 
   const meta = {
     sourceSpreadsheetId: TECHOPS_DB_APP.sourceSpreadsheetId,
     updatedAt: '',
     recordCount: records.length,
+    schemaVersion: 0,
     countsByTab: {},
     diagnosticsByTab: {},
   };
 
-  const metaLastRow = metaSheet.getLastRow();
-  if (metaLastRow >= 2) {
-    const metaRows = metaSheet.getRange(2, 1, metaLastRow - 1, 2).getValues();
-    metaRows.forEach((row) => {
-      const key = row[0];
-      const value = row[1];
-      if (key === 'sourceSpreadsheetId') {
-        meta.sourceSpreadsheetId = value || TECHOPS_DB_APP.sourceSpreadsheetId;
-      } else if (key === 'updatedAt') {
-        meta.updatedAt = value || '';
-      } else if (key === 'recordCount') {
-        meta.recordCount = toInt_(value);
-      } else if (key === 'countsByTabJson') {
-        try {
-          meta.countsByTab = JSON.parse(value) || {};
-        } catch (error) {
-          meta.countsByTab = {};
+  if (metaSheet) {
+    const metaLastRow = metaSheet.getLastRow();
+    if (metaLastRow >= 2) {
+      metaSheet.getRange(2, 1, metaLastRow - 1, 2).getValues().forEach((row) => {
+        const key = row[0];
+        const value = row[1];
+        if (key === 'sourceSpreadsheetId') {
+          meta.sourceSpreadsheetId = value || TECHOPS_DB_APP.sourceSpreadsheetId;
+        } else if (key === 'updatedAt') {
+          meta.updatedAt = value || '';
+        } else if (key === 'recordCount') {
+          meta.recordCount = toInt_(value);
+        } else if (key === 'schemaVersion') {
+          meta.schemaVersion = toInt_(value);
+        } else if (key === 'countsByTabJson') {
+          try { meta.countsByTab = JSON.parse(value) || {}; } catch (e) {}
+        } else if (key === 'diagnosticsByTabJson') {
+          try { meta.diagnosticsByTab = JSON.parse(value) || {}; } catch (e) {}
         }
-      } else if (key === 'diagnosticsByTabJson') {
-        try {
-          meta.diagnosticsByTab = JSON.parse(value) || {};
-        } catch (error) {
-          meta.diagnosticsByTab = {};
-        }
-      }
-    });
+      });
+    }
   }
 
   return { meta, records };
@@ -753,7 +740,12 @@ function buildTechOperationsPayload_(snapshot) {
   TECHOPS_DB_APP.tabOrder.forEach((tabKey) => {
     const config = TECHOPS_DB_APP.tabs[tabKey];
     const items = (snapshot.records || [])
-      .filter((record) => record.tabKey === tabKey)
+      .filter((record) => {
+        if (record.tabKey !== tabKey) return false;
+        // Skip separator/placeholder rows in БД.ОБ (no letters or digits)
+        if (tabKey === 'ob' && !/[а-яёa-z0-9]/i.test(record.displayText || '')) return false;
+        return true;
+      })
       .map((record, index) => {
         const item = {
           id: `${tabKey}-${index}`,

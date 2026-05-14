@@ -45,35 +45,6 @@
         color: #ffffff;
       }
 
-      .header-controls {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 8px 12px 10px;
-        gap: 10px;
-      }
-
-      .compact-toggle {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        font-size: 12px;
-        color: #5f6368;
-        user-select: none;
-      }
-
-      .compact-toggle input {
-        margin: 0;
-      }
-
-      .main-status {
-        font-size: 11px;
-        color: #5f6368;
-        text-align: right;
-        flex: 1;
-        min-height: 14px;
-      }
-
       .panel-section {
         display: none;
         flex: 1;
@@ -239,8 +210,20 @@
         color: #3c4043;
       }
       .op-tree .op-children li:hover { background: #e8f0fe; color: #1a73e8; }
-      body.compact-mode .op-tree .op-group-header { padding: 5px 8px 5px 6px; font-size: 11px; }
-      body.compact-mode .op-tree .op-children li { padding: 4px 8px 4px 20px; font-size: 10px; }
+
+      #opDbObResults {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+      #opDbObResults li {
+        padding: 5px 10px;
+        border-bottom: 1px solid #f1f3f4;
+        cursor: pointer;
+        font-size: 11px;
+        color: #3c4043;
+      }
+      #opDbObResults li:hover { background: #e8f0fe; color: #1a73e8; }
 
       .section-status {
         margin: 6px 0 0;
@@ -523,106 +506,14 @@
         flex-shrink: 0;
       }
 
-      .diag-box {
-        margin-top: 8px;
-        padding-top: 8px;
-        border-top: 1px dashed #d0d7de;
-        font-size: 10px;
-        line-height: 1.35;
-        color: #5f6368;
-        white-space: pre-wrap;
-      }
-
-      body.compact-mode .main-tab-btn {
-        font-size: 11px;
-        padding: 8px 6px;
-      }
-
-      body.compact-mode .header-controls {
-        padding: 6px 10px 8px;
-      }
-
-      body.compact-mode .templates-toolbar {
-        padding: 8px 10px 6px;
-      }
-
-      body.compact-mode input,
-      body.compact-mode select,
-      body.compact-mode textarea {
-        padding: 6px 7px;
-        margin-bottom: 6px;
-        font-size: 12px;
-      }
-
-      body.compact-mode .template-list {
-        padding: 6px 8px 8px;
-      }
-
-      body.compact-mode .template-card {
-        padding: 8px 9px;
-        margin-bottom: 6px;
-        border-radius: 10px;
-      }
-
-      body.compact-mode .template-title {
-        font-size: 12px;
-        margin-bottom: 2px;
-      }
-
-      body.compact-mode .template-meta {
-        font-size: 10px;
-        margin-bottom: 4px;
-      }
-
-      body.compact-mode .template-desc {
-        display: none;
-      }
-
-      body.compact-mode .template-actions button {
-        padding: 7px 8px;
-        font-size: 11px;
-      }
-
-      body.compact-mode .tab-btn {
-        font-size: 9px;
-        padding: 5px 2px;
-      }
-
-      body.compact-mode #results li,
-      body.compact-mode .mini-search-results li {
-        padding: 5px 6px;
-        font-size: 10px;
-        line-height: 1.25;
-      }
-
-      body.compact-mode #basketList li {
-        padding: 3px 6px;
-        font-size: 10px;
-      }
-
-      body.compact-mode .action-btn {
-        padding: 8px;
-        font-size: 11px;
-      }
-
-      body.compact-mode label {
-        font-size: 9px;
-      }
     </style>
   </head>
   <body>
     <div class="main-header">
       <div class="main-tabs">
         <button id="mainTabTemplatesBtn" class="main-tab-btn" onclick="switchMainTab('templates')">Техкарты</button>
-        <button id="mainTabMaterialsBtn" class="main-tab-btn" onclick="switchMainTab('materials')">Материалы</button>
         <button id="mainTabOperationsBtn" class="main-tab-btn" onclick="switchMainTab('operations')">Техоперации</button>
-      </div>
-      <div class="header-controls">
-        <label class="compact-toggle">
-          <input id="compactToggle" type="checkbox" />
-          Сокращенный вид
-        </label>
-        <div class="main-status" id="mainStatus"></div>
+        <button id="mainTabMaterialsBtn" class="main-tab-btn" onclick="switchMainTab('materials')">Материалы</button>
       </div>
     </div>
 
@@ -818,7 +709,6 @@
             <input type="text" id="opTargetCell" placeholder="Стартовая ячейка, например C5. Пусто = активная." />
             <button id="opPushBtn" class="action-btn" disabled onclick="pushOperationsQueue()">ВЫГРУЗИТЬ В ТАБЛИЦУ</button>
             <div id="opStatus" class="status">База техопераций еще не загружена.</div>
-            <div id="opDiagnostics" class="diag-box"></div>
           </div>
         </div>
       </div>
@@ -828,7 +718,6 @@
       const INITIAL_MAIN_TAB = "<?= initialTab ?>";
       const STORAGE_KEYS = {
         mainTab: 'techmap-workspace-main-tab',
-        compactMode: 'techmap-workspace-compact',
       };
 
       let templates = [];
@@ -854,6 +743,15 @@
         dbKoax: [],
       };
 
+      function debounce(fn, ms) {
+        let timer;
+        return function() {
+          const ctx = this, args = arguments;
+          clearTimeout(timer);
+          timer = setTimeout(function() { fn.apply(ctx, args); }, ms);
+        };
+      }
+
       function escapeHtml(value) {
         return String(value || '')
           .replace(/&/g, '&amp;')
@@ -863,32 +761,12 @@
           .replace(/'/g, '&#039;');
       }
 
-      function setMainStatus(message, isError) {
-        const node = document.getElementById('mainStatus');
-        node.textContent = message || '';
-        node.style.color = isError ? '#d93025' : '#5f6368';
-      }
+      function setMainStatus() {}
 
       function setTemplateStatus(message, isError) {
         const node = document.getElementById('templateStatus');
         node.textContent = message || '';
         node.style.color = isError ? '#c5221f' : '#174ea6';
-      }
-
-      function applyCompactMode(enabled) {
-        document.body.classList.toggle('compact-mode', !!enabled);
-        document.getElementById('compactToggle').checked = !!enabled;
-        try {
-          localStorage.setItem(STORAGE_KEYS.compactMode, enabled ? '1' : '0');
-        } catch (error) {}
-      }
-
-      function restoreCompactMode() {
-        let enabled = false;
-        try {
-          enabled = localStorage.getItem(STORAGE_KEYS.compactMode) === '1';
-        } catch (error) {}
-        applyCompactMode(enabled);
       }
 
       function switchMainTab(tabName) {
@@ -903,10 +781,19 @@
           localStorage.setItem(STORAGE_KEYS.mainTab, tabName);
         } catch (error) {}
 
+        if (tabName === 'templates') {
+          startCatalogPoll();
+        } else {
+          stopCatalogPoll();
+        }
+
         if (tabName === 'materials') {
           ensureMaterialsLoaded(false);
         } else if (tabName === 'operations') {
           ensureOperationsLoaded(false);
+          if (operationsLoaded) {
+            renderOperationResults(activeOperationDbKey);
+          }
         }
       }
 
@@ -964,6 +851,31 @@
           categories.map((category) => `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`).join('');
       }
 
+      let catalogVersion = null;
+      let catalogPollTimer = null;
+
+      function startCatalogPoll() {
+        if (catalogPollTimer) return;
+        catalogPollTimer = setInterval(pollCatalogVersion, 1000);
+      }
+
+      function stopCatalogPoll() {
+        clearInterval(catalogPollTimer);
+        catalogPollTimer = null;
+      }
+
+      function pollCatalogVersion() {
+        google.script.run
+          .withSuccessHandler((v) => {
+            if (catalogVersion !== null && v !== catalogVersion) {
+              catalogVersion = v;
+              loadTemplates();
+            }
+            catalogVersion = v;
+          })
+          .getCatalogVersion();
+      }
+
       function loadTemplates() {
         setTemplateStatus('Загрузка шаблонов...', false);
         google.script.run
@@ -997,16 +909,23 @@
         if (!window.confirm(`Удалить шаблон «${title}»?\nЭто действие нельзя отменить.`)) {
           return;
         }
+        // Optimistic update — remove immediately, restore on failure
+        const removed = templates.find((item) => item.id === id);
+        templates = templates.filter((item) => item.id !== id);
+        populateTemplateCategories();
+        renderTemplates();
         setTemplateStatus(`Удаление «${title}»...`, false);
         google.script.run
           .withSuccessHandler((result) => {
-            templates = templates.filter((item) => item.id !== result.id);
-            populateTemplateCategories();
-            renderTemplates();
             setTemplateStatus(`Шаблон «${result.title}» удалён. Всего: ${templates.length}`, false);
             setMainStatus(`Техкарты: ${templates.length}`, false);
           })
           .withFailureHandler((error) => {
+            if (removed) {
+              templates = [...templates, removed];
+              populateTemplateCategories();
+              renderTemplates();
+            }
             setTemplateStatus(error.message || 'Не удалось удалить шаблон.', true);
           })
           .deleteTemplate(id);
@@ -1031,6 +950,9 @@
           opDbKoaxTab: 'dbKoax',
         };
         activeOperationDbKey = dbKeyMap[tabId] || 'dbOb';
+        if (operationsLoaded) {
+          renderOperationResults(activeOperationDbKey);
+        }
         updateOperationQueueUI();
       }
 
@@ -1044,28 +966,6 @@
         const node = document.getElementById('opStatus');
         node.innerText = message || '';
         node.style.color = isError ? '#d93025' : '#70757a';
-      }
-
-      function renderOperationsDiagnostics() {
-        const node = document.getElementById('opDiagnostics');
-        const meta = operationDb.meta || {};
-        const diagnostics = meta.diagnosticsByTab || {};
-        const order = [
-          ['ob', 'БД.ОБ'],
-          ['op', 'БД.ОП'],
-          ['ter', 'БД.ТЕР'],
-          ['coax', 'БД.КОАКС'],
-        ];
-
-        const lines = order.map(([key, label]) => {
-          const info = diagnostics[key] || {};
-          const found = (info.foundHeaders || []).join(', ') || '-';
-          const missing = (info.missingHeaders || []).join(', ') || '-';
-          const headerRow = info.headerRowNumber || '-';
-          const parsed = info.parsedRows || 0;
-          return `${label}: шапка=${headerRow}, строк=${parsed}\nнайдены: ${found}\nнет: ${missing}`;
-        });
-        node.textContent = lines.join('\n\n');
       }
 
       function ensureMaterialsLoaded(forceRefresh) {
@@ -1127,11 +1027,7 @@
             operationsLoading = false;
             operationsLoaded = true;
             operationDb = payload || { dbOb: [], dbOp: [], dbTer: [], dbKoax: [], meta: null };
-            renderOperationResults('dbOb');
-            renderOperationResults('dbOp');
-            renderOperationResults('dbTer');
-            renderOperationResults('dbKoax');
-            renderOperationsDiagnostics();
+            renderOperationResults(activeOperationDbKey);
             const total = (operationDb.meta && operationDb.meta.recordCount) || 0;
             setOperationsStatus(`База готова: ${total}`, false);
             setMainStatus(`Техоперации: ${total}`, false);
@@ -1549,9 +1445,9 @@
       function setupOperationSearch(dbKey) {
         const config = getOperationTabConfig(dbKey);
         const input = document.getElementById(config.searchInputId);
-        input.addEventListener('input', () => {
+        input.addEventListener('input', debounce(() => {
           renderOperationResults(dbKey);
-        });
+        }, 200));
       }
 
       function addOperationToQueue(dbKey, item) {
@@ -1697,13 +1593,10 @@
       }
 
       document.addEventListener('DOMContentLoaded', () => {
-        document.getElementById('templateSearch').addEventListener('input', renderTemplates);
+        document.getElementById('templateSearch').addEventListener('input', debounce(renderTemplates, 200));
         document.getElementById('templateCategoryFilter').addEventListener('change', renderTemplates);
-        document.getElementById('compactToggle').addEventListener('change', (event) => {
-          applyCompactMode(event.target.checked);
-        });
 
-        document.getElementById('searchInput').addEventListener('input', function onSearchInput(event) {
+        document.getElementById('searchInput').addEventListener('input', debounce(function onSearchInput(event) {
           const resList = document.getElementById('results');
           resList.innerHTML = '';
           const matches = findMatches(event.target.value, 30);
@@ -1717,12 +1610,7 @@
             fragment.appendChild(li);
           });
           resList.appendChild(fragment);
-        });
-
-        document.getElementById('opDbObSearch').addEventListener('input', () => renderOperationResults('dbOb'));
-        document.getElementById('opDbOpSearch').addEventListener('input', () => renderOperationResults('dbOp'));
-        document.getElementById('opDbTerSearch').addEventListener('input', () => renderOperationResults('dbTer'));
-        document.getElementById('opDbKoaxSearch').addEventListener('input', () => renderOperationResults('dbKoax'));
+        }, 150));
 
         setupMiniSearch('gStaticSearch', 'gStaticResults', 'gStatic');
         setupMiniSearch('cStaticSearch', 'cStaticResults', 'cStatic');
@@ -1739,9 +1627,11 @@
           }
         });
 
-        restoreCompactMode();
-        restoreMainTab();
+        restoreMainTab(); // calls switchMainTab → startCatalogPoll if templates tab is active
         loadTemplates();
+        // Fire both DB loads immediately in parallel — data is ready when user switches tabs
+        ensureMaterialsLoaded(false);
+        ensureOperationsLoaded(false);
       });
 
       function setupMiniSearch(inputId, resultsId, targetTextareaId) {
