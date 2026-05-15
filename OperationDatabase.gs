@@ -4,8 +4,8 @@ const TECHOPS_DB_APP = {
   dataSheetName: '_TC_TECHOPS_DB',
   metaHeaders: ['key', 'value'],
   dataHeaders: ['tabKey', 'displayText', 'normalizedSearch', 'exportJson', 'sourceSheet', 'sortKey', 'extra1', 'extra2', 'extra3', 'extra4', 'extra5', 'extra6', 'extra7'],
-  cacheKeyPrefix: 'techmap-techops-db-v3',
-  schemaVersion: 3,
+  cacheKeyPrefix: 'techmap-techops-db-v4',
+  schemaVersion: 4,
   cacheChunkSize: 80000,
   cacheTtlSeconds: 21600,
   tabs: {
@@ -436,12 +436,15 @@ function buildTechOperationsObRecord_(row, headerMap, sourceSheet) {
   if (!baseValue) {
     return null;
   }
+  const obType = getTechOperationsCellByAliases_(row, headerMap, ['тип', 'type', 'категория', 'category', 'группа']);
   return {
     tabKey: 'ob',
     displayText: baseValue,
     normalizedSearch: normalizeTechOperationsSearch_(baseValue),
     exportValues: [baseValue],
     sourceSheet,
+    obType: obType || '',
+    sortKey: obType ? `${obType} ${baseValue}` : baseValue,
   };
 }
 
@@ -606,7 +609,7 @@ function writeTechOperationsSnapshotToSheets_(snapshot) {
       JSON.stringify(record.exportValues || []),
       record.sourceSheet,
       record.sortKey || '',
-      record.terManufacturer || record.opNumber || '',
+      record.terManufacturer || record.opNumber || record.obType || '',
       record.terSeries       || record.opName   || '',
       record.terComponent    || '',
       record.coaxWire        || '',
@@ -673,6 +676,7 @@ function loadTechOperationsSnapshotFromSheets_() {
             sortKey: row[5] || '',
             terManufacturer: row[6] || '',
             opNumber:        row[6] || '',
+            obType:          row[6] || '',
             terSeries:       row[7] || '',
             opName:          row[7] || '',
             terComponent:    row[8] || '',
@@ -767,6 +771,9 @@ function buildTechOperationsPayload_(snapshot) {
             item.opNumber = item.opNumber || parts[0] || '';
             item.opName   = item.opName   || parts[1] || '';
           }
+        }
+        if (tabKey === 'ob') {
+          item.obType = record.obType || '';
         }
         if (tabKey === 'ter') {
           const exp = record.exportValues || [];
