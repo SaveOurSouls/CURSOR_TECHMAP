@@ -211,19 +211,6 @@
       }
       .op-tree .op-children li:hover { background: #e8f0fe; color: #1a73e8; }
 
-      #opDbObResults {
-        list-style: none;
-        padding: 0;
-        margin: 0;
-      }
-      #opDbObResults li {
-        padding: 5px 10px;
-        border-bottom: 1px solid #f1f3f4;
-        cursor: pointer;
-        font-size: 11px;
-        color: #3c4043;
-      }
-      #opDbObResults li:hover { background: #e8f0fe; color: #1a73e8; }
 
       .section-status {
         margin: 6px 0 0;
@@ -670,7 +657,7 @@
             <button class="action-btn gray" onclick="refreshOperationsDatabase()">Обновить базу техопераций</button>
             <input type="text" id="opDbObSearch" class="mini-search-input" placeholder="Поиск по полю 'Для базы'..." autocomplete="off" />
             <div class="scroll-area">
-              <ul id="opDbObResults"></ul>
+              <ul id="opDbObResults" class="op-tree"></ul>
             </div>
           </div>
 
@@ -1100,7 +1087,9 @@
 
         if (!filtered.length) {
           const empty = document.createElement('li');
-          empty.style.cssText = 'padding:10px;color:#80868b;font-size:12px;';
+          empty.style.padding = '10px';
+          empty.style.color = '#80868b';
+          empty.style.fontSize = '12px';
           empty.textContent = query ? 'Ничего не найдено.' : 'База не загружена.';
           list.appendChild(empty);
           return;
@@ -1108,14 +1097,15 @@
 
         const hasTypes = filtered.some((item) => item.obType);
         if (!hasTypes) {
-          const fragment = document.createDocumentFragment();
+          const ul = document.createElement('ul');
+          ul.className = 'op-children open';
           filtered.slice(0, 80).forEach((item) => {
             const li = document.createElement('li');
             li.textContent = item.label;
             li.onclick = function() { addOperationToQueue('dbOb', item); };
-            fragment.appendChild(li);
+            ul.appendChild(li);
           });
-          list.appendChild(fragment);
+          list.appendChild(ul);
           return;
         }
 
@@ -1131,7 +1121,6 @@
 
         groups.forEach((items, groupName) => {
           const li = document.createElement('li');
-          li.style.padding = '0';
 
           const header = document.createElement('div');
           header.className = 'op-group-header' + (firstGroup && query ? ' open' : '');
@@ -1153,14 +1142,10 @@
 
           const childList = document.createElement('ul');
           childList.className = 'op-children' + (firstGroup && query ? ' open' : '');
-          childList.style.background = '#f8f9fa';
 
           items.forEach((item) => {
             const child = document.createElement('li');
-            child.style.cssText = 'padding:5px 10px 5px 26px;border-bottom:1px solid #f1f3f4;cursor:pointer;font-size:11px;color:#3c4043;';
             child.textContent = item.label;
-            child.onmouseover = function() { this.style.background = '#e8f0fe'; this.style.color = '#1a73e8'; };
-            child.onmouseout = function() { this.style.background = ''; this.style.color = '#3c4043'; };
             child.onclick = function() { addOperationToQueue('dbOb', item); };
             childList.appendChild(child);
           });
