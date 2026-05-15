@@ -1,0 +1,1891 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top" />
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        padding: 0;
+        background: #fff;
+        color: #3c4043;
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        margin: 0;
+      }
+
+      .main-header {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        background: #ffffff;
+        border-bottom: 1px solid #e8eaed;
+      }
+
+      .main-tabs {
+        display: flex;
+        padding: 8px 10px 0;
+        gap: 6px;
+      }
+
+      .main-tab-btn {
+        flex: 1;
+        border: 0;
+        border-radius: 10px 10px 0 0;
+        background: #f1f3f4;
+        color: #5f6368;
+        font-weight: 700;
+        font-size: 12px;
+        padding: 10px 8px;
+        cursor: pointer;
+      }
+
+      .main-tab-btn.active {
+        background: #1a73e8;
+        color: #ffffff;
+      }
+
+      .panel-section {
+        display: none;
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
+      }
+
+      .panel-section.active {
+        display: flex;
+      }
+
+      .templates-panel,
+      .materials-panel {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+      }
+
+      .templates-toolbar {
+        position: sticky;
+        top: 0;
+        background: #ffffff;
+        padding: 10px 12px 8px;
+        border-bottom: 1px solid #f1f3f4;
+      }
+
+      input,
+      select,
+      button,
+      textarea {
+        width: 100%;
+        box-sizing: border-box;
+        font-size: 13px;
+        font-family: inherit;
+      }
+
+      input,
+      select,
+      textarea {
+        padding: 8px;
+        margin-bottom: 8px;
+        border: 1px solid #dadce0;
+        border-radius: 6px;
+        outline: none;
+      }
+
+      input:focus,
+      select:focus,
+      textarea:focus {
+        border-color: #1a73e8;
+      }
+
+      button {
+        border: 0;
+        border-radius: 8px;
+        padding: 9px 10px;
+        cursor: pointer;
+      }
+
+      .btn-primary {
+        background: #1a73e8;
+        color: #ffffff;
+      }
+
+      .btn-secondary {
+        background: #e8f0fe;
+        color: #174ea6;
+      }
+
+      .template-list {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        padding: 10px 12px 12px;
+      }
+
+      .template-card {
+        border: 1px solid #d8d8d8;
+        border-radius: 12px;
+        padding: 12px;
+        margin: 0 0 10px;
+        background: #fbfbfb;
+      }
+
+      .template-title {
+        font-weight: 700;
+        margin-bottom: 4px;
+        font-size: 14px;
+      }
+
+      .template-meta {
+        color: #5f6368;
+        font-size: 12px;
+        margin-bottom: 8px;
+      }
+
+      .template-desc {
+        font-size: 12px;
+        line-height: 1.4;
+        margin-bottom: 10px;
+      }
+
+      .template-actions {
+        display: flex;
+        gap: 8px;
+      }
+
+      .template-actions button {
+        flex: 1;
+      }
+
+      .btn-danger {
+        background: #fce8e6;
+        color: #c5221f;
+      }
+
+      .btn-danger:hover {
+        background: #f5c6c4;
+      }
+
+      /* Two-level БД.ОП tree */
+      .op-tree { list-style: none; padding: 0; margin: 0; }
+      .op-tree .op-group-header {
+        padding: 7px 10px 7px 8px;
+        border-bottom: 1px solid #e8eaed;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 600;
+        color: #1f1f1f;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        user-select: none;
+      }
+      .op-tree .op-group-header:hover { background: #f1f3f4; }
+      .op-tree .op-group-header .op-arrow {
+        font-size: 9px;
+        color: #80868b;
+        transition: transform 0.15s;
+        flex-shrink: 0;
+      }
+      .op-tree .op-group-header.open .op-arrow { transform: rotate(90deg); }
+      .op-tree .op-group-count {
+        margin-left: auto;
+        font-size: 10px;
+        color: #80868b;
+        font-weight: normal;
+      }
+      .op-tree .op-children {
+        display: none;
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        background: #f8f9fa;
+      }
+      .op-tree .op-children.open { display: block; }
+      .op-tree .op-children li {
+        padding: 5px 10px 5px 26px;
+        border-bottom: 1px solid #f1f3f4;
+        cursor: pointer;
+        font-size: 11px;
+        color: #3c4043;
+      }
+      .op-tree .op-children li:hover { background: #e8f0fe; color: #1a73e8; }
+
+      #opDbObResults {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+      #opDbObResults li {
+        padding: 5px 10px;
+        border-bottom: 1px solid #f1f3f4;
+        cursor: pointer;
+        font-size: 11px;
+        color: #3c4043;
+      }
+      #opDbObResults li:hover { background: #e8f0fe; color: #1a73e8; }
+
+      .section-status {
+        margin: 6px 0 0;
+        font-size: 12px;
+        color: #174ea6;
+        min-height: 18px;
+      }
+
+      .material-root {
+        padding: 10px;
+        background: #fff;
+        color: #3c4043;
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+      }
+
+      .tabs {
+        display: flex;
+        border-bottom: 2px solid #e8eaed;
+        margin-bottom: 10px;
+        flex-wrap: wrap;
+        flex-shrink: 0;
+      }
+
+      .tab-btn {
+        flex: 1;
+        padding: 6px 2px;
+        border: none;
+        background: none;
+        cursor: pointer;
+        font-weight: bold;
+        color: #5f6368;
+        font-size: 10px;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+
+      .tab-btn.active {
+        color: #1a73e8;
+        border-bottom: 3px solid #1a73e8;
+        margin-bottom: -2px;
+      }
+
+      .tab-content {
+        display: none;
+        flex-direction: column;
+        flex-grow: 1;
+        overflow-y: auto;
+      }
+
+      .tab-content.active {
+        display: flex;
+      }
+
+      textarea {
+        resize: vertical;
+        min-height: 42px;
+      }
+
+      label {
+        font-size: 10px;
+        font-weight: bold;
+        color: #1a73e8;
+        margin-bottom: 2px;
+        display: block;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        flex-shrink: 0;
+      }
+
+      .row {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 2px;
+        flex-shrink: 0;
+      }
+
+      .col-half {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .col-half textarea {
+        height: 65px;
+        min-height: 65px;
+        resize: none;
+      }
+
+      .col-half textarea.tall {
+        height: 180px;
+        min-height: 120px;
+      }
+
+      .scroll-area {
+        flex-grow: 1;
+        overflow-y: auto;
+        border: 1px solid #eee;
+        border-radius: 4px;
+        margin-bottom: 5px;
+        min-height: 60px;
+      }
+
+      #results,
+      #basketList {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+
+      #results li {
+        padding: 8px;
+        border-bottom: 1px solid #f1f3f4;
+        cursor: pointer;
+        font-size: 12px;
+      }
+
+      #results li:hover {
+        background: #e8f0fe;
+        color: #1a73e8;
+      }
+
+      .autocomplete-wrapper {
+        position: relative;
+        width: 100%;
+        margin-bottom: 6px;
+        flex-shrink: 0;
+      }
+
+      .autocomplete-wrapper input {
+        margin-bottom: 0 !important;
+      }
+
+      .mini-search-wrapper {
+        position: relative;
+        margin-bottom: 6px;
+        flex-shrink: 0;
+      }
+
+      .mini-search-input {
+        margin-bottom: 0 !important;
+        border-color: #34a853 !important;
+        border-style: dashed !important;
+      }
+
+      .mini-search-input:focus {
+        border-style: solid !important;
+      }
+
+      .mini-search-results {
+        display: none;
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background: white;
+        border: 1px solid #ccc;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        max-height: 150px;
+        overflow-y: auto;
+        z-index: 100;
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        border-radius: 4px;
+      }
+
+      .mini-search-results li {
+        padding: 6px 8px;
+        border-bottom: 1px solid #f1f3f4;
+        cursor: pointer;
+        font-size: 11px;
+      }
+
+      .mini-search-results li:hover {
+        background: #e6f4ea;
+        color: #137333;
+      }
+
+      .basket-container {
+        border-top: 2px solid #1a73e8;
+        padding-top: 10px;
+        height: 35%;
+        display: flex;
+        flex-direction: column;
+        min-height: 180px;
+        flex-shrink: 0;
+      }
+
+      .basket-header {
+        font-weight: bold;
+        font-size: 13px;
+        margin-bottom: 5px;
+        display: flex;
+        justify-content: space-between;
+        flex-shrink: 0;
+      }
+
+      #basketList li {
+        padding: 4px 8px;
+        font-size: 11px;
+        background: #f8f9fa;
+        margin-bottom: 2px;
+        border-radius: 3px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-left: 2px solid #1a73e8;
+      }
+
+      .remove-btn {
+        color: #d93025;
+        cursor: pointer;
+        font-weight: bold;
+        padding: 0 5px;
+        font-size: 16px;
+      }
+
+      .action-btn {
+        width: 100%;
+        padding: 10px;
+        background: #1a73e8;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: bold;
+        margin-top: 5px;
+        flex-shrink: 0;
+      }
+
+      .action-btn.secondary {
+        background: #34a853;
+      }
+
+      .action-btn.purple {
+        background: #9c27b0;
+      }
+
+      .action-btn.gray {
+        background: #5f6368;
+      }
+
+      .action-btn:disabled {
+        background: #dadce0;
+        cursor: default;
+      }
+
+      .status {
+        font-size: 11px;
+        color: #70757a;
+        text-align: center;
+        margin-top: 5px;
+        min-height: 15px;
+        flex-shrink: 0;
+      }
+
+      .warning-box {
+        color: #d93025;
+        font-size: 10px;
+        margin-top: 5px;
+        white-space: pre-wrap;
+        font-weight: bold;
+        flex-shrink: 0;
+      }
+
+      .stats-box {
+        color: #137333;
+        font-size: 10px;
+        margin-top: 5px;
+        white-space: pre-wrap;
+        font-weight: bold;
+        border-top: 1px dashed #ccc;
+        padding-top: 5px;
+        display: none;
+        flex-shrink: 0;
+      }
+
+    </style>
+  </head>
+  <body>
+    <div class="main-header">
+      <div class="main-tabs">
+        <button id="mainTabTemplatesBtn" class="main-tab-btn" onclick="switchMainTab('templates')">Техкарты</button>
+        <button id="mainTabOperationsBtn" class="main-tab-btn" onclick="switchMainTab('operations')">Техоперации</button>
+        <button id="mainTabMaterialsBtn" class="main-tab-btn" onclick="switchMainTab('materials')">Материалы</button>
+      </div>
+    </div>
+
+    <div id="templatesSection" class="panel-section">
+      <div class="templates-panel">
+        <div class="templates-toolbar">
+          <input id="templateSearch" type="text" placeholder="Поиск по названию или операции" />
+          <select id="templateCategoryFilter">
+            <option value="">Все категории</option>
+          </select>
+          <div class="section-status" id="templateStatus">Загрузка шаблонов...</div>
+        </div>
+        <div class="template-list" id="templateList"></div>
+      </div>
+    </div>
+
+    <div id="materialsSection" class="panel-section">
+      <div class="materials-panel">
+        <div class="material-root">
+          <div class="tabs">
+            <button class="tab-btn active" onclick="switchMaterialTab('searchTab', this)">🔍 Поиск</button>
+            <button class="tab-btn" onclick="switchMaterialTab('genTab', this)">⚙️ Шаг XX</button>
+            <button class="tab-btn" onclick="switchMaterialTab('coaxTab', this)">📡 Коаксиал</button>
+            <button class="tab-btn" onclick="switchMaterialTab('repTab', this)">🔄 Копии</button>
+          </div>
+
+          <div id="searchTab" class="tab-content active">
+            <button class="action-btn gray" onclick="refreshDatabase()">Обновить базу из источника</button>
+            <input type="text" id="searchInput" placeholder="Поиск товара..." />
+            <div class="scroll-area">
+              <ul id="results"></ul>
+            </div>
+          </div>
+
+          <div id="genTab" class="tab-content">
+            <label>Шаблон артикула (XX - переменная):</label>
+            <input type="text" id="gTemplate" value="PHR-XX" />
+
+            <label>Номера XX (столбцом):</label>
+            <textarea id="gVars" rows="2" placeholder="1, 2, 3..."></textarea>
+
+            <div class="row">
+              <div class="col-half">
+                <label>Тип</label>
+                <div class="autocomplete-wrapper">
+                  <input type="text" id="gType" placeholder="Например: Терминал" autocomplete="off" />
+                  <ul id="gTypeResults" class="mini-search-results"></ul>
+                </div>
+              </div>
+              <div class="col-half">
+                <label>Производитель</label>
+                <div class="autocomplete-wrapper">
+                  <input type="text" id="gManuf" placeholder="Например: JST" autocomplete="off" />
+                  <ul id="gManufResults" class="mini-search-results"></ul>
+                </div>
+              </div>
+            </div>
+
+            <label>Поставщик (если есть):</label>
+            <div class="autocomplete-wrapper">
+              <input type="text" id="gSupp" placeholder="Например: ELITAN" autocomplete="off" />
+              <ul id="gSuppResults" class="mini-search-results"></ul>
+            </div>
+
+            <label>Комплектующие (статичные):</label>
+            <div class="mini-search-wrapper">
+              <input type="text" id="gStaticSearch" class="mini-search-input" placeholder="🔍 Найти доп. артикул..." autocomplete="off" />
+              <ul id="gStaticResults" class="mini-search-results"></ul>
+            </div>
+            <textarea id="gStatic" rows="3"></textarea>
+
+            <button class="action-btn secondary" onclick="generateAssemblies()">В корзину</button>
+          </div>
+
+          <div id="coaxTab" class="tab-content">
+            <div class="row">
+              <div class="col-half">
+                <label>Разъем 1 (Типы)</label>
+                <textarea id="cType1" placeholder="SMA male RG174&#10;SMA male RG178"></textarea>
+                <label>Производитель 1</label>
+                <div class="autocomplete-wrapper">
+                  <input type="text" id="cMan1" placeholder="Выберите..." autocomplete="off" />
+                  <ul id="cMan1Results" class="mini-search-results"></ul>
+                </div>
+              </div>
+              <div class="col-half">
+                <label>Разъем 2 (Типы или пусто)</label>
+                <textarea id="cType2" placeholder="Пусто для 1 разъема"></textarea>
+                <label>Производитель 2</label>
+                <div class="autocomplete-wrapper">
+                  <input type="text" id="cMan2" placeholder="Выберите..." autocomplete="off" />
+                  <ul id="cMan2Results" class="mini-search-results"></ul>
+                </div>
+              </div>
+            </div>
+
+            <label>Постоянные (кабель, трубка...):</label>
+            <div class="mini-search-wrapper">
+              <input type="text" id="cStaticSearch" class="mini-search-input" placeholder="🔍 Найти кабель/трубку..." autocomplete="off" />
+              <ul id="cStaticResults" class="mini-search-results"></ul>
+            </div>
+            <textarea id="cStatic" rows="2" placeholder="RG174 кабель..."></textarea>
+
+            <button class="action-btn secondary" onclick="generateCoax()">Сгенерировать</button>
+
+            <div id="coaxWarnings" class="warning-box"></div>
+            <div id="coaxStats" class="stats-box"></div>
+          </div>
+
+          <div id="repTab" class="tab-content">
+            <div class="row">
+              <div class="col-half">
+                <label>Что копируем (Значения)</label>
+                <textarea id="rValues" class="tall" placeholder="RG316&#10;Термоусадка&#10;SMA male"></textarea>
+              </div>
+              <div class="col-half">
+                <label>Сколько раз (Числа)</label>
+                <textarea id="rCounts" class="tall" placeholder="5&#10;2&#10;1"></textarea>
+              </div>
+            </div>
+            <label>Куда выгружать (например: C2):</label>
+            <input type="text" id="rTarget" placeholder="Оставьте пустым для текущей ячейки" />
+
+            <button class="action-btn purple" onclick="runReplication()">ВЫГРУЗИТЬ СТОЛБЕЦ</button>
+            <div id="repStatus" class="status" style="margin-top: 10px; font-weight: bold;"></div>
+          </div>
+
+          <div class="basket-container">
+            <div class="basket-header">
+              <span>Корзина (<span id="bCount">0</span>)</span>
+              <span style="color:#1a73e8; cursor:pointer; font-size:11px;" onclick="clearBasket()">очистить</span>
+            </div>
+            <div class="scroll-area">
+              <ul id="basketList"></ul>
+            </div>
+            <button id="pushBtn" class="action-btn" disabled onclick="pushToTable()">ВЫГРУЗИТЬ В ТАБЛИЦУ</button>
+            <div id="status" class="status">База материалов еще не загружена.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="operationsSection" class="panel-section">
+      <div class="materials-panel">
+        <div class="material-root">
+          <div class="tabs">
+            <button class="tab-btn active" onclick="switchOperationsTab('opDbObTab', this)">БД.ОБ</button>
+            <button class="tab-btn" onclick="switchOperationsTab('opDbOpTab', this)">БД.ОП</button>
+            <button class="tab-btn" onclick="switchOperationsTab('opDbTerTab', this)">БД.ТЕР</button>
+            <button class="tab-btn" onclick="switchOperationsTab('opDbKoaxTab', this)">БД.КОАКС</button>
+          </div>
+
+          <div id="opDbObTab" class="tab-content active">
+            <button class="action-btn gray" onclick="refreshOperationsDatabase()">Обновить базу техопераций</button>
+            <input type="text" id="opDbObSearch" class="mini-search-input" placeholder="Поиск по полю 'Для базы'..." autocomplete="off" />
+            <div class="scroll-area">
+              <ul id="opDbObResults"></ul>
+            </div>
+          </div>
+
+          <div id="opDbOpTab" class="tab-content">
+            <button class="action-btn gray" onclick="refreshOperationsDatabase()">Обновить базу техопераций</button>
+            <input type="text" id="opDbOpSearch" class="mini-search-input" placeholder="Поиск по названию или номеру..." autocomplete="off" />
+            <div class="scroll-area">
+              <ul id="opDbOpResults" class="op-tree"></ul>
+            </div>
+          </div>
+
+          <div id="opDbTerTab" class="tab-content">
+            <button class="action-btn gray" onclick="refreshOperationsDatabase()">Обновить базу техопераций</button>
+            <input type="text" id="opDbTerSearch" class="mini-search-input" placeholder="Поиск по производителю, серии, комплектующей..." autocomplete="off" />
+            <div class="scroll-area">
+              <ul id="opDbTerResults" class="op-tree"></ul>
+            </div>
+          </div>
+
+          <div id="opDbKoaxTab" class="tab-content">
+            <button class="action-btn gray" onclick="refreshOperationsDatabase()">Обновить базу техопераций</button>
+            <input type="text" id="opDbKoaxSearch" class="mini-search-input" placeholder="Поиск по артикулу, серии, проводу..." autocomplete="off" />
+            <div class="scroll-area">
+              <ul id="opDbKoaxResults" class="op-tree"></ul>
+            </div>
+          </div>
+
+          <div class="basket-container">
+            <div class="basket-header">
+              <span>Очередь техопераций (<span id="opQueueCount">0</span>)</span>
+              <span style="color:#1a73e8; cursor:pointer; font-size:11px;" onclick="clearOperationQueue()">очистить</span>
+            </div>
+            <div class="scroll-area">
+              <ul id="opQueueList"></ul>
+            </div>
+            <input type="text" id="opTargetCell" placeholder="Стартовая ячейка, например C5. Пусто = активная." />
+            <button id="opPushBtn" class="action-btn" disabled onclick="pushOperationsQueue()">ВЫГРУЗИТЬ В ТАБЛИЦУ</button>
+            <div id="opStatus" class="status">База техопераций еще не загружена.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const INITIAL_MAIN_TAB = "<?= initialTab ?>";
+      const STORAGE_KEYS = {
+        mainTab: 'techmap-workspace-main-tab',
+      };
+
+      let templates = [];
+      let allData = [];
+      let basket = [];
+      let lookupValues = { types: [], manufacturers: [], suppliers: [] };
+      let materialsLoaded = false;
+      let materialLoading = false;
+      let operationsLoaded = false;
+      let operationsLoading = false;
+      let operationDb = {
+        dbOb: [],
+        dbOp: [],
+        dbTer: [],
+        dbKoax: [],
+        meta: null,
+      };
+      let activeOperationDbKey = 'dbOb';
+      let operationQueues = {
+        dbOb: [],
+        dbOp: [],
+        dbTer: [],
+        dbKoax: [],
+      };
+
+      function debounce(fn, ms) {
+        let timer;
+        return function() {
+          const ctx = this, args = arguments;
+          clearTimeout(timer);
+          timer = setTimeout(function() { fn.apply(ctx, args); }, ms);
+        };
+      }
+
+      function escapeHtml(value) {
+        return String(value || '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+      }
+
+      function setMainStatus() {}
+
+      function setTemplateStatus(message, isError) {
+        const node = document.getElementById('templateStatus');
+        node.textContent = message || '';
+        node.style.color = isError ? '#c5221f' : '#174ea6';
+      }
+
+      function switchMainTab(tabName) {
+        document.getElementById('templatesSection').classList.toggle('active', tabName === 'templates');
+        document.getElementById('materialsSection').classList.toggle('active', tabName === 'materials');
+        document.getElementById('operationsSection').classList.toggle('active', tabName === 'operations');
+        document.getElementById('mainTabTemplatesBtn').classList.toggle('active', tabName === 'templates');
+        document.getElementById('mainTabMaterialsBtn').classList.toggle('active', tabName === 'materials');
+        document.getElementById('mainTabOperationsBtn').classList.toggle('active', tabName === 'operations');
+
+        try {
+          localStorage.setItem(STORAGE_KEYS.mainTab, tabName);
+        } catch (error) {}
+
+        if (tabName === 'templates') {
+          startCatalogPoll();
+        } else {
+          stopCatalogPoll();
+        }
+
+        if (tabName === 'materials') {
+          ensureMaterialsLoaded(false);
+        } else if (tabName === 'operations') {
+          ensureOperationsLoaded(false);
+          if (operationsLoaded) {
+            renderOperationResults(activeOperationDbKey);
+          }
+        }
+      }
+
+      function restoreMainTab() {
+        let tabName = INITIAL_MAIN_TAB || 'templates';
+        if (tabName !== 'templates' && tabName !== 'materials' && tabName !== 'operations') {
+          tabName = 'templates';
+        }
+        try {
+          tabName = localStorage.getItem(STORAGE_KEYS.mainTab) || tabName;
+        } catch (error) {}
+        if (tabName !== 'templates' && tabName !== 'materials' && tabName !== 'operations') {
+          tabName = 'templates';
+        }
+        switchMainTab(tabName);
+      }
+
+      function renderTemplates() {
+        const list = document.getElementById('templateList');
+        const search = document.getElementById('templateSearch').value.trim().toLowerCase();
+        const category = document.getElementById('templateCategoryFilter').value;
+        const filtered = templates.filter((item) => {
+          const haystack = [item.title, item.category, item.description].join(' ').toLowerCase();
+          const categoryOk = !category || item.category === category;
+          const searchOk = !search || haystack.indexOf(search) >= 0;
+          return categoryOk && searchOk;
+        });
+
+        if (!filtered.length) {
+          list.innerHTML = '<div class="template-card">Ничего не найдено.</div>';
+          return;
+        }
+
+        list.innerHTML = filtered
+          .map(
+            (item) => `
+              <div class="template-card">
+                <div class="template-title">${escapeHtml(item.title)}</div>
+                <div class="template-meta">${escapeHtml(item.category || 'Без категории')}${item.sizeLabel ? ` · ${escapeHtml(item.sizeLabel)}` : ''}</div>
+                <div class="template-desc">${escapeHtml(item.description || '')}</div>
+                <div class="template-actions">
+                  <button class="btn-primary" onclick="insertTemplate('${escapeHtml(item.id)}')">Вставить</button>
+                  <button class="btn-danger" onclick="confirmDeleteTemplate('${escapeHtml(item.id)}', '${escapeHtml(item.title)}')">Удалить</button>
+                </div>
+              </div>
+            `
+          )
+          .join('');
+      }
+
+      function populateTemplateCategories() {
+        const select = document.getElementById('templateCategoryFilter');
+        const categories = Array.from(new Set(templates.map((item) => item.category).filter(Boolean))).sort();
+        select.innerHTML = '<option value="">Все категории</option>' +
+          categories.map((category) => `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`).join('');
+      }
+
+      let catalogVersion = null;
+      let catalogPollTimer = null;
+
+      function startCatalogPoll() {
+        if (catalogPollTimer) return;
+        catalogPollTimer = setInterval(pollCatalogVersion, 1000);
+      }
+
+      function stopCatalogPoll() {
+        clearInterval(catalogPollTimer);
+        catalogPollTimer = null;
+      }
+
+      function pollCatalogVersion() {
+        google.script.run
+          .withSuccessHandler((v) => {
+            if (catalogVersion !== null && v !== catalogVersion) {
+              catalogVersion = v;
+              loadTemplates();
+            }
+            catalogVersion = v;
+          })
+          .getCatalogVersion();
+      }
+
+      function loadTemplates() {
+        setTemplateStatus('Загрузка шаблонов...', false);
+        google.script.run
+          .withSuccessHandler((result) => {
+            templates = result || [];
+            populateTemplateCategories();
+            renderTemplates();
+            setTemplateStatus(`Шаблонов доступно: ${templates.length}`, false);
+            setMainStatus(`Техкарты: ${templates.length}`, false);
+          })
+          .withFailureHandler((error) => {
+            setTemplateStatus(error.message || 'Не удалось загрузить шаблоны.', true);
+            setMainStatus('Ошибка загрузки техкарт', true);
+          })
+          .getTemplateCatalog();
+      }
+
+      function insertTemplate(id) {
+        setTemplateStatus('Вставка шаблона...', false);
+        google.script.run
+          .withSuccessHandler((result) => {
+            setTemplateStatus(`Вставлен "${result.title}" → ${result.sheetName}!${result.insertedRange}`, false);
+          })
+          .withFailureHandler((error) => {
+            setTemplateStatus(error.message || 'Не удалось вставить шаблон.', true);
+          })
+          .insertTemplate(id);
+      }
+
+      function confirmDeleteTemplate(id, title) {
+        if (!window.confirm(`Удалить шаблон «${title}»?\nЭто действие нельзя отменить.`)) {
+          return;
+        }
+        // Optimistic update — remove immediately, restore on failure
+        const removed = templates.find((item) => item.id === id);
+        templates = templates.filter((item) => item.id !== id);
+        populateTemplateCategories();
+        renderTemplates();
+        setTemplateStatus(`Удаление «${title}»...`, false);
+        google.script.run
+          .withSuccessHandler((result) => {
+            setTemplateStatus(`Шаблон «${result.title}» удалён. Всего: ${templates.length}`, false);
+            setMainStatus(`Техкарты: ${templates.length}`, false);
+          })
+          .withFailureHandler((error) => {
+            if (removed) {
+              templates = [...templates, removed];
+              populateTemplateCategories();
+              renderTemplates();
+            }
+            setTemplateStatus(error.message || 'Не удалось удалить шаблон.', true);
+          })
+          .deleteTemplate(id);
+      }
+
+      function switchMaterialTab(tabId, btnElement) {
+        document.querySelectorAll('#materialsSection .tab-content').forEach((el) => el.classList.remove('active'));
+        document.querySelectorAll('#materialsSection .tab-btn').forEach((el) => el.classList.remove('active'));
+        document.getElementById(tabId).classList.add('active');
+        btnElement.classList.add('active');
+      }
+
+      function switchOperationsTab(tabId, btnElement) {
+        document.querySelectorAll('#operationsSection .tab-content').forEach((el) => el.classList.remove('active'));
+        document.querySelectorAll('#operationsSection .tab-btn').forEach((el) => el.classList.remove('active'));
+        document.getElementById(tabId).classList.add('active');
+        btnElement.classList.add('active');
+        const dbKeyMap = {
+          opDbObTab: 'dbOb',
+          opDbOpTab: 'dbOp',
+          opDbTerTab: 'dbTer',
+          opDbKoaxTab: 'dbKoax',
+        };
+        activeOperationDbKey = dbKeyMap[tabId] || 'dbOb';
+        if (operationsLoaded) {
+          renderOperationResults(activeOperationDbKey);
+        }
+        updateOperationQueueUI();
+      }
+
+      function setMaterialStatus(message, isError) {
+        const node = document.getElementById('status');
+        node.innerText = message || '';
+        node.style.color = isError ? '#d93025' : '#70757a';
+      }
+
+      function setOperationsStatus(message, isError) {
+        const node = document.getElementById('opStatus');
+        node.innerText = message || '';
+        node.style.color = isError ? '#d93025' : '#70757a';
+      }
+
+      function ensureMaterialsLoaded(forceRefresh) {
+        if (materialLoading) {
+          return;
+        }
+        if (materialsLoaded && !forceRefresh) {
+          return;
+        }
+        loadDatabase(forceRefresh === true);
+      }
+
+      function loadDatabase(forceRefresh) {
+        materialLoading = true;
+        setMaterialStatus(forceRefresh ? 'Обновление базы из источника...' : 'Загрузка базы материалов...', false);
+        setMainStatus(forceRefresh ? 'Обновление материалов...' : 'Чтение базы материалов...', false);
+        google.script.run
+          .withSuccessHandler((payload) => {
+            materialLoading = false;
+            materialsLoaded = true;
+            allData = payload.items || [];
+            lookupValues = payload.lookups || { types: [], manufacturers: [], suppliers: [] };
+            setupAutocompleteSources();
+            const sourceInfo = payload.meta && payload.meta.updatedAt
+              ? `, обновлено: ${payload.meta.updatedAt}`
+              : '';
+            setMaterialStatus(`База готова: ${allData.length}${sourceInfo}`, false);
+            setMainStatus(`Материалы: ${allData.length}`, false);
+          })
+          .withFailureHandler((error) => {
+            materialLoading = false;
+            materialsLoaded = false;
+            setMaterialStatus(error.message || 'Не удалось загрузить базу.', true);
+            setMainStatus('Ошибка загрузки материалов', true);
+          })
+          .getMaterialDatabase(forceRefresh === true);
+      }
+
+      function refreshDatabase() {
+        ensureMaterialsLoaded(true);
+      }
+
+      function ensureOperationsLoaded(forceRefresh) {
+        if (operationsLoading) {
+          return;
+        }
+        if (operationsLoaded && !forceRefresh) {
+          return;
+        }
+        loadOperationsDatabase(forceRefresh === true);
+      }
+
+      function loadOperationsDatabase(forceRefresh) {
+        operationsLoading = true;
+        setOperationsStatus(forceRefresh ? 'Обновление базы техопераций...' : 'Загрузка базы техопераций...', false);
+        setMainStatus(forceRefresh ? 'Обновление техопераций...' : 'Чтение базы техопераций...', false);
+        google.script.run
+          .withSuccessHandler((payload) => {
+            operationsLoading = false;
+            operationsLoaded = true;
+            operationDb = payload || { dbOb: [], dbOp: [], dbTer: [], dbKoax: [], meta: null };
+            renderOperationResults(activeOperationDbKey);
+            const total = (operationDb.meta && operationDb.meta.recordCount) || 0;
+            setOperationsStatus(`База готова: ${total}`, false);
+            setMainStatus(`Техоперации: ${total}`, false);
+          })
+          .withFailureHandler((error) => {
+            operationsLoading = false;
+            operationsLoaded = false;
+            setOperationsStatus(error.message || 'Не удалось загрузить базу техопераций.', true);
+            setMainStatus('Ошибка загрузки техопераций', true);
+          })
+          .getOperationDatabase(forceRefresh === true);
+      }
+
+      function refreshOperationsDatabase() {
+        ensureOperationsLoaded(true);
+      }
+
+      function normalizeSearch(value) {
+        return String(value || '').toLowerCase().replace(/\s+/g, '');
+      }
+
+      function renderOperationResults(dbKey) {
+        if (dbKey === 'dbOp') {
+          renderOpTree();
+          return;
+        }
+        if (dbKey === 'dbTer') {
+          renderTerTree();
+          return;
+        }
+        if (dbKey === 'dbKoax') {
+          renderKoaxTree();
+          return;
+        }
+        const config = getOperationTabConfig(dbKey);
+        const query = normalizeSearch(document.getElementById(config.searchInputId).value);
+        const list = document.getElementById(config.resultsId);
+        const rows = operationDb[dbKey] || [];
+        list.innerHTML = '';
+
+        const filtered = !query
+          ? rows.slice(0, 80)
+          : rows.filter((item) => (item.searchText || '').indexOf(query) !== -1).slice(0, 80);
+
+        const fragment = document.createDocumentFragment();
+        filtered.forEach((item) => {
+          const li = document.createElement('li');
+          li.textContent = item.label;
+          li.onclick = function onClick() {
+            addOperationToQueue(dbKey, item);
+          };
+          fragment.appendChild(li);
+        });
+        list.appendChild(fragment);
+      }
+
+      function renderOpTree() {
+        const list = document.getElementById('opDbOpResults');
+        const query = normalizeSearch(document.getElementById('opDbOpSearch').value);
+        const rows = operationDb.dbOp || [];
+        list.innerHTML = '';
+
+        // Filter rows by query (searches both name and number parts of label)
+        const filtered = !query
+          ? rows
+          : rows.filter((item) => (item.searchText || '').indexOf(query) !== -1);
+
+        if (!filtered.length) {
+          const empty = document.createElement('li');
+          empty.style.padding = '10px';
+          empty.style.color = '#80868b';
+          empty.style.fontSize = '12px';
+          empty.textContent = query ? 'Ничего не найдено.' : 'База не загружена.';
+          list.appendChild(empty);
+          return;
+        }
+
+        // Level 1: Название (group header, collapsible)
+        // Level 2: Номер   (leaf, click adds to queue)
+        // Use dedicated opName / opNumber fields — never parse label string.
+        const groups = new Map();
+        filtered.forEach((item) => {
+          const groupKey = item.opName || item.label;
+          const leafText = item.opNumber || item.label;
+          if (!groups.has(groupKey)) {
+            groups.set(groupKey, []);
+          }
+          groups.get(groupKey).push({ item, leafText });
+        });
+
+        let firstGroup = true;
+        const fragment = document.createDocumentFragment();
+
+        groups.forEach((leaves, groupName) => {
+          const li = document.createElement('li');
+
+          const header = document.createElement('div');
+          header.className = 'op-group-header' + (firstGroup && query ? ' open' : '');
+
+          const arrow = document.createElement('span');
+          arrow.className = 'op-arrow';
+          arrow.textContent = '▶';
+
+          const nameSpan = document.createElement('span');
+          nameSpan.textContent = groupName;
+
+          const count = document.createElement('span');
+          count.className = 'op-group-count';
+          count.textContent = leaves.length;
+
+          header.appendChild(arrow);
+          header.appendChild(nameSpan);
+          header.appendChild(count);
+
+          const childList = document.createElement('ul');
+          childList.className = 'op-children' + (firstGroup && query ? ' open' : '');
+
+          leaves.forEach(({ item, leafText }) => {
+            const child = document.createElement('li');
+            child.textContent = leafText;
+            child.title = item.label;
+            child.onclick = function onClick() {
+              addOperationToQueue('dbOp', item);
+            };
+            childList.appendChild(child);
+          });
+
+          header.onclick = function onHeaderClick() {
+            const isOpen = header.classList.contains('open');
+            header.classList.toggle('open', !isOpen);
+            childList.classList.toggle('open', !isOpen);
+          };
+
+          li.appendChild(header);
+          li.appendChild(childList);
+          fragment.appendChild(li);
+          firstGroup = false;
+        });
+
+        list.appendChild(fragment);
+      }
+
+      function renderTerTree() {
+        const list = document.getElementById('opDbTerResults');
+        const query = normalizeSearch(document.getElementById('opDbTerSearch').value);
+        const rows = operationDb.dbTer || [];
+        list.innerHTML = '';
+
+        const filtered = !query
+          ? rows
+          : rows.filter((item) => (item.searchText || '').indexOf(query) !== -1);
+
+        if (!filtered.length) {
+          const empty = document.createElement('li');
+          empty.style.cssText = 'padding:10px;color:#80868b;font-size:12px;';
+          empty.textContent = query ? 'Ничего не найдено.' : 'База не загружена.';
+          list.appendChild(empty);
+          return;
+        }
+
+        // Build 3-level: Производитель → Серия → Комплектующая
+        const manufacturers = new Map();
+        filtered.forEach((item) => {
+          const mfr    = item.terManufacturer || '—';
+          const series = item.terSeries       || '—';
+          const comp   = item.terComponent    || item.label;
+          if (!manufacturers.has(mfr)) manufacturers.set(mfr, new Map());
+          const seriesMap = manufacturers.get(mfr);
+          if (!seriesMap.has(series)) seriesMap.set(series, []);
+          seriesMap.get(series).push({ item, comp });
+        });
+
+        const fragment = document.createDocumentFragment();
+        let firstMfr = true;
+
+        manufacturers.forEach((seriesMap, mfrName) => {
+          const mfrLi = document.createElement('li');
+          const mfrHeader = document.createElement('div');
+          mfrHeader.className = 'op-group-header' + (firstMfr && query ? ' open' : '');
+
+          const mfrArrow = document.createElement('span');
+          mfrArrow.className = 'op-arrow';
+          mfrArrow.textContent = '▶';
+          const mfrSpan = document.createElement('span');
+          mfrSpan.textContent = mfrName;
+          const mfrCount = document.createElement('span');
+          mfrCount.className = 'op-group-count';
+          let totalItems = 0;
+          seriesMap.forEach((items) => { totalItems += items.length; });
+          mfrCount.textContent = totalItems;
+          mfrHeader.appendChild(mfrArrow);
+          mfrHeader.appendChild(mfrSpan);
+          mfrHeader.appendChild(mfrCount);
+
+          const mfrChildren = document.createElement('ul');
+          mfrChildren.className = 'op-children' + (firstMfr && query ? ' open' : '');
+          mfrChildren.style.background = '#fff';
+
+          seriesMap.forEach((leaves, seriesName) => {
+            const serLi = document.createElement('li');
+            serLi.style.padding = '0';
+
+            const serHeader = document.createElement('div');
+            serHeader.className = 'op-group-header';
+            serHeader.style.paddingLeft = '20px';
+            serHeader.style.fontWeight = 'normal';
+            serHeader.style.color = '#3c4043';
+
+            const serArrow = document.createElement('span');
+            serArrow.className = 'op-arrow';
+            serArrow.textContent = '▶';
+            const serSpan = document.createElement('span');
+            serSpan.textContent = seriesName;
+            const serCount = document.createElement('span');
+            serCount.className = 'op-group-count';
+            serCount.textContent = leaves.length;
+            serHeader.appendChild(serArrow);
+            serHeader.appendChild(serSpan);
+            serHeader.appendChild(serCount);
+
+            const serChildren = document.createElement('ul');
+            serChildren.className = 'op-children';
+            serChildren.style.background = '#f1f3f4';
+
+            leaves.forEach(({ item, comp }) => {
+              const child = document.createElement('li');
+              child.style.paddingLeft = '36px';
+              child.textContent = comp;
+              child.title = item.label;
+              child.onclick = function() { addOperationToQueue('dbTer', item); };
+              serChildren.appendChild(child);
+            });
+
+            serHeader.onclick = function() {
+              const isOpen = serHeader.classList.contains('open');
+              serHeader.classList.toggle('open', !isOpen);
+              serChildren.classList.toggle('open', !isOpen);
+            };
+
+            serLi.appendChild(serHeader);
+            serLi.appendChild(serChildren);
+            mfrChildren.appendChild(serLi);
+          });
+
+          mfrHeader.onclick = function() {
+            const isOpen = mfrHeader.classList.contains('open');
+            mfrHeader.classList.toggle('open', !isOpen);
+            mfrChildren.classList.toggle('open', !isOpen);
+          };
+
+          mfrLi.appendChild(mfrHeader);
+          mfrLi.appendChild(mfrChildren);
+          fragment.appendChild(mfrLi);
+          firstMfr = false;
+        });
+
+        list.appendChild(fragment);
+      }
+
+      // БД.КОАКС — 4 levels: Провод → Тип/Серия → Производитель → Артикул
+      // Built identically to renderTerTree, one extra level added.
+      function renderKoaxTree() {
+        const list = document.getElementById('opDbKoaxResults');
+        const query = normalizeSearch(document.getElementById('opDbKoaxSearch').value);
+        const rows = operationDb.dbKoax || [];
+        list.innerHTML = '';
+
+        const filtered = !query
+          ? rows
+          : rows.filter((item) => (item.searchText || '').indexOf(query) !== -1);
+
+        if (!filtered.length) {
+          const empty = document.createElement('li');
+          empty.style.cssText = 'padding:10px;color:#80868b;font-size:12px;';
+          empty.textContent = query ? 'Ничего не найдено.' : 'База не загружена.';
+          list.appendChild(empty);
+          return;
+        }
+
+        // wire → type → mfr → [{ item, article }]
+        const wires = new Map();
+        filtered.forEach((item) => {
+          const w = item.coaxWire || '—';
+          const t = item.coaxType || '—';
+          const m = item.coaxMfr  || '—';
+          const a = item.coaxArticle || (t + ' ' + w);
+          if (!wires.has(w)) wires.set(w, new Map());
+          const types = wires.get(w);
+          if (!types.has(t)) types.set(t, new Map());
+          const mfrs = types.get(t);
+          if (!mfrs.has(m)) mfrs.set(m, []);
+          mfrs.get(m).push({ item, article: a });
+        });
+
+        const fragment = document.createDocumentFragment();
+        let first = true;
+
+        wires.forEach((types, wireName) => {
+          // L1: Провод
+          let total = 0;
+          types.forEach((mm) => mm.forEach((aa) => { total += aa.length; }));
+
+          const wireLi = document.createElement('li');
+          const wireHdr = document.createElement('div');
+          wireHdr.className = 'op-group-header' + (first && query ? ' open' : '');
+          const wa = document.createElement('span'); wa.className = 'op-arrow'; wa.textContent = '▶';
+          const ws = document.createElement('span'); ws.textContent = wireName;
+          const wc = document.createElement('span'); wc.className = 'op-group-count'; wc.textContent = total;
+          wireHdr.appendChild(wa); wireHdr.appendChild(ws); wireHdr.appendChild(wc);
+
+          const wireUl = document.createElement('ul');
+          wireUl.className = 'op-children' + (first && query ? ' open' : '');
+
+          types.forEach((mfrs, typeName) => {
+            // L2: Тип/Серия
+            let typeTotal = 0;
+            mfrs.forEach((aa) => { typeTotal += aa.length; });
+
+            const typeLi = document.createElement('li');
+            typeLi.style.padding = '0';
+            const typeHdr = document.createElement('div');
+            typeHdr.className = 'op-group-header';
+            typeHdr.style.paddingLeft = '20px';
+            typeHdr.style.fontWeight = 'normal';
+            typeHdr.style.color = '#3c4043';
+            const ta = document.createElement('span'); ta.className = 'op-arrow'; ta.textContent = '▶';
+            const ts = document.createElement('span'); ts.textContent = typeName;
+            const tc = document.createElement('span'); tc.className = 'op-group-count'; tc.textContent = typeTotal;
+            typeHdr.appendChild(ta); typeHdr.appendChild(ts); typeHdr.appendChild(tc);
+
+            const typeUl = document.createElement('ul');
+            typeUl.className = 'op-children';
+
+            mfrs.forEach((leaves, mfrName) => {
+              // L3: Производитель
+              const mfrLi = document.createElement('li');
+              mfrLi.style.padding = '0';
+              const mfrHdr = document.createElement('div');
+              mfrHdr.className = 'op-group-header';
+              mfrHdr.style.paddingLeft = '32px';
+              mfrHdr.style.fontWeight = 'normal';
+              mfrHdr.style.color = '#5f6368';
+              const ma = document.createElement('span'); ma.className = 'op-arrow'; ma.textContent = '▶';
+              const ms = document.createElement('span'); ms.textContent = mfrName;
+              const mc = document.createElement('span'); mc.className = 'op-group-count'; mc.textContent = leaves.length;
+              mfrHdr.appendChild(ma); mfrHdr.appendChild(ms); mfrHdr.appendChild(mc);
+
+              const mfrUl = document.createElement('ul');
+              mfrUl.className = 'op-children';
+
+              // L4: Артикул (leaf, clickable)
+              leaves.forEach(({ item, article }) => {
+                const child = document.createElement('li');
+                child.style.paddingLeft = '36px';
+                child.textContent = article;
+                child.title = item.label;
+                child.onclick = function() { addOperationToQueue('dbKoax', item); };
+                mfrUl.appendChild(child);
+              });
+
+              mfrHdr.onclick = function() {
+                const o = mfrHdr.classList.contains('open');
+                mfrHdr.classList.toggle('open', !o);
+                mfrUl.classList.toggle('open', !o);
+              };
+              mfrLi.appendChild(mfrHdr);
+              mfrLi.appendChild(mfrUl);
+              typeUl.appendChild(mfrLi);
+            });
+
+            typeHdr.onclick = function() {
+              const o = typeHdr.classList.contains('open');
+              typeHdr.classList.toggle('open', !o);
+              typeUl.classList.toggle('open', !o);
+            };
+            typeLi.appendChild(typeHdr);
+            typeLi.appendChild(typeUl);
+            wireUl.appendChild(typeLi);
+          });
+
+          wireHdr.onclick = function() {
+            const o = wireHdr.classList.contains('open');
+            wireHdr.classList.toggle('open', !o);
+            wireUl.classList.toggle('open', !o);
+          };
+          wireLi.appendChild(wireHdr);
+          wireLi.appendChild(wireUl);
+          fragment.appendChild(wireLi);
+          first = false;
+        });
+
+        list.appendChild(fragment);
+      }
+
+      function getOperationTabConfig(dbKey) {
+        const map = {
+          dbOb: { searchInputId: 'opDbObSearch', resultsId: 'opDbObResults' },
+          dbOp: { searchInputId: 'opDbOpSearch', resultsId: 'opDbOpResults' },
+          dbTer: { searchInputId: 'opDbTerSearch', resultsId: 'opDbTerResults' },
+          dbKoax: { searchInputId: 'opDbKoaxSearch', resultsId: 'opDbKoaxResults' },
+        };
+        return map[dbKey];
+      }
+
+      function getFilteredOperationItems(dbKey, limit) {
+        const config = getOperationTabConfig(dbKey);
+        const query = normalizeSearch(document.getElementById(config.searchInputId).value);
+        const rows = operationDb[dbKey] || [];
+        const filtered = !query
+          ? rows.slice(0, limit || 80)
+          : rows.filter((item) => (item.searchText || '').indexOf(query) !== -1).slice(0, limit || 80);
+        return filtered;
+      }
+
+      function setupOperationSearch(dbKey) {
+        const config = getOperationTabConfig(dbKey);
+        const input = document.getElementById(config.searchInputId);
+        input.addEventListener('input', debounce(() => {
+          renderOperationResults(dbKey);
+        }, 200));
+      }
+
+      function addOperationToQueue(dbKey, item) {
+        operationQueues[dbKey].push({
+          dbKey,
+          label: item.label,
+          outputRow: item.outputRow,
+        });
+        updateOperationQueueUI();
+      }
+
+      function clearOperationQueue() {
+        operationQueues[activeOperationDbKey] = [];
+        updateOperationQueueUI();
+      }
+
+      function removeOperationFromQueue(index) {
+        operationQueues[activeOperationDbKey].splice(index, 1);
+        updateOperationQueueUI();
+      }
+
+      function updateOperationQueueUI() {
+        const list = document.getElementById('opQueueList');
+        list.innerHTML = '';
+        const currentQueue = operationQueues[activeOperationDbKey] || [];
+        currentQueue.forEach((item, index) => {
+          const li = document.createElement('li');
+          li.innerHTML = `<span>${escapeHtml(item.label)}</span><span class="remove-btn" onclick="removeOperationFromQueue(${index})">×</span>`;
+          list.appendChild(li);
+        });
+        document.getElementById('opQueueCount').innerText = currentQueue.length;
+        document.getElementById('opPushBtn').disabled = currentQueue.length === 0;
+      }
+
+      function pushOperationsQueue() {
+        const currentQueue = operationQueues[activeOperationDbKey] || [];
+        if (!currentQueue.length) {
+          setOperationsStatus('Очередь пуста.', true);
+          return;
+        }
+
+        const targetCellA1 = document.getElementById('opTargetCell').value.trim();
+        const rows = currentQueue.map((item) => item.outputRow);
+        setOperationsStatus('Выгрузка техопераций...', false);
+        google.script.run
+          .withSuccessHandler((result) => {
+            setOperationsStatus(`✅ ${result.message}`, false);
+            clearOperationQueue();
+          })
+          .withFailureHandler((error) => {
+            setOperationsStatus(error.message || 'Не удалось выгрузить техоперации.', true);
+          })
+          .insertOperationRows(rows, targetCellA1);
+      }
+
+      function setupSmartAutocomplete(inputId, resultsId, dataArray) {
+        const inputEl = document.getElementById(inputId);
+        const resList = document.getElementById(resultsId);
+
+        function render() {
+          const q = inputEl.value.toLowerCase().trim();
+          resList.innerHTML = '';
+          let matches = [];
+
+          if (q.length === 0) {
+            matches = dataArray.map((item) => ({ text: item, index: 0 }));
+            matches.sort((a, b) => a.text.localeCompare(b.text, undefined, { numeric: true, sensitivity: 'base' }));
+          } else {
+            for (let i = 0; i < dataArray.length; i += 1) {
+              const itemText = dataArray[i];
+              const matchIndex = itemText.toLowerCase().indexOf(q);
+              if (matchIndex !== -1) {
+                matches.push({ text: itemText, index: matchIndex });
+              }
+            }
+            matches.sort((a, b) => {
+              if (a.index !== b.index) {
+                return a.index - b.index;
+              }
+              return a.text.localeCompare(b.text, undefined, { numeric: true, sensitivity: 'base' });
+            });
+          }
+
+          matches = matches.slice(0, 20);
+          if (!matches.length) {
+            resList.style.display = 'none';
+            return;
+          }
+
+          resList.style.display = 'block';
+          const fragment = document.createDocumentFragment();
+          matches.forEach((match) => {
+            const li = document.createElement('li');
+            li.textContent = match.text;
+            li.onmousedown = function onMouseDown(event) {
+              event.preventDefault();
+              inputEl.value = this.textContent;
+              resList.style.display = 'none';
+            };
+            fragment.appendChild(li);
+          });
+          resList.appendChild(fragment);
+        }
+
+        inputEl.oninput = render;
+        inputEl.onfocus = render;
+      }
+
+      function setupAutocompleteSources() {
+        setupSmartAutocomplete('gType', 'gTypeResults', lookupValues.types || []);
+        setupSmartAutocomplete('gManuf', 'gManufResults', lookupValues.manufacturers || []);
+        setupSmartAutocomplete('gSupp', 'gSuppResults', lookupValues.suppliers || []);
+        setupSmartAutocomplete('cMan1', 'cMan1Results', lookupValues.manufacturers || []);
+        setupSmartAutocomplete('cMan2', 'cMan2Results', lookupValues.manufacturers || []);
+      }
+
+      function normalize(value) {
+        return String(value || '').toLowerCase().replace(/\s+/g, '');
+      }
+
+      function findMatches(query, limit) {
+        const normalized = normalize(query);
+        if (normalized.length < 2) {
+          return [];
+        }
+
+        const matches = [];
+        for (let i = 0; i < allData.length; i += 1) {
+          const item = allData[i];
+          const matchIndex = item.lowNoSpace.indexOf(normalized);
+          if (matchIndex !== -1) {
+            matches.push({ item, index: matchIndex });
+          }
+        }
+
+        matches.sort((a, b) => {
+          if (a.index !== b.index) {
+            return a.index - b.index;
+          }
+          return a.item.o.localeCompare(b.item.o, undefined, { numeric: true, sensitivity: 'base' });
+        });
+        return matches.slice(0, limit || 30);
+      }
+
+      document.addEventListener('DOMContentLoaded', () => {
+        document.getElementById('templateSearch').addEventListener('input', debounce(renderTemplates, 200));
+        document.getElementById('templateCategoryFilter').addEventListener('change', renderTemplates);
+
+        document.getElementById('searchInput').addEventListener('input', debounce(function onSearchInput(event) {
+          const resList = document.getElementById('results');
+          resList.innerHTML = '';
+          const matches = findMatches(event.target.value, 30);
+          const fragment = document.createDocumentFragment();
+          matches.forEach((match) => {
+            const li = document.createElement('li');
+            li.textContent = match.item.o;
+            li.onclick = function onClick() {
+              addToBasket(this.textContent);
+            };
+            fragment.appendChild(li);
+          });
+          resList.appendChild(fragment);
+        }, 150));
+
+        setupMiniSearch('gStaticSearch', 'gStaticResults', 'gStatic');
+        setupMiniSearch('cStaticSearch', 'cStaticResults', 'cStatic');
+        setupOperationSearch('dbOb');
+        setupOperationSearch('dbOp');
+        setupOperationSearch('dbTer');
+        setupOperationSearch('dbKoax');
+
+        document.addEventListener('click', function onDocumentClick(event) {
+          if (!event.target.closest('.mini-search-wrapper') && !event.target.closest('.autocomplete-wrapper')) {
+            document.querySelectorAll('.mini-search-results').forEach((el) => {
+              el.style.display = 'none';
+            });
+          }
+        });
+
+        restoreMainTab(); // calls switchMainTab → startCatalogPoll if templates tab is active
+        loadTemplates();
+        // Fire both DB loads immediately in parallel — data is ready when user switches tabs
+        ensureMaterialsLoaded(false);
+        ensureOperationsLoaded(false);
+      });
+
+      function setupMiniSearch(inputId, resultsId, targetTextareaId) {
+        document.getElementById(inputId).addEventListener('input', function onInput(event) {
+          const resList = document.getElementById(resultsId);
+          resList.innerHTML = '';
+          const matches = findMatches(event.target.value, 15);
+
+          if (!matches.length) {
+            resList.style.display = 'none';
+            return;
+          }
+
+          resList.style.display = 'block';
+          const fragment = document.createDocumentFragment();
+          matches.forEach((match) => {
+            const li = document.createElement('li');
+            li.textContent = match.item.o;
+            li.dataset.fullTag = match.item.fullTag;
+            li.onmousedown = function onMouseDown(mouseEvent) {
+              mouseEvent.preventDefault();
+              const textarea = document.getElementById(targetTextareaId);
+              const val = this.dataset.fullTag;
+              textarea.value = textarea.value.trim() === '' ? val : `${textarea.value}\n${val}`;
+              document.getElementById(inputId).value = '';
+              resList.style.display = 'none';
+            };
+            fragment.appendChild(li);
+          });
+          resList.appendChild(fragment);
+        });
+      }
+
+      function generateAssemblies() {
+        const template = document.getElementById('gTemplate').value.trim();
+        const vars = document.getElementById('gVars').value.split('\n').map((s) => s.trim()).filter(Boolean);
+        const statics = document.getElementById('gStatic').value.split('\n').map((s) => s.trim()).filter(Boolean);
+        const gType = document.getElementById('gType').value.trim();
+        const gManuf = document.getElementById('gManuf').value.trim();
+        const gSupp = document.getElementById('gSupp').value.trim();
+        const regex = /[XxХх]{2}/gi;
+
+        if (!template || vars.length === 0) {
+          alert('Заполните Шаблон и Номера XX');
+          return;
+        }
+
+        vars.forEach((v) => {
+          const generatedArt = template.replace(regex, v);
+          const fullTag = `${generatedArt} | ${gType} | ${gManuf} | ${gSupp}`;
+          basket.push(fullTag);
+          statics.forEach((s) => basket.push(s));
+        });
+
+        document.getElementById('gVars').value = '';
+        updateBasketUI();
+      }
+
+      function generateCoax() {
+        const warningsBox = document.getElementById('coaxWarnings');
+        const statsBox = document.getElementById('coaxStats');
+        warningsBox.innerText = '';
+        statsBox.innerText = '';
+        statsBox.style.display = 'none';
+
+        const t1List = document.getElementById('cType1').value.split('\n').map((s) => s.trim()).filter(Boolean);
+        const t2List = document.getElementById('cType2').value.split('\n').map((s) => s.trim()).filter(Boolean);
+        const m1 = normalize(document.getElementById('cMan1').value);
+        const m2 = normalize(document.getElementById('cMan2').value);
+        const statics = document.getElementById('cStatic').value.split('\n').map((s) => s.trim()).filter(Boolean);
+
+        if (!t1List.length) {
+          alert('Укажите хотя бы Разъем 1');
+          return;
+        }
+
+        const isSingleMode = t2List.length === 0;
+        if (!isSingleMode && t1List.length !== t2List.length) {
+          alert('Ошибка! Количество строк слева и справа должно совпадать.');
+          return;
+        }
+
+        let count = 0;
+        const errorLog = [];
+        const statsLog = [];
+
+        for (let i = 0; i < t1List.length; i += 1) {
+          const t1 = t1List[i];
+          const cleanT1 = normalize(t1);
+          const matches1 = allData.filter((item) => item.typeNoSpace === cleanT1 && item.manufNoSpace.indexOf(m1) !== -1);
+
+          if (!matches1.length) {
+            errorLog.push(`❌ Стр ${i + 1}: Разъем 1 (${t1}) не найден`);
+            continue;
+          }
+
+          if (isSingleMode) {
+            let localCount = 0;
+            matches1.forEach((s1) => {
+              basket.push(s1.fullTag);
+              statics.forEach((st) => basket.push(st));
+              localCount += 1;
+            });
+            count += localCount;
+            statsLog.push(`✓ Стр ${i + 1} (${t1}): ${localCount} шт.`);
+            continue;
+          }
+
+          const t2 = t2List[i];
+          const cleanT2 = normalize(t2);
+          const matches2 = allData.filter((item) => item.typeNoSpace === cleanT2 && item.manufNoSpace.indexOf(m2) !== -1);
+
+          if (!matches2.length) {
+            errorLog.push(`❌ Стр ${i + 1}: Разъем 2 (${t2}) не найден`);
+            continue;
+          }
+
+          let localCount = 0;
+          matches1.forEach((s1) => {
+            matches2.forEach((s2) => {
+              basket.push(s1.fullTag);
+              basket.push(s2.fullTag);
+              statics.forEach((st) => basket.push(st));
+              localCount += 1;
+            });
+          });
+          count += localCount;
+          statsLog.push(`✓ Стр ${i + 1} (${t1} + ${t2}): ${localCount} шт.`);
+        }
+
+        if (errorLog.length) {
+          warningsBox.innerText = `Пропущено:\n${errorLog.join('\n')}`;
+        }
+        if (statsLog.length) {
+          statsBox.style.display = 'block';
+          statsBox.innerText = `Сгенерировано:\n${statsLog.join('\n')}`;
+        }
+
+        document.getElementById('cType1').value = '';
+        document.getElementById('cType2').value = '';
+        updateBasketUI();
+        setMaterialStatus(`Создано: ${count}`, false);
+      }
+
+      function runReplication() {
+        const statusEl = document.getElementById('repStatus');
+        statusEl.style.color = '#d93025';
+
+        const vText = document.getElementById('rValues').value;
+        const cText = document.getElementById('rCounts').value;
+        const targetCell = document.getElementById('rTarget').value.trim();
+
+        if (!vText || !cText) {
+          statusEl.innerText = '❌ Заполните обе колонки!';
+          return;
+        }
+
+        const vArr = vText.split(/\r?\n/);
+        const cArr = cText.split(/\r?\n/);
+
+        while (
+          vArr.length > 0 &&
+          vArr[vArr.length - 1].trim() === '' &&
+          cArr.length > 0 &&
+          cArr[cArr.length - 1].trim() === ''
+        ) {
+          vArr.pop();
+          cArr.pop();
+        }
+
+        if (vArr.length !== cArr.length) {
+          statusEl.innerText = `❌ Ошибка: Слева ${vArr.length} строк, справа ${cArr.length} строк!`;
+          return;
+        }
+
+        const resultData = [];
+        let totalCopies = 0;
+        for (let i = 0; i < vArr.length; i += 1) {
+          const val = vArr[i];
+          let count = parseInt(cArr[i].trim(), 10);
+          if (Number.isNaN(count) || count < 0) {
+            count = 0;
+          }
+          for (let j = 0; j < count; j += 1) {
+            resultData.push(val);
+            totalCopies += 1;
+          }
+        }
+
+        if (!resultData.length) {
+          statusEl.innerText = '⚠️ Итоговый список пуст (везде указан 0).';
+          return;
+        }
+
+        statusEl.style.color = '#1a73e8';
+        statusEl.innerText = `⏳ Выгрузка ${totalCopies} строк...`;
+
+        google.script.run
+          .withSuccessHandler((msg) => {
+            statusEl.style.color = '#137333';
+            statusEl.innerText = `✅ ${msg}`;
+            document.getElementById('rValues').value = '';
+            document.getElementById('rCounts').value = '';
+          })
+          .withFailureHandler((err) => {
+            statusEl.style.color = '#d93025';
+            statusEl.innerText = `❌ Системная ошибка: ${err.message}`;
+          })
+          .insertReplicatedData(resultData, targetCell);
+      }
+
+      function addToBasket(val) {
+        basket.push(val);
+        updateBasketUI();
+      }
+
+      function removeFromBasket(index) {
+        basket.splice(index, 1);
+        updateBasketUI();
+      }
+
+      function clearBasket() {
+        basket = [];
+        updateBasketUI();
+      }
+
+      function updateBasketUI() {
+        const bList = document.getElementById('basketList');
+        bList.innerHTML = '';
+        basket.forEach((item, index) => {
+          const li = document.createElement('li');
+          li.innerHTML = `<span>${item}</span><span class="remove-btn" onclick="removeFromBasket(${index})">×</span>`;
+          bList.appendChild(li);
+        });
+        document.getElementById('bCount').innerText = basket.length;
+        document.getElementById('pushBtn').disabled = basket.length === 0;
+      }
+
+      function pushToTable() {
+        const btn = document.getElementById('pushBtn');
+        btn.disabled = true;
+        setMaterialStatus('⏳ Выгрузка...', false);
+        google.script.run
+          .withSuccessHandler((msg) => {
+            setMaterialStatus(`✅ ${msg}`, false);
+            clearBasket();
+            btn.disabled = false;
+          })
+          .withFailureHandler((err) => {
+            setMaterialStatus(`❌ Ошибка: ${err.message}`, true);
+            btn.disabled = false;
+          })
+          .insertBatchIntoCell(basket);
+      }
+    </script>
+  </body>
+</html>
