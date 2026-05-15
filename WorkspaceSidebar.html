@@ -1050,6 +1050,10 @@
       }
 
       function renderOperationResults(dbKey) {
+        if (dbKey === 'dbOb') {
+          renderObTree();
+          return;
+        }
         if (dbKey === 'dbOp') {
           renderOpTree();
           return;
@@ -1081,6 +1085,98 @@
           };
           fragment.appendChild(li);
         });
+        list.appendChild(fragment);
+      }
+
+      function renderObTree() {
+        const list = document.getElementById('opDbObResults');
+        const query = normalizeSearch(document.getElementById('opDbObSearch').value);
+        const rows = operationDb.dbOb || [];
+        list.innerHTML = '';
+
+        const filtered = !query
+          ? rows
+          : rows.filter((item) => (item.searchText || '').indexOf(query) !== -1);
+
+        if (!filtered.length) {
+          const empty = document.createElement('li');
+          empty.style.cssText = 'padding:10px;color:#80868b;font-size:12px;';
+          empty.textContent = query ? 'Ничего не найдено.' : 'База не загружена.';
+          list.appendChild(empty);
+          return;
+        }
+
+        const hasTypes = filtered.some((item) => item.obType);
+        if (!hasTypes) {
+          const fragment = document.createDocumentFragment();
+          filtered.slice(0, 80).forEach((item) => {
+            const li = document.createElement('li');
+            li.textContent = item.label;
+            li.onclick = function() { addOperationToQueue('dbOb', item); };
+            fragment.appendChild(li);
+          });
+          list.appendChild(fragment);
+          return;
+        }
+
+        const groups = new Map();
+        filtered.forEach((item) => {
+          const key = item.obType || '—';
+          if (!groups.has(key)) groups.set(key, []);
+          groups.get(key).push(item);
+        });
+
+        const fragment = document.createDocumentFragment();
+        let firstGroup = true;
+
+        groups.forEach((items, groupName) => {
+          const li = document.createElement('li');
+          li.style.padding = '0';
+
+          const header = document.createElement('div');
+          header.className = 'op-group-header' + (firstGroup && query ? ' open' : '');
+
+          const arrow = document.createElement('span');
+          arrow.className = 'op-arrow';
+          arrow.textContent = '▶';
+
+          const nameSpan = document.createElement('span');
+          nameSpan.textContent = groupName;
+
+          const count = document.createElement('span');
+          count.className = 'op-group-count';
+          count.textContent = items.length;
+
+          header.appendChild(arrow);
+          header.appendChild(nameSpan);
+          header.appendChild(count);
+
+          const childList = document.createElement('ul');
+          childList.className = 'op-children' + (firstGroup && query ? ' open' : '');
+          childList.style.background = '#f8f9fa';
+
+          items.forEach((item) => {
+            const child = document.createElement('li');
+            child.style.cssText = 'padding:5px 10px 5px 26px;border-bottom:1px solid #f1f3f4;cursor:pointer;font-size:11px;color:#3c4043;';
+            child.textContent = item.label;
+            child.onmouseover = function() { this.style.background = '#e8f0fe'; this.style.color = '#1a73e8'; };
+            child.onmouseout = function() { this.style.background = ''; this.style.color = '#3c4043'; };
+            child.onclick = function() { addOperationToQueue('dbOb', item); };
+            childList.appendChild(child);
+          });
+
+          header.onclick = function() {
+            const isOpen = header.classList.contains('open');
+            header.classList.toggle('open', !isOpen);
+            childList.classList.toggle('open', !isOpen);
+          };
+
+          li.appendChild(header);
+          li.appendChild(childList);
+          fragment.appendChild(li);
+          firstGroup = false;
+        });
+
         list.appendChild(fragment);
       }
 
