@@ -463,14 +463,25 @@
   function matchOpByTitle(title) {
     const ops = D.ops || [];
     if (!title || !ops.length) return null;
-    const tl = title.toLowerCase();
+
+    // Normalize: lowercase, replace separators with space
+    const norm = s => (s || '').toLowerCase().replace(/[_\-|.+]/g, ' ').replace(/\s+/g, ' ').trim();
+    const tl   = norm(title);
+
+    // Pass 1: exact substring — op name fully contained in template title or vice versa
+    for (const op of ops) {
+      const on = norm(op.opName);
+      if (on && (tl.includes(on) || on.includes(tl))) return op;
+    }
+
+    // Pass 2: word overlap, require ≥2 significant words (len>3)
     let best = null, bestScore = 0;
     for (const op of ops) {
-      const words = (op.opName || '').toLowerCase().split(/[\s|,._\-]+/).filter(w => w.length > 2);
+      const words = norm(op.opName).split(/\s+/).filter(w => w.length > 3);
       const score = words.filter(w => tl.includes(w)).length;
-      if (score > bestScore) { bestScore = score; best = op; }
+      if (score >= 2 && score > bestScore) { bestScore = score; best = op; }
     }
-    return bestScore >= 1 ? best : null;
+    return best;
   }
 
   function setVal(id, v) {

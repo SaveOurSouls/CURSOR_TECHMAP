@@ -71,20 +71,22 @@ function getAssemblyGeneratorData_() {
   return { assemblyInfo, components, templates, ops, opLabels: ASSEMBLY_GEN.opLabels };
 }
 
-// Scan sheet rows for Таблица1: find a header row containing "Индекс" or "Наименование сборки"
+// Scan sheet rows for Таблица1: find a header row containing BOTH "Индекс" AND "Наименование"
 function scanForTable1_(data) {
   for (let r = 0; r < data.length - 1; r++) {
-    const row = data[r];
+    const row   = data[r];
     const lower = row.map(c => String(c || '').toLowerCase().trim());
-    const hasIndex = lower.some(c => c.includes('индекс'));
-    const hasName  = lower.some(c => c.includes('наименование'));
-    if (!hasIndex && !hasName) continue;
+    // Require BOTH keywords to avoid matching SPY or other rows
+    if (!lower.some(c => c.includes('индекс')) || !lower.some(c => c.includes('наименование'))) continue;
 
-    const headers  = row.map(c => String(c || '').trim());
-    const dataRow  = data[r + 1];
-    const result   = {};
+    const headers = row.map(c => String(c || '').trim());
+    const dataRow = data[r + 1];
+    const result  = {};
     headers.forEach((h, i) => {
-      if (h && dataRow[i] !== '' && dataRow[i] != null) result[h] = dataRow[i];
+      // Skip numeric-only, single-char or empty headers — they're row numbers / junk
+      if (!h || /^\d+$/.test(h) || h.length <= 1) return;
+      const v = dataRow[i];
+      if (v !== '' && v != null) result[h] = v;
     });
     return result;
   }
@@ -98,7 +100,10 @@ function scanForSpyTable_(data) {
     const lower = row.map(c => String(c || '').toLowerCase().trim());
 
     const typeIdx = lower.findIndex(c => c === 'тип' || c === 'type');
-    const nameIdx = lower.findIndex(c => c === 'грм' || c.includes('артикул') || c.includes('наименование') || c.includes('название'));
+    // ГРМ = component name column; try exact then partial; must come before артикул check
+    const nameIdx = lower.findIndex(c =>
+      c.includes('грм') || c.includes('наименование') || c.includes('название') || c.includes('артикул')
+    );
 
     if (typeIdx < 0 || nameIdx < 0) continue;
 
