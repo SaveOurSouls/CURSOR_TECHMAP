@@ -1,50 +1,90 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html>
   <head>
     <base target="_top" />
     <style>
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+      :root {
+        --accent: #2563EB;
+        --accent-h: #1D4ED8;
+        --accent-bg: #EFF6FF;
+        --txt: #0F172A;
+        --txt2: #475569;
+        --txt3: #94A3B8;
+        --bg: #FFFFFF;
+        --surf: #F8FAFC;
+        --brd: #E2E8F0;
+        --shd: 0 1px 3px rgba(0,0,0,.07),0 1px 2px rgba(0,0,0,.04);
+        --shd-md: 0 4px 16px rgba(0,0,0,.1);
+        --r: 8px;
+        --r-lg: 12px;
+        --red: #DC2626;
+        --red-bg: #FEF2F2;
+        --grn: #059669;
+        --grn-bg: #ECFDF5;
+        --pur: #7C3AED;
+        --gray: #64748B;
+      }
+
+      * { box-sizing: border-box; }
+
       body {
-        font-family: Arial, sans-serif;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
         padding: 0;
-        background: #fff;
-        color: #3c4043;
+        margin: 0;
+        background: var(--bg);
+        color: var(--txt);
         display: flex;
         flex-direction: column;
         height: 100vh;
-        margin: 0;
+        font-size: 13px;
+        line-height: 1.5;
       }
 
+      /* ─── MAIN TABS ─── */
       .main-header {
         position: sticky;
         top: 0;
         z-index: 20;
-        background: #ffffff;
-        border-bottom: 1px solid #e8eaed;
+        background: var(--bg);
+        border-bottom: 1px solid var(--brd);
       }
 
       .main-tabs {
         display: flex;
-        padding: 8px 10px 0;
-        gap: 6px;
+        padding: 10px 12px 0;
+        gap: 2px;
       }
 
       .main-tab-btn {
         flex: 1;
-        border: 0;
-        border-radius: 10px 10px 0 0;
-        background: #f1f3f4;
-        color: #5f6368;
-        font-weight: 700;
-        font-size: 12px;
-        padding: 10px 8px;
+        border: none;
+        border-radius: var(--r) var(--r) 0 0;
+        background: transparent;
+        color: var(--txt2);
+        font-weight: 500;
+        font-size: 12.5px;
+        font-family: inherit;
+        padding: 9px 8px 8px;
         cursor: pointer;
+        border-bottom: 2px solid transparent;
+        transition: color .15s, background .15s;
+        width: 100%;
+      }
+
+      .main-tab-btn:hover {
+        color: var(--accent);
+        background: var(--accent-bg);
       }
 
       .main-tab-btn.active {
-        background: #1a73e8;
-        color: #ffffff;
+        color: var(--accent);
+        font-weight: 600;
+        border-bottom-color: var(--accent);
       }
 
+      /* ─── SECTIONS ─── */
       .panel-section {
         display: none;
         flex: 1;
@@ -52,9 +92,7 @@
         overflow: hidden;
       }
 
-      .panel-section.active {
-        display: flex;
-      }
+      .panel-section.active { display: flex; }
 
       .templates-panel,
       .materials-panel {
@@ -64,14 +102,15 @@
         min-height: 0;
       }
 
+      /* ─── TEMPLATES TOOLBAR ─── */
       .templates-toolbar {
-        position: sticky;
-        top: 0;
-        background: #ffffff;
-        padding: 10px 12px 8px;
-        border-bottom: 1px solid #f1f3f4;
+        background: var(--bg);
+        padding: 12px 14px 10px;
+        border-bottom: 1px solid var(--brd);
+        flex-shrink: 0;
       }
 
+      /* ─── FORM ELEMENTS ─── */
       input,
       select,
       button,
@@ -85,67 +124,97 @@
       input,
       select,
       textarea {
-        padding: 8px;
+        padding: 8px 11px;
         margin-bottom: 8px;
-        border: 1px solid #dadce0;
-        border-radius: 6px;
+        border: 1px solid var(--brd);
+        border-radius: var(--r);
         outline: none;
+        background: var(--bg);
+        color: var(--txt);
+        transition: border-color .15s, box-shadow .15s;
       }
 
       input:focus,
       select:focus,
       textarea:focus {
-        border-color: #1a73e8;
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgba(37,99,235,.1);
+      }
+
+      input::placeholder,
+      textarea::placeholder {
+        color: var(--txt3);
       }
 
       button {
-        border: 0;
-        border-radius: 8px;
-        padding: 9px 10px;
+        border: none;
+        border-radius: var(--r);
+        padding: 8px 12px;
         cursor: pointer;
+        font-family: inherit;
+        font-weight: 500;
+        transition: background .15s;
       }
 
       .btn-primary {
-        background: #1a73e8;
-        color: #ffffff;
+        background: var(--accent);
+        color: #fff;
       }
+      .btn-primary:hover { background: var(--accent-h); }
 
       .btn-secondary {
-        background: #e8f0fe;
-        color: #174ea6;
+        background: var(--accent-bg);
+        color: var(--accent);
       }
+      .btn-secondary:hover { background: #DBEAFE; }
 
+      .btn-danger {
+        background: var(--red-bg);
+        color: var(--red);
+      }
+      .btn-danger:hover { background: #FEE2E2; }
+
+      /* ─── TEMPLATE CARDS ─── */
       .template-list {
         flex: 1;
         min-height: 0;
         overflow-y: auto;
-        padding: 10px 12px 12px;
+        padding: 12px 14px;
       }
 
       .template-card {
-        border: 1px solid #d8d8d8;
-        border-radius: 12px;
-        padding: 12px;
+        border: 1px solid var(--brd);
+        border-radius: var(--r-lg);
+        padding: 14px;
         margin: 0 0 10px;
-        background: #fbfbfb;
+        background: var(--bg);
+        box-shadow: var(--shd);
+        transition: box-shadow .15s, border-color .15s;
+      }
+
+      .template-card:hover {
+        box-shadow: var(--shd-md);
+        border-color: #CBD5E1;
       }
 
       .template-title {
-        font-weight: 700;
-        margin-bottom: 4px;
-        font-size: 14px;
+        font-weight: 600;
+        margin-bottom: 3px;
+        font-size: 13.5px;
       }
 
       .template-meta {
-        color: #5f6368;
-        font-size: 12px;
-        margin-bottom: 8px;
+        color: var(--txt3);
+        font-size: 11.5px;
+        margin-bottom: 6px;
+        font-weight: 500;
       }
 
       .template-desc {
         font-size: 12px;
-        line-height: 1.4;
+        line-height: 1.5;
         margin-bottom: 10px;
+        color: var(--txt2);
       }
 
       .template-actions {
@@ -153,107 +222,170 @@
         gap: 8px;
       }
 
-      .template-actions button {
-        flex: 1;
-      }
+      .template-actions button { flex: 1; }
 
-      .btn-danger {
-        background: #fce8e6;
-        color: #c5221f;
-      }
-
-      .btn-danger:hover {
-        background: #f5c6c4;
-      }
-
-      /* Two-level БД.ОП tree */
-      .op-tree { list-style: none; padding: 0; margin: 0; }
-      .op-tree .op-group-header {
-        padding: 7px 10px 7px 8px;
-        border-bottom: 1px solid #e8eaed;
-        cursor: pointer;
-        font-size: 12px;
-        font-weight: 600;
-        color: #1f1f1f;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        user-select: none;
-      }
-      .op-tree .op-group-header:hover { background: #f1f3f4; }
-      .op-tree .op-group-header .op-arrow {
-        font-size: 9px;
-        color: #80868b;
-        transition: transform 0.15s;
-        flex-shrink: 0;
-      }
-      .op-tree .op-group-header.open .op-arrow { transform: rotate(90deg); }
-      .op-tree .op-group-count {
-        margin-left: auto;
-        font-size: 10px;
-        color: #80868b;
-        font-weight: normal;
-      }
-      .op-tree .op-children {
-        display: none;
-        list-style: none;
-        padding: 0;
-        margin: 0;
-        background: #f8f9fa;
-      }
-      .op-tree .op-children.open { display: block; }
-      .op-tree .op-children li {
-        padding: 5px 10px 5px 26px;
-        border-bottom: 1px solid #f1f3f4;
-        cursor: pointer;
-        font-size: 11px;
-        color: #3c4043;
-      }
-      .op-tree .op-children li:hover { background: #e8f0fe; color: #1a73e8; }
-
-
+      /* ─── STATUS ─── */
       .section-status {
         margin: 6px 0 0;
-        font-size: 12px;
-        color: #174ea6;
+        font-size: 11.5px;
+        color: var(--accent);
         min-height: 18px;
       }
 
+      /* ─── MATERIAL ROOT ─── */
       .material-root {
-        padding: 10px;
-        background: #fff;
-        color: #3c4043;
+        padding: 10px 12px;
+        background: var(--bg);
+        color: var(--txt);
         display: flex;
         flex-direction: column;
         flex: 1;
         min-height: 0;
+        position: relative;
+        overflow: hidden;
       }
 
+      /* ─── COLUMN SETTINGS OVERLAY ─── */
+      .col-settings-overlay {
+        position: absolute;
+        inset: 0;
+        background: var(--bg);
+        z-index: 50;
+        display: none;
+        flex-direction: column;
+      }
+      .col-settings-overlay.open { display: flex; }
+
+      .col-settings-hdr {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--brd);
+        font-weight: 600;
+        font-size: 13px;
+        flex-shrink: 0;
+        background: var(--surf);
+      }
+
+      .col-settings-tabs {
+        display: flex;
+        padding: 8px 10px;
+        gap: 6px;
+        border-bottom: 1px solid var(--brd);
+        flex-shrink: 0;
+      }
+
+      .col-settings-tab-btn {
+        flex: 1;
+        border: 1px solid var(--brd);
+        border-radius: var(--r);
+        background: var(--bg);
+        color: var(--txt2);
+        font-size: 11.5px;
+        font-weight: 500;
+        font-family: inherit;
+        padding: 5px 4px;
+        cursor: pointer;
+        transition: background .15s, color .15s;
+        width: 100%;
+      }
+
+      .col-settings-tab-btn:hover {
+        background: var(--accent-bg);
+        color: var(--accent);
+      }
+
+      .col-settings-tab-btn.active {
+        background: var(--accent);
+        color: #fff;
+        border-color: var(--accent);
+      }
+
+      .col-settings-body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 4px 12px;
+      }
+
+      .col-settings-body label {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 7px 6px;
+        font-size: 12px;
+        cursor: pointer;
+        border-bottom: 1px solid var(--brd);
+        margin: 0;
+        width: auto;
+        box-sizing: border-box;
+        color: var(--txt);
+        font-weight: 400;
+        white-space: normal;
+        overflow: visible;
+        text-overflow: clip;
+        flex-shrink: 0;
+        transition: background .1s;
+      }
+
+      .col-settings-body label:hover { background: var(--surf); }
+
+      .col-settings-body input[type=checkbox] {
+        width: auto;
+        margin: 0;
+        padding: 0;
+        flex-shrink: 0;
+        accent-color: var(--accent);
+        cursor: pointer;
+      }
+
+      .col-settings-footer {
+        padding: 10px 14px;
+        border-top: 1px solid var(--brd);
+        display: flex;
+        gap: 8px;
+        flex-shrink: 0;
+        background: var(--surf);
+      }
+
+      /* ─── DB INNER TABS ─── */
       .tabs {
         display: flex;
-        border-bottom: 2px solid #e8eaed;
+        border-bottom: 1px solid var(--brd);
         margin-bottom: 10px;
         flex-wrap: wrap;
         flex-shrink: 0;
+        gap: 1px;
       }
 
       .tab-btn {
         flex: 1;
-        padding: 6px 2px;
+        padding: 7px 4px;
         border: none;
-        background: none;
+        background: transparent;
         cursor: pointer;
-        font-weight: bold;
-        color: #5f6368;
-        font-size: 10px;
+        font-weight: 500;
+        color: var(--txt2);
+        font-size: 11px;
+        font-family: inherit;
         text-transform: uppercase;
         white-space: nowrap;
+        border-bottom: 2px solid transparent;
+        border-radius: var(--r) var(--r) 0 0;
+        margin-bottom: -1px;
+        transition: color .15s, background .15s;
+        width: 100%;
+      }
+
+      .tab-btn:hover {
+        color: var(--accent);
+        background: var(--accent-bg);
       }
 
       .tab-btn.active {
-        color: #1a73e8;
-        border-bottom: 3px solid #1a73e8;
-        margin-bottom: -2px;
+        color: var(--accent);
+        font-weight: 600;
+        border-bottom-color: var(--accent);
       }
 
       .tab-content {
@@ -263,9 +395,7 @@
         overflow-y: auto;
       }
 
-      .tab-content.active {
-        display: flex;
-      }
+      .tab-content.active { display: flex; }
 
       textarea {
         resize: vertical;
@@ -273,9 +403,9 @@
       }
 
       label {
-        font-size: 10px;
-        font-weight: bold;
-        color: #1a73e8;
+        font-size: 10.5px;
+        font-weight: 600;
+        color: var(--accent);
         margin-bottom: 2px;
         display: block;
         white-space: nowrap;
@@ -309,13 +439,15 @@
         min-height: 120px;
       }
 
+      /* ─── SCROLL AREA ─── */
       .scroll-area {
         flex-grow: 1;
         overflow-y: auto;
-        border: 1px solid #eee;
-        border-radius: 4px;
+        border: 1px solid var(--brd);
+        border-radius: var(--r);
         margin-bottom: 5px;
         min-height: 60px;
+        background: var(--surf);
       }
 
       #results,
@@ -326,17 +458,19 @@
       }
 
       #results li {
-        padding: 8px;
-        border-bottom: 1px solid #f1f3f4;
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--brd);
         cursor: pointer;
         font-size: 12px;
+        transition: background .1s;
       }
 
       #results li:hover {
-        background: #e8f0fe;
-        color: #1a73e8;
+        background: var(--accent-bg);
+        color: var(--accent);
       }
 
+      /* ─── AUTOCOMPLETE ─── */
       .autocomplete-wrapper {
         position: relative;
         width: 100%;
@@ -344,9 +478,7 @@
         flex-shrink: 0;
       }
 
-      .autocomplete-wrapper input {
-        margin-bottom: 0 !important;
-      }
+      .autocomplete-wrapper input { margin-bottom: 0 !important; }
 
       .mini-search-wrapper {
         position: relative;
@@ -356,12 +488,12 @@
 
       .mini-search-input {
         margin-bottom: 0 !important;
-        border-color: #34a853 !important;
-        border-style: dashed !important;
+        border-color: var(--grn) !important;
       }
 
       .mini-search-input:focus {
-        border-style: solid !important;
+        border-color: var(--accent) !important;
+        box-shadow: 0 0 0 3px rgba(37,99,235,.1) !important;
       }
 
       .mini-search-results {
@@ -370,32 +502,36 @@
         top: 100%;
         left: 0;
         right: 0;
-        background: white;
-        border: 1px solid #ccc;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        max-height: 150px;
+        background: var(--bg);
+        border: 1px solid var(--brd);
+        box-shadow: var(--shd-md);
+        max-height: 160px;
         overflow-y: auto;
         z-index: 100;
         list-style: none;
-        padding: 0;
-        margin: 0;
-        border-radius: 4px;
+        padding: 4px 0;
+        margin: 3px 0 0;
+        border-radius: var(--r);
       }
 
       .mini-search-results li {
-        padding: 6px 8px;
-        border-bottom: 1px solid #f1f3f4;
+        padding: 7px 12px;
+        border-bottom: 1px solid var(--brd);
         cursor: pointer;
-        font-size: 11px;
+        font-size: 11.5px;
+        transition: background .1s;
       }
+
+      .mini-search-results li:last-child { border-bottom: none; }
 
       .mini-search-results li:hover {
-        background: #e6f4ea;
-        color: #137333;
+        background: var(--grn-bg);
+        color: var(--grn);
       }
 
+      /* ─── BASKET / QUEUE ─── */
       .basket-container {
-        border-top: 2px solid #1a73e8;
+        border-top: 1px solid var(--brd);
         padding-top: 10px;
         height: 35%;
         display: flex;
@@ -405,67 +541,79 @@
       }
 
       .basket-header {
-        font-weight: bold;
-        font-size: 13px;
-        margin-bottom: 5px;
+        font-weight: 600;
+        font-size: 12.5px;
+        margin-bottom: 6px;
         display: flex;
         justify-content: space-between;
+        align-items: center;
         flex-shrink: 0;
       }
 
       #basketList li {
-        padding: 4px 8px;
-        font-size: 11px;
-        background: #f8f9fa;
+        padding: 5px 10px;
+        font-size: 11.5px;
+        background: var(--accent-bg);
         margin-bottom: 2px;
-        border-radius: 3px;
+        border-radius: var(--r);
         display: flex;
         justify-content: space-between;
         align-items: center;
-        border-left: 2px solid #1a73e8;
+        border-left: 2.5px solid var(--accent);
       }
 
+      /* ─── REMOVE BTN ─── */
       .remove-btn {
-        color: #d93025;
+        color: var(--red);
         cursor: pointer;
-        font-weight: bold;
-        padding: 0 5px;
-        font-size: 16px;
-      }
-
-      .action-btn {
-        width: 100%;
-        padding: 10px;
-        background: #1a73e8;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-        font-weight: bold;
-        margin-top: 5px;
+        font-weight: 600;
+        padding: 0 4px;
+        font-size: 15px;
+        opacity: .6;
+        transition: opacity .1s;
         flex-shrink: 0;
       }
 
-      .action-btn.secondary {
-        background: #34a853;
+      .remove-btn:hover { opacity: 1; }
+
+      /* ─── ACTION BUTTONS ─── */
+      .action-btn {
+        width: 100%;
+        padding: 9px 12px;
+        background: var(--accent);
+        color: #fff;
+        border: none;
+        border-radius: var(--r);
+        cursor: pointer;
+        font-weight: 600;
+        font-size: 12.5px;
+        font-family: inherit;
+        margin-top: 5px;
+        flex-shrink: 0;
+        transition: background .15s;
       }
 
-      .action-btn.purple {
-        background: #9c27b0;
-      }
+      .action-btn:hover { background: var(--accent-h); }
 
-      .action-btn.gray {
-        background: #5f6368;
-      }
+      .action-btn.secondary { background: var(--grn); }
+      .action-btn.secondary:hover { background: #047857; }
+
+      .action-btn.purple { background: var(--pur); }
+      .action-btn.purple:hover { background: #6D28D9; }
+
+      .action-btn.gray { background: var(--gray); }
+      .action-btn.gray:hover { background: #4B5563; }
 
       .action-btn:disabled {
-        background: #dadce0;
+        background: var(--brd);
+        color: var(--txt3);
         cursor: default;
       }
 
+      /* ─── STATUS / WARNINGS ─── */
       .status {
         font-size: 11px;
-        color: #70757a;
+        color: var(--txt2);
         text-align: center;
         margin-top: 5px;
         min-height: 15px;
@@ -473,24 +621,91 @@
       }
 
       .warning-box {
-        color: #d93025;
-        font-size: 10px;
+        color: var(--red);
+        font-size: 10.5px;
         margin-top: 5px;
         white-space: pre-wrap;
-        font-weight: bold;
+        font-weight: 600;
         flex-shrink: 0;
       }
 
       .stats-box {
-        color: #137333;
-        font-size: 10px;
+        color: var(--grn);
+        font-size: 10.5px;
         margin-top: 5px;
         white-space: pre-wrap;
-        font-weight: bold;
-        border-top: 1px dashed #ccc;
+        font-weight: 600;
+        border-top: 1px dashed var(--brd);
         padding-top: 5px;
         display: none;
         flex-shrink: 0;
+      }
+
+      /* ─── OP-TREE ─── */
+      .op-tree {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+
+      .op-tree .op-group-header {
+        padding: 7px 10px 7px 8px;
+        border-bottom: 1px solid var(--brd);
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--txt);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        user-select: none;
+        transition: background .1s;
+      }
+
+      .op-tree .op-group-header:hover { background: var(--surf); }
+
+      .op-tree .op-group-header .op-arrow {
+        font-size: 9px;
+        color: var(--txt3);
+        transition: transform .15s;
+        flex-shrink: 0;
+      }
+
+      .op-tree .op-group-header.open .op-arrow { transform: rotate(90deg); }
+
+      .op-tree .op-group-count {
+        margin-left: auto;
+        font-size: 10.5px;
+        color: var(--txt3);
+        font-weight: 400;
+        background: var(--surf);
+        padding: 1px 6px;
+        border-radius: 10px;
+        border: 1px solid var(--brd);
+      }
+
+      .op-tree .op-children {
+        display: none;
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        background: var(--surf);
+      }
+
+      .op-tree .op-children.open { display: block; }
+
+      .op-tree .op-children li {
+        padding: 6px 10px 6px 26px;
+        border-bottom: 1px solid var(--brd);
+        cursor: pointer;
+        font-size: 11.5px;
+        color: var(--txt2);
+        transition: background .1s;
+      }
+
+      .op-tree .op-children li:hover {
+        background: var(--accent-bg);
+        color: var(--accent);
       }
 
     </style>
@@ -631,7 +846,7 @@
           <div class="basket-container">
             <div class="basket-header">
               <span>Корзина (<span id="bCount">0</span>)</span>
-              <span style="color:#1a73e8; cursor:pointer; font-size:11px;" onclick="clearBasket()">очистить</span>
+              <span style="color:#2563EB; cursor:pointer; font-size:11px;" onclick="clearBasket()">очистить</span>
             </div>
             <div class="scroll-area">
               <ul id="basketList"></ul>
@@ -646,11 +861,32 @@
     <div id="operationsSection" class="panel-section">
       <div class="materials-panel">
         <div class="material-root">
-          <div class="tabs">
+
+          <!-- Column settings overlay -->
+          <div id="colSettingsOverlay" class="col-settings-overlay">
+            <div class="col-settings-hdr">
+              <span>Настройка вывода столбцов</span>
+              <button class="action-btn gray" style="width:auto;padding:4px 10px;margin:0;" onclick="closeColumnSettings()">✕ Закрыть</button>
+            </div>
+            <div class="col-settings-tabs">
+              <button class="col-settings-tab-btn active" data-key="ob" onclick="switchColSettingsTab('ob',this)">БД.ОБ</button>
+              <button class="col-settings-tab-btn" data-key="op" onclick="switchColSettingsTab('op',this)">БД.ОП</button>
+              <button class="col-settings-tab-btn" data-key="ter" onclick="switchColSettingsTab('ter',this)">БД.ТЕР</button>
+              <button class="col-settings-tab-btn" data-key="coax" onclick="switchColSettingsTab('coax',this)">БД.КОАКС</button>
+            </div>
+            <div id="colSettingsBody" class="col-settings-body"></div>
+            <div class="col-settings-footer">
+              <button class="action-btn gray" style="margin:0;" onclick="colSettingsSelectAll()">Выбрать все</button>
+              <button class="action-btn gray" style="margin:0;" onclick="colSettingsClearAll()">Снять все</button>
+            </div>
+          </div>
+
+          <div class="tabs" style="align-items:center;">
             <button class="tab-btn active" onclick="switchOperationsTab('opDbObTab', this)">БД.ОБ</button>
             <button class="tab-btn" onclick="switchOperationsTab('opDbOpTab', this)">БД.ОП</button>
             <button class="tab-btn" onclick="switchOperationsTab('opDbTerTab', this)">БД.ТЕР</button>
             <button class="tab-btn" onclick="switchOperationsTab('opDbKoaxTab', this)">БД.КОАКС</button>
+            <button title="Настройка вывода" onclick="openColumnSettings()" style="border:none;background:none;cursor:pointer;font-size:16px;padding:4px 6px;margin-left:auto;color:#94A3B8;" onmouseover="this.style.color='#2563EB'" onmouseout="this.style.color='#94A3B8'">⚙</button>
           </div>
 
           <div id="opDbObTab" class="tab-content active">
@@ -688,7 +924,7 @@
           <div class="basket-container">
             <div class="basket-header">
               <span>Очередь техопераций (<span id="opQueueCount">0</span>)</span>
-              <span style="color:#1a73e8; cursor:pointer; font-size:11px;" onclick="clearOperationQueue()">очистить</span>
+              <span style="color:#2563EB; cursor:pointer; font-size:11px;" onclick="clearOperationQueue()">очистить</span>
             </div>
             <div class="scroll-area">
               <ul id="opQueueList"></ul>
@@ -1531,11 +1767,128 @@
         }, 200));
       }
 
+      // ===== Column selection settings =====
+
+      const TER_DEFAULT_UNCHECKED = new Set(['пневма автомат', 'отр', 'с зачисткой']);
+      let colSettingsActiveKey = 'ob';
+
+      function openColumnSettings() {
+        colSettingsActiveKey = activeOperationDbKey;
+        document.querySelectorAll('.col-settings-tab-btn').forEach((b) => {
+          b.classList.toggle('active', b.dataset.key === colSettingsActiveKey);
+        });
+        renderColSettingsPanel();
+        document.getElementById('colSettingsOverlay').classList.add('open');
+      }
+
+      function closeColumnSettings() {
+        document.getElementById('colSettingsOverlay').classList.remove('open');
+      }
+
+      function switchColSettingsTab(dbKey, btn) {
+        colSettingsActiveKey = dbKey;
+        document.querySelectorAll('.col-settings-tab-btn').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        renderColSettingsPanel();
+      }
+
+      function colSettingsStorageKey(dbKey) {
+        return 'techops-cols-v1-' + dbKey;
+      }
+
+      function colSettingsLoad(dbKey) {
+        try {
+          const s = localStorage.getItem(colSettingsStorageKey(dbKey));
+          if (s) return JSON.parse(s);
+        } catch (e) {}
+        return null;
+      }
+
+      function colSettingsSave(dbKey, sel) {
+        try { localStorage.setItem(colSettingsStorageKey(dbKey), JSON.stringify(sel)); } catch (e) {}
+      }
+
+      function colSettingsGetHeaders(dbKey) {
+        const keyMap = { ob: 'ob', op: 'op', ter: 'ter', coax: 'coax' };
+        const tab = operationDb.tabs && operationDb.tabs[keyMap[dbKey]];
+        return (tab && tab.columnHeaders) || [];
+      }
+
+      function colSettingsGetDefault(dbKey, headers) {
+        return headers.map((h) => {
+          if (dbKey === 'ter' && TER_DEFAULT_UNCHECKED.has((h || '').toLowerCase().trim())) return false;
+          return true;
+        });
+      }
+
+      function colSettingsGetEffective(dbKey) {
+        const headers = colSettingsGetHeaders(dbKey);
+        const stored = colSettingsLoad(dbKey);
+        const defaults = colSettingsGetDefault(dbKey, headers);
+        if (!stored) return defaults;
+        return headers.map((_, i) => (i < stored.length ? stored[i] : defaults[i]));
+      }
+
+      function applyColumnSelection(dbKey, allValues) {
+        const headers = colSettingsGetHeaders(dbKey);
+        if (!headers.length) return allValues;
+        const sel = colSettingsGetEffective(dbKey);
+        return allValues.filter((_, i) => sel[i] !== false);
+      }
+
+      function renderColSettingsPanel() {
+        const dbKey = colSettingsActiveKey;
+        const headers = colSettingsGetHeaders(dbKey);
+        const sel = colSettingsGetEffective(dbKey);
+        const body = document.getElementById('colSettingsBody');
+        body.innerHTML = '';
+
+        if (!headers.length) {
+          const p = document.createElement('p');
+          p.style.cssText = 'color:#80868b;font-size:12px;padding:12px;';
+          p.textContent = 'Загрузите базу данных сначала (нажмите «Обновить базу техопераций»).';
+          body.appendChild(p);
+          return;
+        }
+
+        headers.forEach((header, i) => {
+          if (!String(header || '').trim()) return;
+          const label = document.createElement('label');
+          const cb = document.createElement('input');
+          cb.type = 'checkbox';
+          cb.checked = sel[i] !== false;
+          cb.addEventListener('change', function () {
+            const current = colSettingsGetEffective(dbKey);
+            current[i] = cb.checked;
+            colSettingsSave(dbKey, current);
+          });
+          const span = document.createElement('span');
+          span.textContent = header;
+          label.appendChild(cb);
+          label.appendChild(span);
+          body.appendChild(label);
+        });
+      }
+
+      function colSettingsSelectAll() {
+        const headers = colSettingsGetHeaders(colSettingsActiveKey);
+        colSettingsSave(colSettingsActiveKey, headers.map(() => true));
+        renderColSettingsPanel();
+      }
+
+      function colSettingsClearAll() {
+        const headers = colSettingsGetHeaders(colSettingsActiveKey);
+        colSettingsSave(colSettingsActiveKey, headers.map(() => false));
+        renderColSettingsPanel();
+      }
+
+      // ===== Queue =====
+
       function addOperationToQueue(dbKey, item) {
         operationQueues[dbKey].push({
           dbKey,
           label: item.label,
-          outputRow: item.outputRow,
+          allValues: item.outputRow || [],
         });
         updateOperationQueueUI();
       }
@@ -1571,7 +1924,7 @@
         }
 
         const targetCellA1 = document.getElementById('opTargetCell').value.trim();
-        const rows = currentQueue.map((item) => item.outputRow);
+        const rows = currentQueue.map((item) => applyColumnSelection(item.dbKey, item.allValues || []));
         setOperationsStatus('Выгрузка техопераций...', false);
         google.script.run
           .withSuccessHandler((result) => {

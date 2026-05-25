@@ -77,10 +77,10 @@ function showWorkspaceSidebar() {
   template.initialTab = 'templates';
   const html = template
     .evaluate()
-    .setTitle('Техкарты и материалы')
-    .setWidth(700);
+    .setWidth(820)
+    .setHeight(680);
 
-  SpreadsheetApp.getUi().showSidebar(html);
+  SpreadsheetApp.getUi().showModelessDialog(html, 'Техкарты');
 }
 
 function showSaveTemplateDialog() {
