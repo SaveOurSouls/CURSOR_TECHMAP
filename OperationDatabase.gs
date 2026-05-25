@@ -152,21 +152,33 @@ function insertTechOperationMatrix(matrix, targetCellA1) {
 
   const startRow = startCell.getRow();
   const startCol = startCell.getColumn();
-  const numRows = matrix.length;
+  const numRows  = matrix.length;
+  const writeEnd = startCol + width - 1;
 
-  const scanCols = width + 20;
-  ensureSheetCapacity_(sheet, startRow + numRows - 1, startCol + scanCols - 1);
+  ensureSheetCapacity_(sheet, startRow + numRows - 1, writeEnd + 20);
 
+  // Scan from column 1 — getMergedRanges() may miss merges whose top-left
+  // cell lies to the LEFT of startCol but whose body overlaps our write area.
+  const scanWidth = writeEnd + 20;
   const mergedRanges = sheet
-    .getRange(startRow, startCol, numRows, scanCols)
+    .getRange(startRow, 1, numRows, scanWidth)
     .getMergedRanges();
 
-  if (!mergedRanges.length) {
+  // Check whether any merge actually overlaps the write area [startCol, writeEnd].
+  const writeAreaHasMerges = mergedRanges.some((mr) => {
+    const mStart = mr.getColumn();
+    const mEnd   = mStart + mr.getNumColumns() - 1;
+    return mEnd >= startCol && mStart <= writeEnd;
+  });
+
+  if (!writeAreaHasMerges) {
     sheet.getRange(startRow, startCol, numRows, width).setValues(matrix);
     sheet.getRange(startRow + numRows, startCol).activate();
     return `Успешно выгружено ${numRows} строк.`;
   }
 
+  // Build full merge map (keyed from col 1 so ghost cells to the left of
+  // startCol are also recorded and handled correctly in the write loop).
   const mergeByRow = {};
   mergedRanges.forEach((mr) => {
     const r = mr.getRow();
@@ -177,23 +189,38 @@ function insertTechOperationMatrix(matrix, targetCellA1) {
     for (let g = 1; g < w; g++) mergeByRow[r][c + g] = 0;
   });
 
+  // Write row by row: batch normal cells with setValues, write merge
+  // top-left cells one at a time with setValue, skip ghost cells.
   for (let r = 0; r < numRows; r++) {
     const absRow    = startRow + r;
     const rowMerges = mergeByRow[absRow] || {};
     const rowData   = matrix[r];
     let dataIdx = 0, absCol = startCol, segStart = -1;
     const segVals = [];
+
     const flushSeg = () => {
       if (segStart >= 0 && segVals.length) {
         sheet.getRange(absRow, segStart, 1, segVals.length).setValues([segVals.slice()]);
         segStart = -1; segVals.length = 0;
       }
     };
+
     while (dataIdx < rowData.length) {
       const mw = rowMerges[absCol];
-      if (mw === 0)       { flushSeg(); absCol++; }
-      else if (mw >= 2)   { flushSeg(); sheet.getRange(absRow, absCol, 1, 1).setValue(rowData[dataIdx++]); absCol += mw; }
-      else                { if (segStart < 0) segStart = absCol; segVals.push(rowData[dataIdx++]); absCol++; }
+      if (mw === 0) {
+        // Ghost cell of a merge — skip without consuming data
+        flushSeg(); absCol++;
+      } else if (mw >= 2) {
+        // Top-left of a horizontal merge — write alone, jump over ghost cols
+        flushSeg();
+        sheet.getRange(absRow, absCol, 1, 1).setValue(rowData[dataIdx++]);
+        absCol += mw;
+      } else {
+        // Normal cell
+        if (segStart < 0) segStart = absCol;
+        segVals.push(rowData[dataIdx++]);
+        absCol++;
+      }
     }
     flushSeg();
   }
