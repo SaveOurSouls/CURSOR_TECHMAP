@@ -1560,8 +1560,13 @@
       const TER_DEFAULT_UNCHECKED = new Set(['пневма автомат', 'отр', 'с зачисткой']);
       let colSettingsActiveKey = 'ob';
 
+      // Normalize 'dbOb'/'dbOp'/'dbTer'/'dbKoax' → 'ob'/'op'/'ter'/'coax'
+      function normColKey(k) {
+        return { dbOb: 'ob', dbOp: 'op', dbTer: 'ter', dbKoax: 'coax' }[k] || k;
+      }
+
       function openColumnSettings() {
-        colSettingsActiveKey = activeOperationDbKey;
+        colSettingsActiveKey = normColKey(activeOperationDbKey);
         document.querySelectorAll('.col-settings-tab-btn').forEach((b) => {
           b.classList.toggle('active', b.dataset.key === colSettingsActiveKey);
         });
@@ -1574,14 +1579,14 @@
       }
 
       function switchColSettingsTab(dbKey, btn) {
-        colSettingsActiveKey = dbKey;
+        colSettingsActiveKey = normColKey(dbKey);
         document.querySelectorAll('.col-settings-tab-btn').forEach((b) => b.classList.remove('active'));
         btn.classList.add('active');
         renderColSettingsPanel();
       }
 
       function colSettingsStorageKey(dbKey) {
-        return 'techops-cols-v1-' + dbKey;
+        return 'techops-cols-v1-' + normColKey(dbKey);
       }
 
       function colSettingsLoad(dbKey) {
@@ -1597,30 +1602,32 @@
       }
 
       function colSettingsGetHeaders(dbKey) {
-        const keyMap = { ob: 'ob', op: 'op', ter: 'ter', coax: 'coax' };
-        const tab = operationDb.tabs && operationDb.tabs[keyMap[dbKey]];
+        const tab = operationDb.tabs && operationDb.tabs[normColKey(dbKey)];
         return (tab && tab.columnHeaders) || [];
       }
 
       function colSettingsGetDefault(dbKey, headers) {
+        const key = normColKey(dbKey);
         return headers.map((h) => {
-          if (dbKey === 'ter' && TER_DEFAULT_UNCHECKED.has((h || '').toLowerCase().trim())) return false;
+          if (key === 'ter' && TER_DEFAULT_UNCHECKED.has((h || '').toLowerCase().trim())) return false;
           return true;
         });
       }
 
       function colSettingsGetEffective(dbKey) {
-        const headers = colSettingsGetHeaders(dbKey);
-        const stored = colSettingsLoad(dbKey);
-        const defaults = colSettingsGetDefault(dbKey, headers);
+        const key = normColKey(dbKey);
+        const headers = colSettingsGetHeaders(key);
+        const stored = colSettingsLoad(key);
+        const defaults = colSettingsGetDefault(key, headers);
         if (!stored) return defaults;
         return headers.map((_, i) => (i < stored.length ? stored[i] : defaults[i]));
       }
 
       function applyColumnSelection(dbKey, allValues) {
-        const headers = colSettingsGetHeaders(dbKey);
+        const key = normColKey(dbKey);
+        const headers = colSettingsGetHeaders(key);
         if (!headers.length) return allValues;
-        const sel = colSettingsGetEffective(dbKey);
+        const sel = colSettingsGetEffective(key);
         return allValues.filter((_, i) => sel[i] !== false);
       }
 
