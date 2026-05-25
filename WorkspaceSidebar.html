@@ -1420,7 +1420,7 @@
 
         // Build 5-level: Производитель → Product Name → Series → Шаг → Артикул
         const terHeaders = (operationDb.tabs && operationDb.tabs.ter && operationDb.tabs.ter.columnHeaders) || [];
-        const stepIdx = terHeaders.findIndex((h) => /шаг/i.test(h));
+        const stepIdx = terHeaders.findIndex((h) => /тип/i.test(h));
         const artIdx  = terHeaders.findIndex((h) => /артикул/i.test(h));
 
         const manufacturers = new Map();
