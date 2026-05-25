@@ -1,11 +1,11 @@
-const TECHOPS_DB_APP = {
+﻿const TECHOPS_DB_APP = {
   sourceSpreadsheetId: '1W3VK9Fw71lYdw1Klcsn_za5-2EhvLoXIAKZVYOCnKcs',
   metaSheetName: '_TC_TECHOPS_META',
   dataSheetName: '_TC_TECHOPS_DB',
   metaHeaders: ['key', 'value'],
   dataHeaders: ['tabKey', 'displayText', 'normalizedSearch', 'exportJson', 'sourceSheet', 'sortKey', 'extra1', 'extra2', 'extra3', 'extra4', 'extra5', 'extra6', 'extra7'],
-  cacheKeyPrefix: 'techmap-techops-db-v4',
-  schemaVersion: 4,
+  cacheKeyPrefix: 'techmap-techops-db-v6',
+  schemaVersion: 6,
   cacheChunkSize: 80000,
   cacheTtlSeconds: 21600,
   tabs: {
@@ -36,8 +36,8 @@ const TECHOPS_DB_APP = {
       label: 'БД.ТЕР',
       sourceSheetName: 'БД.ТЕР',
       headerRowNumber: 1,
-      searchPlaceholder: 'Поиск по комплектующей, аналогу, серии или производителю...',
-      outputLabels: ['Комплектующая', 'Аналог', 'Серия разъемов', 'Производитель'],
+      searchPlaceholder: 'Поиск по производителю, серии, product name...',
+      outputLabels: ['Тип', 'Производитель', 'Product Name', 'Series', 'Шаг', 'Тип конт.', 'Арт. ISL', 'Арт. SAG', 'Аппликатор'],
     },
     coax: {
       key: 'coax',
@@ -45,7 +45,7 @@ const TECHOPS_DB_APP = {
       sourceSheetName: 'БД.КОАКС',
       headerRowNumber: 2,
       searchPlaceholder: 'Поиск по артикулам, сериям, проводу, размерам...',
-      outputLabels: ['Артикул', 'Программа', 'D1', 'D2', 'D3', 'L1', 'L2', 'L3'],
+      outputLabels: ['Артикул', 'Программа', 'D1', 'D2', 'D3', 'L1', 'L2', 'L3', 'L+', 'L-'],
     },
   },
   tabOrder: ['ob', 'op', 'ter', 'coax'],
@@ -237,6 +237,7 @@ function fetchTechOperationsSnapshotFromSource_() {
   const records = [];
   const countsByTab = {};
   const diagnosticsByTab = {};
+  const columnHeadersByTab = {};
 
   TECHOPS_DB_APP.tabOrder.forEach((tabKey) => {
     const config = TECHOPS_DB_APP.tabs[tabKey];
@@ -269,13 +270,17 @@ function fetchTechOperationsSnapshotFromSource_() {
     diagnosticsByTab[tabKey].headerRowNumber = headerRowIndex + 1;
 
     const headerMap = buildTechOperationsHeaderMap_(values[headerRowIndex]);
+    const namedColumns = values[headerRowIndex]
+      .map((h, i) => ({ name: String(h || '').trim(), index: i }))
+      .filter(({ name }) => name !== '');
+    columnHeadersByTab[tabKey] = namedColumns.map(({ name }) => name);
     const diagnostics = buildTechOperationsHeaderDiagnostics_(tabKey, headerMap, values[headerRowIndex]);
     diagnosticsByTab[tabKey].foundHeaders = diagnostics.foundHeaders;
     diagnosticsByTab[tabKey].matchedGroups = diagnostics.matchedGroups;
     diagnosticsByTab[tabKey].missingGroups = diagnostics.missingGroups;
     for (let rowIndex = headerRowIndex + 1; rowIndex < values.length; rowIndex += 1) {
       const row = values[rowIndex];
-      const record = buildTechOperationsRecordFromRow_(tabKey, row, headerMap, config.sourceSheetName);
+      const record = buildTechOperationsRecordFromRow_(tabKey, row, headerMap, config.sourceSheetName, namedColumns);
       if (!record || !record.displayText) {
         continue;
       }
@@ -302,6 +307,7 @@ function fetchTechOperationsSnapshotFromSource_() {
       schemaVersion: TECHOPS_DB_APP.schemaVersion,
       countsByTab,
       diagnosticsByTab,
+      columnHeadersByTab,
     },
     records,
   };
@@ -370,10 +376,10 @@ function getTechOperationsHeaderAliasesForTab_(tabKey) {
       ];
     case 'ter':
       return [
-        ['комплектующая'],
-        ['аналог'],
-        ['серия разъемов', 'серияразъемов'],
+        ['product name', 'productname', 'комплектующая'],
+        ['series', 'серия разъемов', 'серия'],
         ['производитель', 'бренд', 'manufacturer'],
+        ['тип разъёма', 'тип разъема'],
       ];
     case 'coax':
       return [
@@ -416,22 +422,22 @@ function buildTechOperationsHeaderDiagnostics_(tabKey, headerMap, headersRow) {
   };
 }
 
-function buildTechOperationsRecordFromRow_(tabKey, row, headerMap, sourceSheet) {
+function buildTechOperationsRecordFromRow_(tabKey, row, headerMap, sourceSheet, namedColumns) {
   switch (tabKey) {
     case 'ob':
-      return buildTechOperationsObRecord_(row, headerMap, sourceSheet);
+      return buildTechOperationsObRecord_(row, headerMap, sourceSheet, namedColumns);
     case 'op':
-      return buildTechOperationsOpRecord_(row, headerMap, sourceSheet);
+      return buildTechOperationsOpRecord_(row, headerMap, sourceSheet, namedColumns);
     case 'ter':
-      return buildTechOperationsTerRecord_(row, headerMap, sourceSheet);
+      return buildTechOperationsTerRecord_(row, headerMap, sourceSheet, namedColumns);
     case 'coax':
-      return buildTechOperationsCoaxRecord_(row, headerMap, sourceSheet);
+      return buildTechOperationsCoaxRecord_(row, headerMap, sourceSheet, namedColumns);
     default:
       return null;
   }
 }
 
-function buildTechOperationsObRecord_(row, headerMap, sourceSheet) {
+function buildTechOperationsObRecord_(row, headerMap, sourceSheet, namedColumns) {
   const baseValue = getTechOperationsCellByAliases_(row, headerMap, ['для базы', 'длябазы']);
   if (!baseValue) {
     return null;
@@ -441,14 +447,14 @@ function buildTechOperationsObRecord_(row, headerMap, sourceSheet) {
     tabKey: 'ob',
     displayText: baseValue,
     normalizedSearch: normalizeTechOperationsSearch_(baseValue),
-    exportValues: [baseValue],
+    exportValues: (namedColumns || []).map(({ index }) => normalizeString_(row[index]) || ''),
     sourceSheet,
     obType: obType || '',
-    sortKey: obType ? `${obType} ${baseValue}` : baseValue,
+    sortKey: obType ? `${obType} ${baseValue}` : baseValue,
   };
 }
 
-function buildTechOperationsOpRecord_(row, headerMap, sourceSheet) {
+function buildTechOperationsOpRecord_(row, headerMap, sourceSheet, namedColumns) {
   const number = getTechOperationsCellByAliases_(row, headerMap, ['номер', 'number']);
   const name = getTechOperationsCellByAliases_(row, headerMap, ['название', 'name']);
 
@@ -458,86 +464,59 @@ function buildTechOperationsOpRecord_(row, headerMap, sourceSheet) {
     return null;
   }
 
-  const joinedForExport = joinTechOperationsParts_([number, name], ' | ');
-  const values = [
-    joinedForExport,
-    getTechOperationsCellByAliases_(row, headerMap, [
-      'время операции',
-      'время операции, сек',
-      'время операции сек',
-    ]),
-    getTechOperationsCellByAliases_(row, headerMap, [
-      'время подготовки, сек',
-      'время подготовки сек',
-    ]),
-    getTechOperationsCellByAliases_(row, headerMap, [
-      'расход на настройку м; шт;',
-      'расход на настройку м;шт;',
-      'расход на настройку',
-    ]),
-    getTechOperationsCellByAliases_(row, headerMap, [
-      'время машины, сек/оп; сек/м',
-      'время машины сек/оп; сек/м',
-      'время машины',
-    ]),
-  ];
-
   return {
     tabKey: 'op',
     displayText,
-    // sortKey is the name alone so alphabetical sort is by name, not number
     sortKey: name || number,
     normalizedSearch: normalizeTechOperationsSearch_(number + ' ' + name),
-    exportValues: values,
+    exportValues: (namedColumns || []).map(({ index }) => normalizeString_(row[index]) || ''),
     sourceSheet,
+    opNumber: number,
+    opName: name,
   };
 }
 
-function buildTechOperationsTerRecord_(row, headerMap, sourceSheet) {
+function buildTechOperationsTerRecord_(row, headerMap, sourceSheet, namedColumns) {
   const manufacturer = getTechOperationsCellByAliases_(row, headerMap, ['производитель', 'бренд', 'manufacturer']);
-  const series       = getTechOperationsCellByAliases_(row, headerMap, ['серия разъемов', 'серияразъемов', 'серия']);
-  const component    = getTechOperationsCellByAliases_(row, headerMap, ['комплектующая']);
-  const analog       = getTechOperationsCellByAliases_(row, headerMap, ['аналог']);
+  const series       = getTechOperationsCellByAliases_(row, headerMap, ['series', 'серия разъемов', 'серия']);
+  const productName  = getTechOperationsCellByAliases_(row, headerMap, ['product name', 'productname', 'комплектующая']);
+  const connType     = getTechOperationsCellByAliases_(row, headerMap, ['тип разъёма', 'тип разъема']);
+  const artISL       = getTechOperationsCellByAliases_(row, headerMap, ['артикул (контакта isl)', 'артикул контакта isl']);
+  const artSAG       = getTechOperationsCellByAliases_(row, headerMap, ['артикул (контакт sag)', 'артикул контакт sag']);
 
-  const values = [component, analog, series, manufacturer];
-  const displayText = joinTechOperationsParts_(values, ' | ');
+  const displayText = joinTechOperationsParts_([manufacturer, series, productName], ' | ');
   if (!displayText) {
     return null;
   }
+
   return {
     tabKey: 'ter',
     displayText,
     terManufacturer: manufacturer,
     terSeries:       series,
-    terComponent:    component,
-    normalizedSearch: normalizeTechOperationsSearch_(displayText),
-    exportValues: values,
+    terComponent:    productName,
+    normalizedSearch: normalizeTechOperationsSearch_(
+      [manufacturer, series, productName, connType, artISL, artSAG].join(' ')
+    ),
+    exportValues: (namedColumns || []).map(({ index }) => normalizeString_(row[index]) || ''),
     sourceSheet,
   };
 }
 
-function buildTechOperationsCoaxRecord_(row, headerMap, sourceSheet) {
+function buildTechOperationsCoaxRecord_(row, headerMap, sourceSheet, namedColumns) {
   const article    = getTechOperationsCellByAliases_(row, headerMap, ['артикул']);
   const typeSeries = getTechOperationsCellByAliases_(row, headerMap, ['тип/серия', 'тип / серия', 'тип серия']);
   const mfr        = getTechOperationsCellByAliases_(row, headerMap, ['производитель', 'бренд', 'manufacturer']);
   const supplier   = getTechOperationsCellByAliases_(row, headerMap, ['поставщик', 'supplier']);
   const wire       = getTechOperationsCellByAliases_(row, headerMap, ['провод']);
   const program    = getTechOperationsCellByAliases_(row, headerMap, ['программа']);
-  const d1         = getTechOperationsCellByAliases_(row, headerMap, ['d1']);
-  const d2         = getTechOperationsCellByAliases_(row, headerMap, ['d2']);
-  const d3         = getTechOperationsCellByAliases_(row, headerMap, ['d3']);
-  const l1         = getTechOperationsCellByAliases_(row, headerMap, ['l1']);
-  const l2         = getTechOperationsCellByAliases_(row, headerMap, ['l2']);
-  const l3         = getTechOperationsCellByAliases_(row, headerMap, ['l3']);
 
-  // Use Тип/Серия + Провод as the primary identity — Артикул is often empty
   const displayText = joinTechOperationsParts_([typeSeries, wire, supplier], ' | ');
   if (!displayText) {
     return null;
   }
 
-  // Export columns A, E–K: Артикул, Программа, D1, D2, D3, L1, L2, L3
-  const exportValues = [article, program, d1, d2, d3, l1, l2, l3];
+  const exportValues = (namedColumns || []).map(({ index }) => normalizeString_(row[index]) || '');
 
   return {
     tabKey: 'coax',
@@ -621,7 +600,7 @@ function writeTechOperationsSnapshotToSheets_(snapshot) {
   }
 
   metaSheet.clearContents();
-  ensureSheetCapacity_(metaSheet, 6, TECHOPS_DB_APP.metaHeaders.length);
+  ensureSheetCapacity_(metaSheet, 9, TECHOPS_DB_APP.metaHeaders.length);
   metaSheet
     .getRange(1, 1, 1, TECHOPS_DB_APP.metaHeaders.length)
     .setValues([TECHOPS_DB_APP.metaHeaders])
@@ -635,6 +614,7 @@ function writeTechOperationsSnapshotToSheets_(snapshot) {
     ['countsByTabJson', JSON.stringify(snapshot.meta.countsByTab || {})],
     ['diagnosticsByTabJson', JSON.stringify(snapshot.meta.diagnosticsByTab || {})],
     ['schemaVersion', String(TECHOPS_DB_APP.schemaVersion)],
+    ['columnHeadersByTabJson', JSON.stringify(snapshot.meta.columnHeadersByTab || {})],
   ];
   metaSheet.getRange(2, 1, metaRows.length, 2).setValues(metaRows);
   hideTechOperationsSheets_();
@@ -696,6 +676,7 @@ function loadTechOperationsSnapshotFromSheets_() {
     schemaVersion: 0,
     countsByTab: {},
     diagnosticsByTab: {},
+    columnHeadersByTab: {},
   };
 
   if (metaSheet) {
@@ -716,6 +697,8 @@ function loadTechOperationsSnapshotFromSheets_() {
           try { meta.countsByTab = JSON.parse(value) || {}; } catch (e) {}
         } else if (key === 'diagnosticsByTabJson') {
           try { meta.diagnosticsByTab = JSON.parse(value) || {}; } catch (e) {}
+        } else if (key === 'columnHeadersByTabJson') {
+          try { meta.columnHeadersByTab = JSON.parse(value) || {}; } catch (e) {}
         }
       });
     }
@@ -762,15 +745,8 @@ function buildTechOperationsPayload_(snapshot) {
           sortKey: record.sortKey || '',
         };
         if (tabKey === 'op') {
-          // Read from stored extra fields first, fall back to parsing exportValues
           item.opNumber = record.opNumber || '';
           item.opName   = record.opName   || record.sortKey || '';
-          if (!item.opNumber || !item.opName) {
-            const exp = record.exportValues || [];
-            const parts = String(exp[0] || '').split(' | ');
-            item.opNumber = item.opNumber || parts[0] || '';
-            item.opName   = item.opName   || parts[1] || '';
-          }
         }
         if (tabKey === 'ob') {
           item.obType = record.obType || '';
@@ -799,6 +775,7 @@ function buildTechOperationsPayload_(snapshot) {
       label: config.label,
       searchPlaceholder: config.searchPlaceholder,
       outputLabels: config.outputLabels.slice(),
+      columnHeaders: ((snapshot.meta && snapshot.meta.columnHeadersByTab) || {})[tabKey] || [],
       items,
       count: items.length,
     };
