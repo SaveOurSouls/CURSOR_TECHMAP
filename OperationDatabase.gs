@@ -183,36 +183,48 @@ function insertTechOperationMatrix(matrix, targetCellA1) {
     }
   });
 
-  // Write row by row, padding empty strings into ghost cells so each
-  // setValues call aligns correctly with the sheet's merge structure.
+  // Write row by row, handling merged cells without calling setValues on a
+  // range that spans a merge (GAS throws on such calls). Instead:
+  //   - normal cells are buffered into contiguous segments and flushed with setValues
+  //   - top-left cell of a merge is written alone with setValue
+  //   - ghost cells (interior of a merge) are skipped entirely
   for (let r = 0; r < matrix.length; r++) {
     const absRow = startRow + r;
     const rowMerges = mergeByRow[absRow] || {};
     const rowData = matrix[r];
 
-    const padded = [];
     let dataIdx = 0;
     let absCol = startCol;
+    let segStart = -1;
+    const segVals = [];
+
+    const flushSeg = () => {
+      if (segStart >= 0 && segVals.length) {
+        sheet.getRange(absRow, segStart, 1, segVals.length).setValues([segVals.slice()]);
+        segStart = -1;
+        segVals.length = 0;
+      }
+    };
 
     while (dataIdx < rowData.length) {
       const mw = rowMerges[absCol];
       if (mw === 0) {
-        // Ghost cell — insert placeholder and advance without consuming data.
-        padded.push('');
+        // Ghost cell — flush buffered normals, skip column without consuming data.
+        flushSeg();
         absCol++;
-      } else if (mw > 1) {
-        // First cell of a horizontal merge — consume one data value, pad ghosts.
-        padded.push(rowData[dataIdx++]);
-        for (let g = 1; g < mw; g++) padded.push('');
+      } else if (mw >= 2) {
+        // Top-left of a horizontal merge — flush, write single value, skip ghost cols.
+        flushSeg();
+        sheet.getRange(absRow, absCol, 1, 1).setValue(rowData[dataIdx++]);
         absCol += mw;
       } else {
-        // Normal cell.
-        padded.push(rowData[dataIdx++]);
+        // Normal cell (mw === undefined or mw === 1).
+        if (segStart < 0) segStart = absCol;
+        segVals.push(rowData[dataIdx++]);
         absCol++;
       }
     }
-
-    sheet.getRange(absRow, startCol, 1, padded.length).setValues([padded]);
+    flushSeg();
   }
 
   sheet.getRange(startRow + matrix.length, startCol).activate();
@@ -224,6 +236,29 @@ function insertOperationRows(matrix, targetCellA1) {
   return {
     message: insertTechOperationMatrix(matrix, targetCellA1),
   };
+}
+
+function writeSingleCellNames(text, targetCellA1) {
+  if (text === null || text === undefined) {
+    return { ok: false, message: 'Нет данных для записи.' };
+  }
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getActiveSheet();
+  let targetCell;
+  if (targetCellA1) {
+    try {
+      targetCell = sheet.getRange(targetCellA1);
+    } catch (e) {
+      return { ok: false, message: 'ОШИБКА: Неверный адрес ячейки (' + targetCellA1 + ').' };
+    }
+  } else {
+    targetCell = ss.getCurrentCell() || sheet.getActiveCell();
+  }
+  if (!targetCell) {
+    return { ok: false, message: 'ОШИБКА: Не выбрана стартовая ячейка.' };
+  }
+  targetCell.setValue(text);
+  return { ok: true, message: 'Записано в ' + targetCell.getA1Notation() };
 }
 
 function ensureTechOperationsDatabaseReady_() {

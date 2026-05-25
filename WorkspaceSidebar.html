@@ -799,7 +799,10 @@
               <ul id="opQueueList"></ul>
             </div>
             <input type="text" id="opTargetCell" placeholder="Стартовая ячейка, например C5. Пусто = активная." />
-            <button id="opPushBtn" class="action-btn" disabled onclick="pushOperationsQueue()">ВЫГРУЗИТЬ В ТАБЛИЦУ</button>
+            <div style="display:flex;gap:6px;">
+              <button id="opPushBtn" class="action-btn" disabled onclick="pushOperationsQueue()" style="flex:1;">ВЫГРУЗИТЬ В ТАБЛИЦУ</button>
+              <button id="opPushCellBtn" class="action-btn gray" disabled onclick="pushNamesToSingleCell()" style="flex:0 0 auto;white-space:nowrap;" title="Записать наименования из очереди в одну ячейку через перенос строки">В ЯЧЕЙКУ</button>
+            </div>
             <div id="opStatus" class="status">База техопераций еще не загружена.</div>
           </div>
         </div>
@@ -1773,6 +1776,27 @@
         });
         document.getElementById('opQueueCount').innerText = currentQueue.length;
         document.getElementById('opPushBtn').disabled = currentQueue.length === 0;
+        document.getElementById('opPushCellBtn').disabled = currentQueue.length === 0;
+      }
+
+      function pushNamesToSingleCell() {
+        const currentQueue = operationQueues[activeOperationDbKey] || [];
+        if (!currentQueue.length) {
+          setOperationsStatus('Очередь пуста.', true);
+          return;
+        }
+        const targetCellA1 = document.getElementById('opTargetCell').value.trim();
+        const text = currentQueue.map((item) => item.label).join('\n');
+        setOperationsStatus('Запись в ячейку...', false);
+        google.script.run
+          .withSuccessHandler((result) => {
+            setOperationsStatus(result.ok ? ('✅ ' + result.message) : result.message, !result.ok);
+            if (result.ok) clearOperationQueue();
+          })
+          .withFailureHandler((error) => {
+            setOperationsStatus(error.message || 'Не удалось записать.', true);
+          })
+          .writeSingleCellNames(text, targetCellA1);
       }
 
       function pushOperationsQueue() {
