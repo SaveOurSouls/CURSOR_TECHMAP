@@ -346,6 +346,31 @@
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+        min-width: 0;
+      }
+
+      .col-cell-ctl {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        flex-shrink: 0;
+      }
+      .col-cell-num {
+        font-size: 11px;
+        font-weight: 700;
+        min-width: 22px;
+        text-align: center;
+        background: var(--accent-bg);
+        color: var(--accent);
+        border-radius: 4px;
+        padding: 2px 5px;
+        line-height: 1.3;
+      }
+      .col-settings-hint {
+        font-size: 11px;
+        color: var(--txt3);
+        padding: 6px 8px 2px;
+        line-height: 1.4;
       }
 
       .col-settings-body input[type=checkbox] {
@@ -1739,12 +1764,14 @@
         return (tab && tab.columnHeaders) || [];
       }
 
-      // Default: [{idx, on}, ...] ordered by original column index
+      // Default: [{idx, on, cell}, ...] ordered by original column index
+      // cell = output cell number; columns with the same number are concatenated into one cell
       function colSettingsGetDefault(dbKey, headers) {
         const key = normColKey(dbKey);
         return headers.map((h, i) => ({
           idx: i,
           on: !(key === 'ter' && TER_DEFAULT_UNCHECKED.has((h || '').toLowerCase().trim())),
+          cell: i + 1,
         }));
       }
 
@@ -1754,9 +1781,12 @@
         const defaults = colSettingsGetDefault(key, headers);
         if (!headers.length) return defaults;
         const stored = colSettingsLoad(key);
-        // Validate new format: array of {idx, on} with correct length
         if (!stored || !Array.isArray(stored) || stored.length !== headers.length) return defaults;
         if (!stored[0] || typeof stored[0] !== 'object' || stored[0].idx === undefined) return defaults;
+        // Migrate: add cell field if stored without it (old format)
+        if (stored[0].cell === undefined) {
+          return stored.map((item, i) => ({ ...item, cell: i + 1 }));
+        }
         return stored;
       }
 
@@ -1765,9 +1795,25 @@
         const headers = colSettingsGetHeaders(key);
         if (!headers.length) return allValues;
         const sel = colSettingsGetEffective(key);
-        return sel.filter((item) => item.on).map((item) => {
-          const v = allValues[item.idx];
-          return v !== undefined ? v : '';
+
+        const active = sel.filter((item) => item.on);
+        if (!active.length) return [];
+
+        // Group by cell number (first occurrence order = output column order)
+        const cellGroups = new Map();
+        const cellOrder = [];
+        active.forEach((item) => {
+          const c = item.cell !== undefined ? item.cell : 1;
+          if (!cellGroups.has(c)) { cellGroups.set(c, []); cellOrder.push(c); }
+          cellGroups.get(c).push(item);
+        });
+
+        // One output element per unique cell group; values within group are joined with space
+        return cellOrder.map((cellNum) => {
+          const parts = cellGroups.get(cellNum)
+            .map((item) => { const v = allValues[item.idx]; return v !== undefined && v !== null ? String(v) : ''; })
+            .filter((v) => v !== '');
+          return parts.join(' ');
         });
       }
 
@@ -1784,6 +1830,11 @@
           body.appendChild(p);
           return;
         }
+
+        const hint = document.createElement('div');
+        hint.className = 'col-settings-hint';
+        hint.textContent = '# — номер ячейки вывода. Одинаковые номера → объединяются в одну ячейку.';
+        body.appendChild(hint);
 
         const sel = colSettingsGetEffective(dbKey);
 
@@ -1828,10 +1879,50 @@
           nameSpan.className = 'col-row-name';
           nameSpan.textContent = headers[item.idx] || '';
 
+          // Cell number control [− N +]
+          const cellCtl = document.createElement('div');
+          cellCtl.className = 'col-cell-ctl';
+
+          const curCell = item.cell !== undefined ? item.cell : orderIdx + 1;
+
+          const btnMinus = document.createElement('button');
+          btnMinus.className = 'col-row-btn';
+          btnMinus.textContent = '−';
+          btnMinus.title = 'Уменьшить номер ячейки';
+          btnMinus.disabled = curCell <= 1;
+          btnMinus.onclick = () => {
+            const cur = colSettingsGetEffective(dbKey);
+            if ((cur[orderIdx].cell || 1) > 1) {
+              cur[orderIdx].cell = (cur[orderIdx].cell || 1) - 1;
+              colSettingsSave(dbKey, cur);
+              renderColSettingsPanel();
+            }
+          };
+
+          const cellNumSpan = document.createElement('span');
+          cellNumSpan.className = 'col-cell-num';
+          cellNumSpan.textContent = curCell;
+
+          const btnPlus = document.createElement('button');
+          btnPlus.className = 'col-row-btn';
+          btnPlus.textContent = '+';
+          btnPlus.title = 'Увеличить номер ячейки';
+          btnPlus.onclick = () => {
+            const cur = colSettingsGetEffective(dbKey);
+            cur[orderIdx].cell = (cur[orderIdx].cell || orderIdx + 1) + 1;
+            colSettingsSave(dbKey, cur);
+            renderColSettingsPanel();
+          };
+
+          cellCtl.appendChild(btnMinus);
+          cellCtl.appendChild(cellNumSpan);
+          cellCtl.appendChild(btnPlus);
+
           row.appendChild(btnUp);
           row.appendChild(btnDown);
           row.appendChild(cb);
           row.appendChild(nameSpan);
+          row.appendChild(cellCtl);
           body.appendChild(row);
         });
       }
