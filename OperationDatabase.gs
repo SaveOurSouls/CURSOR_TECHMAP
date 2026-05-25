@@ -155,37 +155,27 @@ function insertTechOperationMatrix(matrix, targetCellA1) {
   const numRows = matrix.length;
   const maxCols = sheet.getMaxColumns();
 
-  // ── Step 1: Read template row merge structure BEFORE inserting rows ──
-  // After insertRowsAfter the indices shift, so capture merges first.
-  const templateMerges = sheet
-    .getRange(templateRow, 1, 1, maxCols)
-    .getMergedRanges()
-    .filter((mr) => mr.getNumColumns() > 1)
-    .map((mr) => ({ col: mr.getColumn(), numCols: mr.getNumColumns() }));
-
-  // ── Step 2: Insert blank rows after template row ──
+  // ── Step 1: Insert blank rows after the template row ──
   sheet.insertRowsAfter(templateRow, numRows);
   SpreadsheetApp.flush();
 
   const templateRange = sheet.getRange(templateRow, 1, 1, maxCols);
-  const newRowsRange  = sheet.getRange(templateRow + 1, 1, numRows, maxCols);
 
-  // ── Step 3: Copy formatting (colours, borders, fonts) ──
-  templateRange.copyTo(newRowsRange, SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
+  // ── Step 2: Copy template row to each new row individually ──
+  // copyTo row-by-row with PASTE_NORMAL is the only reliable way in GAS
+  // to propagate merged-cell structure. Copying to a multi-row range at
+  // once does NOT replicate merges per row. breakApart() first removes any
+  // merges GAS auto-applied when inserting the row.
+  for (let i = 0; i < numRows; i++) {
+    const newRowRange = sheet.getRange(templateRow + 1 + i, 1, 1, maxCols);
+    newRowRange.breakApart();
+    templateRange.copyTo(newRowRange, SpreadsheetApp.CopyPasteType.PASTE_NORMAL, false);
+  }
   SpreadsheetApp.flush();
 
-  // ── Step 4: Apply merges to each new row explicitly ──
-  // GAS doesn't propagate merged-cell structure through copyTo reliably,
-  // so we re-create each merge from the saved template map.
-  if (templateMerges.length) {
-    for (let i = 0; i < numRows; i++) {
-      const newRow = templateRow + 1 + i;
-      templateMerges.forEach(({ col, numCols }) => {
-        sheet.getRange(newRow, col, 1, numCols).merge();
-      });
-    }
-    SpreadsheetApp.flush();
-  }
+  // ── Step 3: Clear values from new rows (keep format + merges) ──
+  sheet.getRange(templateRow + 1, 1, numRows, maxCols).clearContent();
+  SpreadsheetApp.flush();
 
   // ── Step 3: Write matrix data into the new rows ──
   const writeStartRow = templateRow + 1;
