@@ -150,105 +150,55 @@ function insertTechOperationMatrix(matrix, targetCellA1) {
     return 'ОШИБКА: Не выбрана стартовая ячейка.';
   }
 
-  const templateRow = startCell.getRow();
+  const startRow = startCell.getRow();
   const startCol = startCell.getColumn();
   const numRows = matrix.length;
-  const maxCols = sheet.getMaxColumns();
 
-  // ── Step 1: Read template merge map BEFORE inserting (indices shift after) ──
-  const templateMerges = sheet
-    .getRange(templateRow, 1, 1, maxCols)
-    .getMergedRanges()
-    .filter((mr) => mr.getNumColumns() > 1)
-    .map((mr) => ({ col: mr.getColumn(), numCols: mr.getNumColumns() }));
-
-  // ── Step 2: Insert blank rows — GAS auto-copies format from template row ──
-  sheet.insertRowsAfter(templateRow, numRows);
-  SpreadsheetApp.flush();
-
-  // ── Step 3: Copy non-merge formatting (colours, borders, fonts) ──
-  // Use PASTE_FORMAT — avoids the PASTE_NORMAL issue where GAS does NOT
-  // reliably propagate merges when copying to a multi-row range.
-  const templateRange = sheet.getRange(templateRow, 1, 1, maxCols);
-  const newRowsRange  = sheet.getRange(templateRow + 1, 1, numRows, maxCols);
-  templateRange.copyTo(newRowsRange, SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
-  SpreadsheetApp.flush();
-
-  // ── Step 4: Apply merges explicitly to each new row ──
-  // Do NOT call breakApart() first — insertRowsAfter may have already copied
-  // them, and breakApart() would destroy that. Calling merge() on an already-
-  // merged range is idempotent, so this is safe either way.
-  for (let i = 0; i < numRows; i++) {
-    const newRow = templateRow + 1 + i;
-    for (const { col, numCols } of templateMerges) {
-      sheet.getRange(newRow, col, 1, numCols).merge();
-    }
-  }
-  SpreadsheetApp.flush();
-
-  // ── Step 3: Write matrix data into the new rows ──
-  const writeStartRow = templateRow + 1;
   const scanCols = width + 20;
+  ensureSheetCapacity_(sheet, startRow + numRows - 1, startCol + scanCols - 1);
 
   const mergedRanges = sheet
-    .getRange(writeStartRow, startCol, numRows, scanCols)
+    .getRange(startRow, startCol, numRows, scanCols)
     .getMergedRanges();
 
   if (!mergedRanges.length) {
-    // Fast path: no merged cells in the write area.
-    sheet.getRange(writeStartRow, startCol, numRows, width).setValues(matrix);
-  } else {
-    // Build merge map: absRow → { absCol → mergeWidth | 0 (ghost) }
-    const mergeByRow = {};
-    mergedRanges.forEach((mr) => {
-      const r = mr.getRow();
-      const c = mr.getColumn();
-      const w = mr.getNumColumns();
-      if (!mergeByRow[r]) mergeByRow[r] = {};
-      mergeByRow[r][c] = w;
-      for (let g = 1; g < w; g++) mergeByRow[r][c + g] = 0;
-    });
-
-    // Write row by row: buffer normal cells into segments (setValues),
-    // write merge top-left cells individually (setValue), skip ghost cells.
-    for (let r = 0; r < numRows; r++) {
-      const absRow   = writeStartRow + r;
-      const rowMerges = mergeByRow[absRow] || {};
-      const rowData   = matrix[r];
-
-      let dataIdx = 0;
-      let absCol  = startCol;
-      let segStart = -1;
-      const segVals = [];
-
-      const flushSeg = () => {
-        if (segStart >= 0 && segVals.length) {
-          sheet.getRange(absRow, segStart, 1, segVals.length).setValues([segVals.slice()]);
-          segStart = -1;
-          segVals.length = 0;
-        }
-      };
-
-      while (dataIdx < rowData.length) {
-        const mw = rowMerges[absCol];
-        if (mw === 0) {
-          flushSeg();
-          absCol++;
-        } else if (mw >= 2) {
-          flushSeg();
-          sheet.getRange(absRow, absCol, 1, 1).setValue(rowData[dataIdx++]);
-          absCol += mw;
-        } else {
-          if (segStart < 0) segStart = absCol;
-          segVals.push(rowData[dataIdx++]);
-          absCol++;
-        }
-      }
-      flushSeg();
-    }
+    sheet.getRange(startRow, startCol, numRows, width).setValues(matrix);
+    sheet.getRange(startRow + numRows, startCol).activate();
+    return `Успешно выгружено ${numRows} строк.`;
   }
 
-  sheet.getRange(writeStartRow + numRows, startCol).activate();
+  const mergeByRow = {};
+  mergedRanges.forEach((mr) => {
+    const r = mr.getRow();
+    const c = mr.getColumn();
+    const w = mr.getNumColumns();
+    if (!mergeByRow[r]) mergeByRow[r] = {};
+    mergeByRow[r][c] = w;
+    for (let g = 1; g < w; g++) mergeByRow[r][c + g] = 0;
+  });
+
+  for (let r = 0; r < numRows; r++) {
+    const absRow    = startRow + r;
+    const rowMerges = mergeByRow[absRow] || {};
+    const rowData   = matrix[r];
+    let dataIdx = 0, absCol = startCol, segStart = -1;
+    const segVals = [];
+    const flushSeg = () => {
+      if (segStart >= 0 && segVals.length) {
+        sheet.getRange(absRow, segStart, 1, segVals.length).setValues([segVals.slice()]);
+        segStart = -1; segVals.length = 0;
+      }
+    };
+    while (dataIdx < rowData.length) {
+      const mw = rowMerges[absCol];
+      if (mw === 0)       { flushSeg(); absCol++; }
+      else if (mw >= 2)   { flushSeg(); sheet.getRange(absRow, absCol, 1, 1).setValue(rowData[dataIdx++]); absCol += mw; }
+      else                { if (segStart < 0) segStart = absCol; segVals.push(rowData[dataIdx++]); absCol++; }
+    }
+    flushSeg();
+  }
+
+  sheet.getRange(startRow + numRows, startCol).activate();
   return `Успешно выгружено ${numRows} строк.`;
 }
 
