@@ -1418,19 +1418,14 @@
           return;
         }
 
-        // Build 5-level: Производитель → Product Name → Series → Шаг → Артикул
-        const terHeaders = (operationDb.tabs && operationDb.tabs.ter && operationDb.tabs.ter.columnHeaders) || [];
-        const stepIdx = terHeaders.findIndex((h) => /тип.контакт/i.test(h));
-        const artIdx  = terHeaders.findIndex((h) => /артикул/i.test(h));
-
+        // Build 5-level: Производитель → Product Name → Series → Тип контакта → Артикул
         const manufacturers = new Map();
         filtered.forEach((item) => {
-          const row  = item.outputRow || [];
           const mfr  = item.terManufacturer || '—';
           const comp = item.terComponent    || item.label;
           const ser  = item.terSeries       || '—';
-          const step = (stepIdx >= 0 && row[stepIdx]) || '—';
-          const art  = (artIdx  >= 0 && row[artIdx])  || item.label;
+          const step = item.terType         || '—';
+          const art  = item.terArticle      || item.label;
           if (!manufacturers.has(mfr)) manufacturers.set(mfr, new Map());
           const compMap = manufacturers.get(mfr);
           if (!compMap.has(comp)) compMap.set(comp, new Map());
