@@ -366,6 +366,60 @@
         background: var(--surf);
       }
 
+      .col-settings-mode-bar {
+        padding: 8px 14px;
+        border-bottom: 1px solid var(--brd);
+        background: var(--accent-bg);
+        flex-shrink: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .col-mode-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .col-mode-label {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--txt2);
+        flex-shrink: 0;
+      }
+      .col-mode-opt {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 12px;
+        color: var(--txt);
+        cursor: pointer;
+        user-select: none;
+      }
+      .col-mode-opt input[type=radio] {
+        accent-color: var(--accent);
+        cursor: pointer;
+        margin: 0;
+        width: auto;
+        flex-shrink: 0;
+      }
+      .col-sep-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+      }
+      .col-sep-row select {
+        border: 1px solid var(--brd);
+        border-radius: var(--r);
+        padding: 3px 7px;
+        font-size: 12px;
+        background: var(--bg);
+        color: var(--txt);
+        cursor: pointer;
+        font-family: inherit;
+      }
+
       /* ─── DB INNER TABS ─── */
       .tabs {
         display: flex;
@@ -742,6 +796,21 @@
               <button class="col-settings-tab-btn" data-key="ter" onclick="switchColSettingsTab('ter',this)">БД.ТЕР</button>
               <button class="col-settings-tab-btn" data-key="coax" onclick="switchColSettingsTab('coax',this)">БД.КОАКС</button>
             </div>
+            <div class="col-settings-mode-bar">
+              <div class="col-mode-row">
+                <span class="col-mode-label">Режим вывода:</span>
+                <label class="col-mode-opt"><input type="radio" name="colOutMode" value="rows" onchange="colSettingsSetMode('rows')"> По строкам</label>
+                <label class="col-mode-opt"><input type="radio" name="colOutMode" value="cell" onchange="colSettingsSetMode('cell')"> В одну ячейку</label>
+              </div>
+              <div class="col-sep-row" id="colSepRow" style="display:none;">
+                <span class="col-mode-label">Разделитель:</span>
+                <select id="colSepSelect" onchange="colSettingsSetSep(this.value)">
+                  <option value="\n">↵ Перенос строки</option>
+                  <option value=", ">Запятая</option>
+                  <option value="; ">Точка с запятой</option>
+                </select>
+              </div>
+            </div>
             <div id="colSettingsBody" class="col-settings-body"></div>
             <div class="col-settings-footer">
               <button class="action-btn gray" style="margin:0;" onclick="colSettingsSelectAll()">Выбрать все</button>
@@ -799,10 +868,7 @@
               <ul id="opQueueList"></ul>
             </div>
             <input type="text" id="opTargetCell" placeholder="Стартовая ячейка, например C5. Пусто = активная." />
-            <div style="display:flex;gap:6px;">
-              <button id="opPushBtn" class="action-btn" disabled onclick="pushOperationsQueue()" style="flex:1;">ВЫГРУЗИТЬ В ТАБЛИЦУ</button>
-              <button id="opPushCellBtn" class="action-btn gray" disabled onclick="pushNamesToSingleCell()" style="flex:0 0 auto;white-space:nowrap;" title="Записать наименования из очереди в одну ячейку через перенос строки">В ЯЧЕЙКУ</button>
-            </div>
+            <button id="opPushBtn" class="action-btn" disabled onclick="pushOperationsQueue()">ВЫГРУЗИТЬ В ТАБЛИЦУ</button>
             <div id="opStatus" class="status">База техопераций еще не загружена.</div>
           </div>
         </div>
@@ -1587,12 +1653,56 @@
         return { dbOb: 'ob', dbOp: 'op', dbTer: 'ter', dbKoax: 'coax' }[k] || k;
       }
 
+      // ── Output mode per tab ──
+
+      function colSettingsModeKey(dbKey) {
+        return 'techops-mode-v1-' + normColKey(dbKey);
+      }
+
+      function colSettingsGetMode(dbKey) {
+        try { return localStorage.getItem(colSettingsModeKey(dbKey)) || 'rows'; } catch (e) { return 'rows'; }
+      }
+
+      function colSettingsSetMode(mode) {
+        try { localStorage.setItem(colSettingsModeKey(colSettingsActiveKey), mode); } catch (e) {}
+        updateColSettingsModeUI();
+      }
+
+      function colSettingsSepKey(dbKey) {
+        return 'techops-sep-v1-' + normColKey(dbKey);
+      }
+
+      function colSettingsGetSep(dbKey) {
+        try { return localStorage.getItem(colSettingsSepKey(dbKey)) || '\n'; } catch (e) { return '\n'; }
+      }
+
+      function colSettingsSetSep(sep) {
+        try { localStorage.setItem(colSettingsSepKey(colSettingsActiveKey), sep); } catch (e) {}
+      }
+
+      function updateColSettingsModeUI() {
+        const mode = colSettingsGetMode(colSettingsActiveKey);
+        const sep = colSettingsGetSep(colSettingsActiveKey);
+        document.querySelectorAll('input[name="colOutMode"]').forEach((r) => {
+          r.checked = r.value === mode;
+        });
+        const sepRow = document.getElementById('colSepRow');
+        if (sepRow) sepRow.style.display = mode === 'cell' ? '' : 'none';
+        const sepSel = document.getElementById('colSepSelect');
+        if (sepSel) {
+          // match stored value; fallback to first option if not found
+          const opts = Array.from(sepSel.options).map((o) => o.value);
+          sepSel.value = opts.includes(sep) ? sep : opts[0];
+        }
+      }
+
       function openColumnSettings() {
         colSettingsActiveKey = normColKey(activeOperationDbKey);
         document.querySelectorAll('.col-settings-tab-btn').forEach((b) => {
           b.classList.toggle('active', b.dataset.key === colSettingsActiveKey);
         });
         renderColSettingsPanel();
+        updateColSettingsModeUI();
         document.getElementById('colSettingsOverlay').classList.add('open');
       }
 
@@ -1605,6 +1715,7 @@
         document.querySelectorAll('.col-settings-tab-btn').forEach((b) => b.classList.remove('active'));
         btn.classList.add('active');
         renderColSettingsPanel();
+        updateColSettingsModeUI();
       }
 
       function colSettingsStorageKey(dbKey) {
@@ -1776,27 +1887,6 @@
         });
         document.getElementById('opQueueCount').innerText = currentQueue.length;
         document.getElementById('opPushBtn').disabled = currentQueue.length === 0;
-        document.getElementById('opPushCellBtn').disabled = currentQueue.length === 0;
-      }
-
-      function pushNamesToSingleCell() {
-        const currentQueue = operationQueues[activeOperationDbKey] || [];
-        if (!currentQueue.length) {
-          setOperationsStatus('Очередь пуста.', true);
-          return;
-        }
-        const targetCellA1 = document.getElementById('opTargetCell').value.trim();
-        const text = currentQueue.map((item) => item.label).join('\n');
-        setOperationsStatus('Запись в ячейку...', false);
-        google.script.run
-          .withSuccessHandler((result) => {
-            setOperationsStatus(result.ok ? ('✅ ' + result.message) : result.message, !result.ok);
-            if (result.ok) clearOperationQueue();
-          })
-          .withFailureHandler((error) => {
-            setOperationsStatus(error.message || 'Не удалось записать.', true);
-          })
-          .writeSingleCellNames(text, targetCellA1);
       }
 
       function pushOperationsQueue() {
@@ -1807,17 +1897,36 @@
         }
 
         const targetCellA1 = document.getElementById('opTargetCell').value.trim();
-        const rows = currentQueue.map((item) => applyColumnSelection(item.dbKey, item.allValues || []));
-        setOperationsStatus('Выгрузка техопераций...', false);
-        google.script.run
-          .withSuccessHandler((result) => {
-            setOperationsStatus(`✅ ${result.message}`, false);
-            clearOperationQueue();
-          })
-          .withFailureHandler((error) => {
-            setOperationsStatus(error.message || 'Не удалось выгрузить техоперации.', true);
-          })
-          .insertOperationRows(rows, targetCellA1);
+        const mode = colSettingsGetMode(activeOperationDbKey);
+
+        if (mode === 'cell') {
+          const rawSep = colSettingsGetSep(activeOperationDbKey);
+          // Unescape \n stored as literal backslash-n from <select>
+          const sep = rawSep === '\\n' ? '\n' : rawSep;
+          const text = currentQueue.map((item) => item.label).join(sep);
+          setOperationsStatus('Запись в ячейку...', false);
+          google.script.run
+            .withSuccessHandler((result) => {
+              setOperationsStatus(result.ok ? ('✅ ' + result.message) : result.message, !result.ok);
+              if (result.ok) clearOperationQueue();
+            })
+            .withFailureHandler((error) => {
+              setOperationsStatus(error.message || 'Не удалось записать.', true);
+            })
+            .writeSingleCellNames(text, targetCellA1);
+        } else {
+          const rows = currentQueue.map((item) => applyColumnSelection(item.dbKey, item.allValues || []));
+          setOperationsStatus('Выгрузка техопераций...', false);
+          google.script.run
+            .withSuccessHandler((result) => {
+              setOperationsStatus(`✅ ${result.message}`, false);
+              clearOperationQueue();
+            })
+            .withFailureHandler((error) => {
+              setOperationsStatus(error.message || 'Не удалось выгрузить техоперации.', true);
+            })
+            .insertOperationRows(rows, targetCellA1);
+        }
       }
 
       document.addEventListener('DOMContentLoaded', () => {
