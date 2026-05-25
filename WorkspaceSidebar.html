@@ -828,11 +828,21 @@
                 <label class="col-mode-opt"><input type="radio" name="colOutMode" value="cell" onchange="colSettingsSetMode('cell')"> В одну ячейку</label>
               </div>
               <div class="col-sep-row" id="colSepRow" style="display:none;">
-                <span class="col-mode-label">Разделитель:</span>
+                <span class="col-mode-label">Разделитель строк:</span>
                 <select id="colSepSelect" onchange="colSettingsSetSep(this.value)">
                   <option value="\n">↵ Перенос строки</option>
                   <option value=", ">Запятая</option>
                   <option value="; ">Точка с запятой</option>
+                </select>
+              </div>
+              <div class="col-sep-row">
+                <span class="col-mode-label">Разделитель столбцов:</span>
+                <select id="colCellSepSelect" onchange="colSettingsSetCellSep(this.value)">
+                  <option value=" | "> | </option>
+                  <option value=" ">Пробел</option>
+                  <option value=", ">Запятая</option>
+                  <option value=" / "> / </option>
+                  <option value=" — "> — </option>
                 </select>
               </div>
             </div>
@@ -1705,19 +1715,40 @@
         try { localStorage.setItem(colSettingsSepKey(colSettingsActiveKey), sep); } catch (e) {}
       }
 
+      function colSettingsCellSepKey(dbKey) {
+        return 'techops-cellsep-v1-' + normColKey(dbKey);
+      }
+
+      function colSettingsGetCellSep(dbKey) {
+        try { return localStorage.getItem(colSettingsCellSepKey(dbKey)) || ' | '; } catch (e) { return ' | '; }
+      }
+
+      function colSettingsSetCellSep(sep) {
+        try { localStorage.setItem(colSettingsCellSepKey(colSettingsActiveKey), sep); } catch (e) {}
+      }
+
       function updateColSettingsModeUI() {
         const mode = colSettingsGetMode(colSettingsActiveKey);
         const sep = colSettingsGetSep(colSettingsActiveKey);
+        const cellSep = colSettingsGetCellSep(colSettingsActiveKey);
+
         document.querySelectorAll('input[name="colOutMode"]').forEach((r) => {
           r.checked = r.value === mode;
         });
+
         const sepRow = document.getElementById('colSepRow');
         if (sepRow) sepRow.style.display = mode === 'cell' ? '' : 'none';
+
         const sepSel = document.getElementById('colSepSelect');
         if (sepSel) {
-          // match stored value; fallback to first option if not found
           const opts = Array.from(sepSel.options).map((o) => o.value);
           sepSel.value = opts.includes(sep) ? sep : opts[0];
+        }
+
+        const cellSepSel = document.getElementById('colCellSepSelect');
+        if (cellSepSel) {
+          const opts = Array.from(cellSepSel.options).map((o) => o.value);
+          cellSepSel.value = opts.includes(cellSep) ? cellSep : opts[0];
         }
       }
 
@@ -1808,12 +1839,13 @@
           cellGroups.get(c).push(item);
         });
 
-        // One output element per unique cell group; values within group are joined with space
+        // One output element per unique cell group; values within group are joined with stored separator
+        const cellSep = colSettingsGetCellSep(key);
         return cellOrder.map((cellNum) => {
           const parts = cellGroups.get(cellNum)
             .map((item) => { const v = allValues[item.idx]; return v !== undefined && v !== null ? String(v) : ''; })
             .filter((v) => v !== '');
-          return parts.join(' ');
+          return parts.join(cellSep);
         });
       }
 
