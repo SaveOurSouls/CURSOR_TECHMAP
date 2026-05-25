@@ -155,18 +155,37 @@ function insertTechOperationMatrix(matrix, targetCellA1) {
   const numRows = matrix.length;
   const maxCols = sheet.getMaxColumns();
 
-  // ── Step 1: Insert new rows after the template row ──
-  sheet.insertRowsAfter(templateRow, numRows);
+  // ── Step 1: Read template row merge structure BEFORE inserting rows ──
+  // After insertRowsAfter the indices shift, so capture merges first.
+  const templateMerges = sheet
+    .getRange(templateRow, 1, 1, maxCols)
+    .getMergedRanges()
+    .filter((mr) => mr.getNumColumns() > 1)
+    .map((mr) => ({ col: mr.getColumn(), numCols: mr.getNumColumns() }));
 
-  // ── Step 2: Copy full formatting (colours, borders, fonts, merges) from
-  //    the template row to every newly inserted row.
-  //    PASTE_NORMAL copies values + format; clearContent then removes values
-  //    while keeping format and merged-cell structure intact.
+  // ── Step 2: Insert blank rows after template row ──
+  sheet.insertRowsAfter(templateRow, numRows);
+  SpreadsheetApp.flush();
+
   const templateRange = sheet.getRange(templateRow, 1, 1, maxCols);
   const newRowsRange  = sheet.getRange(templateRow + 1, 1, numRows, maxCols);
-  templateRange.copyTo(newRowsRange, SpreadsheetApp.CopyPasteType.PASTE_NORMAL, false);
-  newRowsRange.clearContent();
+
+  // ── Step 3: Copy formatting (colours, borders, fonts) ──
+  templateRange.copyTo(newRowsRange, SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
   SpreadsheetApp.flush();
+
+  // ── Step 4: Apply merges to each new row explicitly ──
+  // GAS doesn't propagate merged-cell structure through copyTo reliably,
+  // so we re-create each merge from the saved template map.
+  if (templateMerges.length) {
+    for (let i = 0; i < numRows; i++) {
+      const newRow = templateRow + 1 + i;
+      templateMerges.forEach(({ col, numCols }) => {
+        sheet.getRange(newRow, col, 1, numCols).merge();
+      });
+    }
+    SpreadsheetApp.flush();
+  }
 
   // ── Step 3: Write matrix data into the new rows ──
   const writeStartRow = templateRow + 1;
