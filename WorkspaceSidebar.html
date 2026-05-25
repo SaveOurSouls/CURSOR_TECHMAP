@@ -308,27 +308,45 @@
         padding: 4px 12px;
       }
 
-      .col-settings-body label {
+      .col-row {
         display: flex;
         align-items: center;
-        gap: 10px;
-        padding: 7px 6px;
-        font-size: 12px;
-        cursor: pointer;
+        gap: 7px;
+        padding: 5px 8px;
         border-bottom: 1px solid var(--brd);
-        margin: 0;
-        width: auto;
-        box-sizing: border-box;
-        color: var(--txt);
-        font-weight: 400;
-        white-space: normal;
-        overflow: visible;
-        text-overflow: clip;
-        flex-shrink: 0;
         transition: background .1s;
       }
+      .col-row:hover { background: var(--surf); }
 
-      .col-settings-body label:hover { background: var(--surf); }
+      .col-row-btn {
+        flex-shrink: 0;
+        width: auto;
+        margin: 0;
+        padding: 2px 6px;
+        border: 1px solid var(--brd);
+        border-radius: 4px;
+        background: var(--bg);
+        cursor: pointer;
+        font-size: 9px;
+        color: var(--txt2);
+        line-height: 1.4;
+        transition: background .1s, color .1s, border-color .1s;
+      }
+      .col-row-btn:hover:not(:disabled) {
+        background: var(--accent-bg);
+        color: var(--accent);
+        border-color: var(--accent);
+      }
+      .col-row-btn:disabled { opacity: .25; cursor: default; }
+
+      .col-row-name {
+        flex: 1;
+        font-size: 12px;
+        color: var(--txt);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
 
       .col-settings-body input[type=checkbox] {
         width: auto;
@@ -728,6 +746,7 @@
             <div class="col-settings-footer">
               <button class="action-btn gray" style="margin:0;" onclick="colSettingsSelectAll()">Выбрать все</button>
               <button class="action-btn gray" style="margin:0;" onclick="colSettingsClearAll()">Снять все</button>
+              <button class="action-btn gray" style="margin:0;" onclick="colSettingsReset()">Сбросить</button>
             </div>
           </div>
 
@@ -1606,21 +1625,25 @@
         return (tab && tab.columnHeaders) || [];
       }
 
+      // Default: [{idx, on}, ...] ordered by original column index
       function colSettingsGetDefault(dbKey, headers) {
         const key = normColKey(dbKey);
-        return headers.map((h) => {
-          if (key === 'ter' && TER_DEFAULT_UNCHECKED.has((h || '').toLowerCase().trim())) return false;
-          return true;
-        });
+        return headers.map((h, i) => ({
+          idx: i,
+          on: !(key === 'ter' && TER_DEFAULT_UNCHECKED.has((h || '').toLowerCase().trim())),
+        }));
       }
 
       function colSettingsGetEffective(dbKey) {
         const key = normColKey(dbKey);
         const headers = colSettingsGetHeaders(key);
-        const stored = colSettingsLoad(key);
         const defaults = colSettingsGetDefault(key, headers);
-        if (!stored) return defaults;
-        return headers.map((_, i) => (i < stored.length ? stored[i] : defaults[i]));
+        if (!headers.length) return defaults;
+        const stored = colSettingsLoad(key);
+        // Validate new format: array of {idx, on} with correct length
+        if (!stored || !Array.isArray(stored) || stored.length !== headers.length) return defaults;
+        if (!stored[0] || typeof stored[0] !== 'object' || stored[0].idx === undefined) return defaults;
+        return stored;
       }
 
       function applyColumnSelection(dbKey, allValues) {
@@ -1628,52 +1651,93 @@
         const headers = colSettingsGetHeaders(key);
         if (!headers.length) return allValues;
         const sel = colSettingsGetEffective(key);
-        return allValues.filter((_, i) => sel[i] !== false);
+        return sel.filter((item) => item.on).map((item) => {
+          const v = allValues[item.idx];
+          return v !== undefined ? v : '';
+        });
       }
 
       function renderColSettingsPanel() {
         const dbKey = colSettingsActiveKey;
         const headers = colSettingsGetHeaders(dbKey);
-        const sel = colSettingsGetEffective(dbKey);
         const body = document.getElementById('colSettingsBody');
         body.innerHTML = '';
 
         if (!headers.length) {
           const p = document.createElement('p');
-          p.style.cssText = 'color:#80868b;font-size:12px;padding:12px;';
-          p.textContent = 'Загрузите базу данных сначала (нажмите «Обновить базу техопераций»).';
+          p.style.cssText = 'color:#94A3B8;font-size:12px;padding:14px;';
+          p.textContent = 'Загрузите базу данных сначала.';
           body.appendChild(p);
           return;
         }
 
-        headers.forEach((header, i) => {
-          if (!String(header || '').trim()) return;
-          const label = document.createElement('label');
+        const sel = colSettingsGetEffective(dbKey);
+
+        sel.forEach((item, orderIdx) => {
+          const row = document.createElement('div');
+          row.className = 'col-row';
+
+          const btnUp = document.createElement('button');
+          btnUp.className = 'col-row-btn';
+          btnUp.textContent = '▲';
+          btnUp.title = 'Вверх';
+          btnUp.disabled = orderIdx === 0;
+          btnUp.onclick = () => {
+            const cur = colSettingsGetEffective(dbKey);
+            [cur[orderIdx - 1], cur[orderIdx]] = [cur[orderIdx], cur[orderIdx - 1]];
+            colSettingsSave(dbKey, cur);
+            renderColSettingsPanel();
+          };
+
+          const btnDown = document.createElement('button');
+          btnDown.className = 'col-row-btn';
+          btnDown.textContent = '▼';
+          btnDown.title = 'Вниз';
+          btnDown.disabled = orderIdx === sel.length - 1;
+          btnDown.onclick = () => {
+            const cur = colSettingsGetEffective(dbKey);
+            [cur[orderIdx], cur[orderIdx + 1]] = [cur[orderIdx + 1], cur[orderIdx]];
+            colSettingsSave(dbKey, cur);
+            renderColSettingsPanel();
+          };
+
           const cb = document.createElement('input');
           cb.type = 'checkbox';
-          cb.checked = sel[i] !== false;
-          cb.addEventListener('change', function () {
-            const current = colSettingsGetEffective(dbKey);
-            current[i] = cb.checked;
-            colSettingsSave(dbKey, current);
+          cb.checked = item.on;
+          cb.addEventListener('change', () => {
+            const cur = colSettingsGetEffective(dbKey);
+            cur[orderIdx].on = cb.checked;
+            colSettingsSave(dbKey, cur);
           });
-          const span = document.createElement('span');
-          span.textContent = header;
-          label.appendChild(cb);
-          label.appendChild(span);
-          body.appendChild(label);
+
+          const nameSpan = document.createElement('span');
+          nameSpan.className = 'col-row-name';
+          nameSpan.textContent = headers[item.idx] || '';
+
+          row.appendChild(btnUp);
+          row.appendChild(btnDown);
+          row.appendChild(cb);
+          row.appendChild(nameSpan);
+          body.appendChild(row);
         });
       }
 
       function colSettingsSelectAll() {
-        const headers = colSettingsGetHeaders(colSettingsActiveKey);
-        colSettingsSave(colSettingsActiveKey, headers.map(() => true));
+        const cur = colSettingsGetEffective(colSettingsActiveKey);
+        cur.forEach((item) => { item.on = true; });
+        colSettingsSave(colSettingsActiveKey, cur);
         renderColSettingsPanel();
       }
 
       function colSettingsClearAll() {
-        const headers = colSettingsGetHeaders(colSettingsActiveKey);
-        colSettingsSave(colSettingsActiveKey, headers.map(() => false));
+        const cur = colSettingsGetEffective(colSettingsActiveKey);
+        cur.forEach((item) => { item.on = false; });
+        colSettingsSave(colSettingsActiveKey, cur);
+        renderColSettingsPanel();
+      }
+
+      function colSettingsReset() {
+        try { localStorage.removeItem(colSettingsStorageKey(colSettingsActiveKey)); } catch (e) {}
         renderColSettingsPanel();
       }
 
