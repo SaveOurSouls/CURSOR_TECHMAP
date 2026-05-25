@@ -150,85 +150,88 @@ function insertTechOperationMatrix(matrix, targetCellA1) {
     return 'ОШИБКА: Не выбрана стартовая ячейка.';
   }
 
-  const startRow = startCell.getRow();
+  const templateRow = startCell.getRow();
   const startCol = startCell.getColumn();
+  const numRows = matrix.length;
+  const maxCols = sheet.getMaxColumns();
 
-  // Scan generously to detect any merged cells in the target area.
+  // ── Step 1: Insert new rows after the template row ──
+  sheet.insertRowsAfter(templateRow, numRows);
+
+  // ── Step 2: Copy full formatting (colours, borders, fonts, merges) from
+  //    the template row to every newly inserted row.
+  //    PASTE_NORMAL copies values + format; clearContent then removes values
+  //    while keeping format and merged-cell structure intact.
+  const templateRange = sheet.getRange(templateRow, 1, 1, maxCols);
+  const newRowsRange  = sheet.getRange(templateRow + 1, 1, numRows, maxCols);
+  templateRange.copyTo(newRowsRange, SpreadsheetApp.CopyPasteType.PASTE_NORMAL, false);
+  newRowsRange.clearContent();
+  SpreadsheetApp.flush();
+
+  // ── Step 3: Write matrix data into the new rows ──
+  const writeStartRow = templateRow + 1;
   const scanCols = width + 20;
-  ensureSheetCapacity_(sheet, startRow + matrix.length - 1, startCol + scanCols - 1);
 
   const mergedRanges = sheet
-    .getRange(startRow, startCol, matrix.length, scanCols)
+    .getRange(writeStartRow, startCol, numRows, scanCols)
     .getMergedRanges();
 
   if (!mergedRanges.length) {
     // Fast path: no merged cells in the write area.
-    sheet.getRange(startRow, startCol, matrix.length, width).setValues(matrix);
-    sheet.getRange(startRow + matrix.length, startCol).activate();
-    return `Успешно выгружено ${matrix.length} строк.`;
+    sheet.getRange(writeStartRow, startCol, numRows, width).setValues(matrix);
+  } else {
+    // Build merge map: absRow → { absCol → mergeWidth | 0 (ghost) }
+    const mergeByRow = {};
+    mergedRanges.forEach((mr) => {
+      const r = mr.getRow();
+      const c = mr.getColumn();
+      const w = mr.getNumColumns();
+      if (!mergeByRow[r]) mergeByRow[r] = {};
+      mergeByRow[r][c] = w;
+      for (let g = 1; g < w; g++) mergeByRow[r][c + g] = 0;
+    });
+
+    // Write row by row: buffer normal cells into segments (setValues),
+    // write merge top-left cells individually (setValue), skip ghost cells.
+    for (let r = 0; r < numRows; r++) {
+      const absRow   = writeStartRow + r;
+      const rowMerges = mergeByRow[absRow] || {};
+      const rowData   = matrix[r];
+
+      let dataIdx = 0;
+      let absCol  = startCol;
+      let segStart = -1;
+      const segVals = [];
+
+      const flushSeg = () => {
+        if (segStart >= 0 && segVals.length) {
+          sheet.getRange(absRow, segStart, 1, segVals.length).setValues([segVals.slice()]);
+          segStart = -1;
+          segVals.length = 0;
+        }
+      };
+
+      while (dataIdx < rowData.length) {
+        const mw = rowMerges[absCol];
+        if (mw === 0) {
+          flushSeg();
+          absCol++;
+        } else if (mw >= 2) {
+          flushSeg();
+          sheet.getRange(absRow, absCol, 1, 1).setValue(rowData[dataIdx++]);
+          absCol += mw;
+        } else {
+          if (segStart < 0) segStart = absCol;
+          segVals.push(rowData[dataIdx++]);
+          absCol++;
+        }
+      }
+      flushSeg();
+    }
   }
 
-  // Build a lookup: absRow → Map<absCol, mergeWidth>.
-  // Only the first cell (top-left) of each merge is keyed; ghost cells are skipped.
-  const mergeByRow = {};
-  mergedRanges.forEach((mr) => {
-    const r = mr.getRow();
-    const c = mr.getColumn();
-    const w = mr.getNumColumns();
-    if (!mergeByRow[r]) mergeByRow[r] = {};
-    mergeByRow[r][c] = w;
-    // Mark ghost cells so we know to skip them.
-    for (let g = 1; g < w; g++) {
-      mergeByRow[r][c + g] = 0; // 0 = ghost
-    }
-  });
-
-  // Write row by row, handling merged cells without calling setValues on a
-  // range that spans a merge (GAS throws on such calls). Instead:
-  //   - normal cells are buffered into contiguous segments and flushed with setValues
-  //   - top-left cell of a merge is written alone with setValue
-  //   - ghost cells (interior of a merge) are skipped entirely
-  for (let r = 0; r < matrix.length; r++) {
-    const absRow = startRow + r;
-    const rowMerges = mergeByRow[absRow] || {};
-    const rowData = matrix[r];
-
-    let dataIdx = 0;
-    let absCol = startCol;
-    let segStart = -1;
-    const segVals = [];
-
-    const flushSeg = () => {
-      if (segStart >= 0 && segVals.length) {
-        sheet.getRange(absRow, segStart, 1, segVals.length).setValues([segVals.slice()]);
-        segStart = -1;
-        segVals.length = 0;
-      }
-    };
-
-    while (dataIdx < rowData.length) {
-      const mw = rowMerges[absCol];
-      if (mw === 0) {
-        // Ghost cell — flush buffered normals, skip column without consuming data.
-        flushSeg();
-        absCol++;
-      } else if (mw >= 2) {
-        // Top-left of a horizontal merge — flush, write single value, skip ghost cols.
-        flushSeg();
-        sheet.getRange(absRow, absCol, 1, 1).setValue(rowData[dataIdx++]);
-        absCol += mw;
-      } else {
-        // Normal cell (mw === undefined or mw === 1).
-        if (segStart < 0) segStart = absCol;
-        segVals.push(rowData[dataIdx++]);
-        absCol++;
-      }
-    }
-    flushSeg();
-  }
-
-  sheet.getRange(startRow + matrix.length, startCol).activate();
-  return `Успешно выгружено ${matrix.length} строк.`;
+  sheet.getRange(writeStartRow + numRows, startCol).activate();
+  return `Успешно выгружено ${numRows} строк.`;
 }
 
 // Backward-compatible alias used by the workspace sidebar.
