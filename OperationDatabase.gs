@@ -155,26 +155,35 @@ function insertTechOperationMatrix(matrix, targetCellA1) {
   const numRows = matrix.length;
   const maxCols = sheet.getMaxColumns();
 
-  // ── Step 1: Insert blank rows after the template row ──
+  // ── Step 1: Read template merge map BEFORE inserting (indices shift after) ──
+  const templateMerges = sheet
+    .getRange(templateRow, 1, 1, maxCols)
+    .getMergedRanges()
+    .filter((mr) => mr.getNumColumns() > 1)
+    .map((mr) => ({ col: mr.getColumn(), numCols: mr.getNumColumns() }));
+
+  // ── Step 2: Insert blank rows — GAS auto-copies format from template row ──
   sheet.insertRowsAfter(templateRow, numRows);
   SpreadsheetApp.flush();
 
+  // ── Step 3: Copy non-merge formatting (colours, borders, fonts) ──
+  // Use PASTE_FORMAT — avoids the PASTE_NORMAL issue where GAS does NOT
+  // reliably propagate merges when copying to a multi-row range.
   const templateRange = sheet.getRange(templateRow, 1, 1, maxCols);
-
-  // ── Step 2: Copy template row to each new row individually ──
-  // copyTo row-by-row with PASTE_NORMAL is the only reliable way in GAS
-  // to propagate merged-cell structure. Copying to a multi-row range at
-  // once does NOT replicate merges per row. breakApart() first removes any
-  // merges GAS auto-applied when inserting the row.
-  for (let i = 0; i < numRows; i++) {
-    const newRowRange = sheet.getRange(templateRow + 1 + i, 1, 1, maxCols);
-    newRowRange.breakApart();
-    templateRange.copyTo(newRowRange, SpreadsheetApp.CopyPasteType.PASTE_NORMAL, false);
-  }
+  const newRowsRange  = sheet.getRange(templateRow + 1, 1, numRows, maxCols);
+  templateRange.copyTo(newRowsRange, SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
   SpreadsheetApp.flush();
 
-  // ── Step 3: Clear values from new rows (keep format + merges) ──
-  sheet.getRange(templateRow + 1, 1, numRows, maxCols).clearContent();
+  // ── Step 4: Apply merges explicitly to each new row ──
+  // Do NOT call breakApart() first — insertRowsAfter may have already copied
+  // them, and breakApart() would destroy that. Calling merge() on an already-
+  // merged range is idempotent, so this is safe either way.
+  for (let i = 0; i < numRows; i++) {
+    const newRow = templateRow + 1 + i;
+    for (const { col, numCols } of templateMerges) {
+      sheet.getRange(newRow, col, 1, numCols).merge();
+    }
+  }
   SpreadsheetApp.flush();
 
   // ── Step 3: Write matrix data into the new rows ──
