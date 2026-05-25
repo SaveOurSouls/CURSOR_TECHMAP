@@ -1418,22 +1418,22 @@
           return;
         }
 
-        // Build 3-level: Производитель → Серия → Комплектующая
+        // Build 3-level: Производитель → Product Name → Series
         const manufacturers = new Map();
         filtered.forEach((item) => {
-          const mfr    = item.terManufacturer || '—';
-          const series = item.terSeries       || '—';
-          const comp   = item.terComponent    || item.label;
+          const mfr  = item.terManufacturer || '—';
+          const comp = item.terComponent    || item.label;
+          const ser  = item.terSeries       || '—';
           if (!manufacturers.has(mfr)) manufacturers.set(mfr, new Map());
-          const seriesMap = manufacturers.get(mfr);
-          if (!seriesMap.has(series)) seriesMap.set(series, []);
-          seriesMap.get(series).push({ item, comp });
+          const compMap = manufacturers.get(mfr);
+          if (!compMap.has(comp)) compMap.set(comp, []);
+          compMap.get(comp).push({ item, ser });
         });
 
         const fragment = document.createDocumentFragment();
         let firstMfr = true;
 
-        manufacturers.forEach((seriesMap, mfrName) => {
+        manufacturers.forEach((compMap, mfrName) => {
           const mfrLi = document.createElement('li');
           const mfrHeader = document.createElement('div');
           mfrHeader.className = 'op-group-header' + (firstMfr && query ? ' open' : '');
@@ -1446,7 +1446,7 @@
           const mfrCount = document.createElement('span');
           mfrCount.className = 'op-group-count';
           let totalItems = 0;
-          seriesMap.forEach((items) => { totalItems += items.length; });
+          compMap.forEach((items) => { totalItems += items.length; });
           mfrCount.textContent = totalItems;
           mfrHeader.appendChild(mfrArrow);
           mfrHeader.appendChild(mfrSpan);
@@ -1456,50 +1456,50 @@
           mfrChildren.className = 'op-children' + (firstMfr && query ? ' open' : '');
           mfrChildren.style.background = '#fff';
 
-          seriesMap.forEach((leaves, seriesName) => {
-            const serLi = document.createElement('li');
-            serLi.style.padding = '0';
+          compMap.forEach((leaves, compName) => {
+            const compLi = document.createElement('li');
+            compLi.style.padding = '0';
 
-            const serHeader = document.createElement('div');
-            serHeader.className = 'op-group-header';
-            serHeader.style.paddingLeft = '20px';
-            serHeader.style.fontWeight = 'normal';
-            serHeader.style.color = '#3c4043';
+            const compHeader = document.createElement('div');
+            compHeader.className = 'op-group-header';
+            compHeader.style.paddingLeft = '20px';
+            compHeader.style.fontWeight = 'normal';
+            compHeader.style.color = '#3c4043';
 
-            const serArrow = document.createElement('span');
-            serArrow.className = 'op-arrow';
-            serArrow.textContent = '▶';
-            const serSpan = document.createElement('span');
-            serSpan.textContent = seriesName;
-            const serCount = document.createElement('span');
-            serCount.className = 'op-group-count';
-            serCount.textContent = leaves.length;
-            serHeader.appendChild(serArrow);
-            serHeader.appendChild(serSpan);
-            serHeader.appendChild(serCount);
+            const compArrow = document.createElement('span');
+            compArrow.className = 'op-arrow';
+            compArrow.textContent = '▶';
+            const compSpan = document.createElement('span');
+            compSpan.textContent = compName;
+            const compCount = document.createElement('span');
+            compCount.className = 'op-group-count';
+            compCount.textContent = leaves.length;
+            compHeader.appendChild(compArrow);
+            compHeader.appendChild(compSpan);
+            compHeader.appendChild(compCount);
 
-            const serChildren = document.createElement('ul');
-            serChildren.className = 'op-children';
-            serChildren.style.background = '#f1f3f4';
+            const compChildren = document.createElement('ul');
+            compChildren.className = 'op-children';
+            compChildren.style.background = '#f1f3f4';
 
-            leaves.forEach(({ item, comp }) => {
+            leaves.forEach(({ item, ser }) => {
               const child = document.createElement('li');
               child.style.paddingLeft = '36px';
-              child.textContent = comp;
+              child.textContent = ser;
               child.title = item.label;
               child.onclick = function() { addOperationToQueue('dbTer', item); };
-              serChildren.appendChild(child);
+              compChildren.appendChild(child);
             });
 
-            serHeader.onclick = function() {
-              const isOpen = serHeader.classList.contains('open');
-              serHeader.classList.toggle('open', !isOpen);
-              serChildren.classList.toggle('open', !isOpen);
+            compHeader.onclick = function() {
+              const isOpen = compHeader.classList.contains('open');
+              compHeader.classList.toggle('open', !isOpen);
+              compChildren.classList.toggle('open', !isOpen);
             };
 
-            serLi.appendChild(serHeader);
-            serLi.appendChild(serChildren);
-            mfrChildren.appendChild(serLi);
+            compLi.appendChild(compHeader);
+            compLi.appendChild(compChildren);
+            mfrChildren.appendChild(compLi);
           });
 
           mfrHeader.onclick = function() {
