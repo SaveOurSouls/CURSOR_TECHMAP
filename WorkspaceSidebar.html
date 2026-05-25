@@ -1161,6 +1161,8 @@
             operationsLoading = false;
             operationsLoaded = true;
             operationDb = payload || { dbOb: [], dbOp: [], dbTer: [], dbKoax: [], meta: null };
+            Object.keys(_colSettingsCache).forEach((k) => { delete _colSettingsCache[k]; });
+            Object.keys(_colPlanCache).forEach((k) => { delete _colPlanCache[k]; });
             renderOperationResults(activeOperationDbKey);
             const total = (operationDb.meta && operationDb.meta.recordCount) || 0;
             setOperationsStatus(`База готова: ${total}`, false);
@@ -1725,6 +1727,7 @@
 
       function colSettingsSetCellSep(sep) {
         try { localStorage.setItem(colSettingsCellSepKey(colSettingsActiveKey), sep); } catch (e) {}
+        delete _colPlanCache[normColKey(colSettingsActiveKey)];
       }
 
       function updateColSettingsModeUI() {
@@ -1774,6 +1777,9 @@
         updateColSettingsModeUI();
       }
 
+      const _colSettingsCache = Object.create(null);
+      const _colPlanCache = Object.create(null);
+
       function colSettingsStorageKey(dbKey) {
         return 'techops-cols-v1-' + normColKey(dbKey);
       }
@@ -1787,7 +1793,10 @@
       }
 
       function colSettingsSave(dbKey, sel) {
-        try { localStorage.setItem(colSettingsStorageKey(dbKey), JSON.stringify(sel)); } catch (e) {}
+        const key = normColKey(dbKey);
+        try { localStorage.setItem(colSettingsStorageKey(key), JSON.stringify(sel)); } catch (e) {}
+        _colSettingsCache[key] = sel;
+        delete _colPlanCache[key];
       }
 
       function colSettingsGetHeaders(dbKey) {
@@ -1808,39 +1817,45 @@
 
       function colSettingsGetEffective(dbKey) {
         const key = normColKey(dbKey);
+        if (_colSettingsCache[key]) return _colSettingsCache[key];
         const headers = colSettingsGetHeaders(key);
         const defaults = colSettingsGetDefault(key, headers);
         if (!headers.length) return defaults;
         const stored = colSettingsLoad(key);
-        if (!stored || !Array.isArray(stored) || stored.length !== headers.length) return defaults;
-        if (!stored[0] || typeof stored[0] !== 'object' || stored[0].idx === undefined) return defaults;
-        // Migrate: add cell field if stored without it (old format)
-        if (stored[0].cell === undefined) {
-          return stored.map((item, i) => ({ ...item, cell: i + 1 }));
+        let result;
+        if (!stored || !Array.isArray(stored) || stored.length !== headers.length) {
+          result = defaults;
+        } else if (!stored[0] || typeof stored[0] !== 'object' || stored[0].idx === undefined) {
+          result = defaults;
+        } else if (stored[0].cell === undefined) {
+          result = stored.map((item, i) => ({ ...item, cell: i + 1 }));
+        } else {
+          result = stored;
         }
-        return stored;
+        _colSettingsCache[key] = result;
+        return result;
       }
 
       function applyColumnSelection(dbKey, allValues) {
         const key = normColKey(dbKey);
         const headers = colSettingsGetHeaders(key);
         if (!headers.length) return allValues;
-        const sel = colSettingsGetEffective(key);
 
-        const active = sel.filter((item) => item.on);
-        if (!active.length) return [];
+        if (!_colPlanCache[key]) {
+          const sel = colSettingsGetEffective(key);
+          const active = sel.filter((item) => item.on);
+          const cellGroups = new Map();
+          const cellOrder = [];
+          active.forEach((item) => {
+            const c = item.cell !== undefined ? item.cell : 1;
+            if (!cellGroups.has(c)) { cellGroups.set(c, []); cellOrder.push(c); }
+            cellGroups.get(c).push(item);
+          });
+          _colPlanCache[key] = { cellGroups, cellOrder, cellSep: colSettingsGetCellSep(key) };
+        }
 
-        // Group by cell number (first occurrence order = output column order)
-        const cellGroups = new Map();
-        const cellOrder = [];
-        active.forEach((item) => {
-          const c = item.cell !== undefined ? item.cell : 1;
-          if (!cellGroups.has(c)) { cellGroups.set(c, []); cellOrder.push(c); }
-          cellGroups.get(c).push(item);
-        });
-
-        // One output element per unique cell group; values within group are joined with stored separator
-        const cellSep = colSettingsGetCellSep(key);
+        const { cellGroups, cellOrder, cellSep } = _colPlanCache[key];
+        if (!cellOrder.length) return [];
         return cellOrder.map((cellNum) => {
           const parts = cellGroups.get(cellNum)
             .map((item) => { const v = allValues[item.idx]; return v !== undefined && v !== null ? String(v) : ''; })
@@ -1869,6 +1884,7 @@
         body.appendChild(hint);
 
         const sel = colSettingsGetEffective(dbKey);
+        const frag = document.createDocumentFragment();
 
         sel.forEach((item, orderIdx) => {
           const row = document.createElement('div');
@@ -1955,8 +1971,9 @@
           row.appendChild(cb);
           row.appendChild(nameSpan);
           row.appendChild(cellCtl);
-          body.appendChild(row);
+          frag.appendChild(row);
         });
+        body.appendChild(frag);
       }
 
       function colSettingsSelectAll() {
@@ -1974,7 +1991,10 @@
       }
 
       function colSettingsReset() {
-        try { localStorage.removeItem(colSettingsStorageKey(colSettingsActiveKey)); } catch (e) {}
+        const key = normColKey(colSettingsActiveKey);
+        try { localStorage.removeItem(colSettingsStorageKey(key)); } catch (e) {}
+        delete _colSettingsCache[key];
+        delete _colPlanCache[key];
         renderColSettingsPanel();
       }
 

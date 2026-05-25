@@ -189,40 +189,69 @@ function insertTechOperationMatrix(matrix, targetCellA1) {
     for (let g = 1; g < w; g++) mergeByRow[r][c + g] = 0;
   });
 
-  // Write row by row: batch normal cells with setValues, write merge
-  // top-left cells one at a time with setValue, skip ghost cells.
-  for (let r = 0; r < numRows; r++) {
-    const absRow    = startRow + r;
+  // Parse each row into segments: 'n' = normal run, 'm' = merge top-left.
+  const allSegs = matrix.map((rowData, ri) => {
+    const absRow = startRow + ri;
     const rowMerges = mergeByRow[absRow] || {};
-    const rowData   = matrix[r];
-    let dataIdx = 0, absCol = startCol, segStart = -1;
-    const segVals = [];
+    const segs = [];
+    let dataIdx = 0, absCol = startCol, segStart = -1, segVals = [];
 
-    const flushSeg = () => {
+    const flushNormal = () => {
       if (segStart >= 0 && segVals.length) {
-        sheet.getRange(absRow, segStart, 1, segVals.length).setValues([segVals.slice()]);
-        segStart = -1; segVals.length = 0;
+        segs.push({ type: 'n', col: segStart, len: segVals.length, vals: segVals.slice() });
+        segStart = -1; segVals = [];
       }
     };
 
     while (dataIdx < rowData.length) {
       const mw = rowMerges[absCol];
       if (mw === 0) {
-        // Ghost cell of a merge — skip without consuming data
-        flushSeg(); absCol++;
+        flushNormal(); absCol++;
       } else if (mw >= 2) {
-        // Top-left of a horizontal merge — write alone, jump over ghost cols
-        flushSeg();
-        sheet.getRange(absRow, absCol, 1, 1).setValue(rowData[dataIdx++]);
+        flushNormal();
+        segs.push({ type: 'm', col: absCol, val: rowData[dataIdx++] });
         absCol += mw;
       } else {
-        // Normal cell
         if (segStart < 0) segStart = absCol;
         segVals.push(rowData[dataIdx++]);
         absCol++;
       }
     }
-    flushSeg();
+    flushNormal();
+    return segs;
+  });
+
+  // When all rows share the same segment structure, write each normal segment
+  // as one multi-row setValues call instead of N separate calls.
+  const tmpl = allSegs[0];
+  const uniform = numRows === 1 || allSegs.every((segs) =>
+    segs.length === tmpl.length &&
+    segs.every((s, i) => s.type === tmpl[i].type && s.col === tmpl[i].col &&
+      (s.type === 'n' ? s.len === tmpl[i].len : true))
+  );
+
+  if (uniform) {
+    tmpl.forEach((seg, si) => {
+      if (seg.type === 'n') {
+        sheet.getRange(startRow, seg.col, numRows, seg.len)
+          .setValues(allSegs.map((rowSegs) => rowSegs[si].vals));
+      } else {
+        allSegs.forEach((rowSegs, ri) => {
+          sheet.getRange(startRow + ri, seg.col).setValue(rowSegs[si].val);
+        });
+      }
+    });
+  } else {
+    allSegs.forEach((segs, ri) => {
+      const absRow = startRow + ri;
+      segs.forEach((seg) => {
+        if (seg.type === 'n') {
+          sheet.getRange(absRow, seg.col, 1, seg.len).setValues([seg.vals]);
+        } else {
+          sheet.getRange(absRow, seg.col).setValue(seg.val);
+        }
+      });
+    });
   }
 
   sheet.getRange(startRow + numRows, startCol).activate();
