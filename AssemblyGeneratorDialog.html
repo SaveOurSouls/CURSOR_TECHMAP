@@ -122,6 +122,12 @@
     .op-times  { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-top: 5px; }
     .op-times input { font-size: 12px; padding: 5px 6px; }
     .op-empty { color: #a0aec0; font-size: 12px; padding: 4px 0; }
+    .op-match {
+      font-size: 11px; margin: 4px 0 2px;
+      display: flex; align-items: center; gap: 4px;
+    }
+    .op-match.found  { color: #065f46; }
+    .op-match.not-found { color: #9ca3af; }
 
     /* ── Chain ── */
     .chain-list { display: flex; flex-direction: column; gap: 3px; font-size: 12px; }
@@ -248,6 +254,7 @@
 
 <script>
   let D = null;
+  const matchedOps = {};  // opType → matched op record
 
   // ── Init ────────────────────────────────────────────────────
   function init(raw) {
@@ -382,8 +389,12 @@
     card.innerHTML = active.map((opType, i) => buildOpItem(opType, i + 1)).join('');
 
     active.forEach(opType => {
-      const opSel = document.getElementById(`opSel_${opType}`);
-      if (opSel) opSel.addEventListener('change', () => fillTimes(opType, opSel.value));
+      const tmplSel = document.getElementById(`tmplSel_${opType}`);
+      if (tmplSel) {
+        // Auto-match on initial render
+        onTemplateSelect(opType);
+        tmplSel.addEventListener('change', () => onTemplateSelect(opType));
+      }
     });
   }
 
@@ -391,30 +402,19 @@
     const label    = D.opLabels[opType] || opType;
     const tmplOpts = '<option value="">— не выбран —</option>' +
       (D.templates || []).map(t =>
-        `<option value="${esc(t.id)}">${esc(t.title)}${t.category ? ' ['+esc(t.category)+']' : ''}</option>`
+        `<option value="${esc(t.id)}">${esc(t.title)}</option>`
       ).join('');
-
-    const opOpts = '<option value="">— не выбрана —</option>' +
-      (D.ops || []).map(o => {
-        const val = `${esc(o.opNumber)}|${esc(o.opName)}|${esc(o.tPrep)}|${esc(o.tOp)}|${esc(o.tMachine)}`;
-        return `<option value="${val}">${esc(o.label || o.opName)}</option>`;
-      }).join('');
 
     return `
       <div class="op-item">
         <div class="op-badge">${num}</div>
         <div>
           <div class="op-title">${esc(label)}</div>
-          <div class="op-fields">
-            <div>
-              <label class="field-label">Шаблон (_TC_LIBRARY)</label>
-              <select id="tmplSel_${opType}">${tmplOpts}</select>
-            </div>
-            <div>
-              <label class="field-label">Операция (БД.ОП)</label>
-              <select id="opSel_${opType}">${opOpts}</select>
-            </div>
+          <div class="field-group">
+            <label class="field-label">Шаблон (_TC_LIBRARY)</label>
+            <select id="tmplSel_${opType}">${tmplOpts}</select>
           </div>
+          <div id="opMatch_${opType}" class="op-match not-found">— выберите шаблон —</div>
           <div class="op-times">
             <div>
               <label class="field-label">Вр.подг, сек</label>
@@ -433,13 +433,44 @@
       </div>`;
   }
 
-  function fillTimes(opType, encoded) {
-    if (!encoded) return;
-    const p = encoded.split('|');
-    // opNumber|opName|tPrep|tOp|tMachine
-    setVal(`tPrep_${opType}`,   p[2] || '');
-    setVal(`tOp_${opType}`,     p[3] || '');
-    setVal(`tMachine_${opType}`,p[4] || '');
+  // Auto-match БД.ОП record by template title similarity
+  function onTemplateSelect(opType) {
+    const tmplSel  = document.getElementById(`tmplSel_${opType}`);
+    const infoEl   = document.getElementById(`opMatch_${opType}`);
+    if (!tmplSel || !infoEl) return;
+
+    const tmpl   = (D.templates || []).find(t => t.id === tmplSel.value);
+    const title  = tmpl ? (tmpl.title + ' ' + (tmpl.category || '')) : '';
+    const matched = matchOpByTitle(title);
+
+    matchedOps[opType] = matched || null;
+
+    if (matched) {
+      infoEl.textContent = `✓ БД.ОП: ${matched.opName}${matched.opNumber ? ' | ' + matched.opNumber : ''}`;
+      infoEl.className   = 'op-match found';
+      setVal(`tPrep_${opType}`,    matched.tPrep    || '');
+      setVal(`tOp_${opType}`,      matched.tOp      || '');
+      setVal(`tMachine_${opType}`, matched.tMachine  || '');
+    } else if (title) {
+      infoEl.textContent = '— операция в БД.ОП не найдена, введите времена вручную';
+      infoEl.className   = 'op-match not-found';
+    } else {
+      infoEl.textContent = '— выберите шаблон —';
+      infoEl.className   = 'op-match not-found';
+    }
+  }
+
+  function matchOpByTitle(title) {
+    const ops = D.ops || [];
+    if (!title || !ops.length) return null;
+    const tl = title.toLowerCase();
+    let best = null, bestScore = 0;
+    for (const op of ops) {
+      const words = (op.opName || '').toLowerCase().split(/[\s|,._\-]+/).filter(w => w.length > 2);
+      const score = words.filter(w => tl.includes(w)).length;
+      if (score > bestScore) { bestScore = score; best = op; }
+    }
+    return bestScore >= 1 ? best : null;
   }
 
   function setVal(id, v) {
@@ -514,15 +545,14 @@
 
     const active = getActiveOps();
     const ops = active.map(opType => {
-      const encoded = (document.getElementById(`opSel_${opType}`) || {}).value || '';
-      const parts   = encoded.split('|');
+      const matched = matchedOps[opType] || null;
       return {
         type:       opType,
         templateId: (document.getElementById(`tmplSel_${opType}`) || {}).value || '',
-        opNum:      parts[0] || '',
-        tPrep:      (document.getElementById(`tPrep_${opType}`)    || {}).value || parts[2] || '',
-        tOp:        (document.getElementById(`tOp_${opType}`)      || {}).value || parts[3] || '',
-        tMachine:   (document.getElementById(`tMachine_${opType}`) || {}).value || parts[4] || '',
+        opNum:      matched ? (matched.opNumber || '') : '',
+        tPrep:      (document.getElementById(`tPrep_${opType}`)    || {}).value || '',
+        tOp:        (document.getElementById(`tOp_${opType}`)      || {}).value || '',
+        tMachine:   (document.getElementById(`tMachine_${opType}`) || {}).value || '',
       };
     });
 
