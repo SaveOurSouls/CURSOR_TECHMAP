@@ -4,8 +4,8 @@
   dataSheetName: '_TC_TECHOPS_DB',
   metaHeaders: ['key', 'value'],
   dataHeaders: ['tabKey', 'displayText', 'normalizedSearch', 'exportJson', 'sourceSheet', 'sortKey', 'extra1', 'extra2', 'extra3', 'extra4', 'extra5', 'extra6', 'extra7'],
-  cacheKeyPrefix: 'techmap-techops-db-v6',
-  schemaVersion: 6,
+  cacheKeyPrefix: 'techmap-techops-db-v7',
+  schemaVersion: 7,
   cacheChunkSize: 80000,
   cacheTtlSeconds: 21600,
   tabs: {
@@ -576,7 +576,10 @@ function buildTechOperationsObRecord_(row, headerMap, sourceSheet, namedColumns)
 
 function buildTechOperationsOpRecord_(row, headerMap, sourceSheet, namedColumns) {
   const number = getTechOperationsCellByAliases_(row, headerMap, ['номер', 'number']);
-  const name = getTechOperationsCellByAliases_(row, headerMap, ['название', 'name']);
+  const name   = getTechOperationsCellByAliases_(row, headerMap, ['название', 'name']);
+  const tOp    = getTechOperationsCellByAliases_(row, headerMap, ['время операции', 'время операции, сек', 'время операции сек']);
+  const tPrep  = getTechOperationsCellByAliases_(row, headerMap, ['время подготовки, сек', 'время подготовки сек', 'время подготовки']);
+  const tMach  = getTechOperationsCellByAliases_(row, headerMap, ['время машины, сек/оп; сек/м', 'время машины сек/оп; сек/м', 'время машины']);
 
   // Display as "Название | Номер" so list is sorted and shown by name first
   const displayText = joinTechOperationsParts_([name, number], ' | ');
@@ -592,7 +595,10 @@ function buildTechOperationsOpRecord_(row, headerMap, sourceSheet, namedColumns)
     exportValues: (namedColumns || []).map(({ index }) => normalizeString_(row[index]) || ''),
     sourceSheet,
     opNumber: number,
-    opName: name,
+    opName:   name,
+    tOp:      tOp   || '',
+    tPrep:    tPrep || '',
+    tMachine: tMach || '',
   };
 }
 
@@ -714,9 +720,9 @@ function writeTechOperationsSnapshotToSheets_(snapshot) {
       record.sortKey || '',
       record.terManufacturer || record.opNumber || record.obType || '',
       record.terSeries       || record.opName   || '',
-      record.terComponent    || '',
-      record.terType    || record.coaxWire   || '',
-      record.terArticle || record.coaxType   || '',
+      record.terComponent    || record.tOp      || '',
+      record.terType    || record.coaxWire  || record.tPrep    || '',
+      record.terArticle || record.coaxType  || record.tMachine || '',
       record.coaxMfr         || '',
       record.coaxArticle     || '',
     ]);
@@ -784,12 +790,15 @@ function loadTechOperationsSnapshotFromSheets_() {
             terSeries:       row[7] || '',
             opName:          row[7] || '',
             terComponent:    row[8] || '',
-            terType:      row[9]  || '',
-            terArticle:   row[10] || '',
-            coaxWire:     row[9]  || '',
-            coaxType:     row[10] || '',
-            coaxMfr:      row[11] || '',
-            coaxArticle:  row[12] || '',
+            tOp:             row[8] || '',
+            terType:         row[9]  || '',
+            coaxWire:        row[9]  || '',
+            tPrep:           row[9]  || '',
+            terArticle:      row[10] || '',
+            coaxType:        row[10] || '',
+            tMachine:        row[10] || '',
+            coaxMfr:         row[11] || '',
+            coaxArticle:     row[12] || '',
           });
         });
     }

@@ -69,6 +69,8 @@ function onOpen() {
     .createMenu(TECHMAP_APP.menuTitle)
     .addItem('Открыть рабочую панель', 'showWorkspaceSidebar')
     .addItem('Сохранить выделение как шаблон', 'showSaveTemplateDialog')
+    .addSeparator()
+    .addItem('Генератор техкарт сборки', 'showAssemblyGeneratorDialog')
     .addToUi();
 }
 

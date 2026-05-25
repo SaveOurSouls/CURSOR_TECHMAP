@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
+      font-size: 13px;
+      color: #1a1a2e;
+      background: #f5f7fb;
+      margin: 0;
+      padding: 12px 14px 14px;
+    }
+
+    h3 {
+      font-size: 13px;
+      font-weight: 700;
+      color: #1e3a5f;
+      margin: 14px 0 6px;
+      padding-bottom: 4px;
+      border-bottom: 1px solid #dde3ef;
+      letter-spacing: .02em;
+    }
+    h3:first-child { margin-top: 0; }
+
+    /* ── Cards ── */
+    .card {
+      background: #fff;
+      border: 1px solid #e0e6f0;
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 10px;
+    }
+
+    /* ── Info grid (Таблица1 preview) ── */
+    .info-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px 16px;
+    }
+    .info-row { display: contents; }
+    .info-label { color: #6b7a99; font-size: 12px; }
+    .info-val   { font-weight: 600; word-break: break-all; }
+
+    /* ── Components table ── */
+    .spy-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .spy-table th {
+      background: #f0f3fa;
+      color: #6b7a99;
+      font-weight: 600;
+      text-align: left;
+      padding: 4px 6px;
+      border-bottom: 1px solid #e0e6f0;
+    }
+    .spy-table td { padding: 3px 6px; border-bottom: 1px solid #f0f3fa; }
+    .spy-table tr:last-child td { border-bottom: none; }
+    .badge {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 600;
+      background: #e8f0fe;
+      color: #2563eb;
+    }
+    .badge.wire   { background: #fff3e0; color: #c45d00; }
+    .badge.term   { background: #e8f5e9; color: #1a7a2e; }
+    .badge.conn   { background: #fce4ec; color: #b71c1c; }
+
+    /* ── Form fields ── */
+    label.field-label {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      color: #6b7a99;
+      margin: 8px 0 3px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+
+    input[type=text], input[type=number], select {
+      width: 100%;
+      padding: 6px 8px;
+      border: 1px solid #d1d9ec;
+      border-radius: 6px;
+      font-size: 13px;
+      font-family: inherit;
+      color: #1a1a2e;
+      background: #fff;
+      transition: border-color .15s;
+    }
+    input:focus, select:focus {
+      outline: none;
+      border-color: #2563eb;
+      box-shadow: 0 0 0 2px rgba(37,99,235,.12);
+    }
+
+    .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+
+    /* ── Operation rows ── */
+    .op-row {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 6px 10px;
+      align-items: start;
+      padding: 8px 0;
+      border-bottom: 1px solid #f0f3fa;
+    }
+    .op-row:last-child { border-bottom: none; padding-bottom: 0; }
+    .op-row-left { display: flex; align-items: center; gap: 8px; }
+    .op-num {
+      width: 22px; height: 22px;
+      border-radius: 50%;
+      background: #2563eb;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .op-num.disabled { background: #c8d0e0; }
+    .op-label { font-weight: 600; font-size: 12px; }
+    .op-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .op-times  { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-top: 4px; }
+    .op-times input { font-size: 12px; padding: 4px 6px; }
+
+    /* ── Toggle ── */
+    .toggle-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .toggle-row input[type=checkbox] { width: 16px; height: 16px; cursor: pointer; accent-color: #2563eb; }
+    .toggle-row label { font-weight: 600; font-size: 13px; cursor: pointer; }
+
+    /* ── Preview chain ── */
+    .chain {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 12px;
+    }
+    .chain-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .chain-arrow { color: #2563eb; font-size: 14px; }
+    .chain-label {
+      background: #eef2ff;
+      border: 1px solid #c7d2fe;
+      border-radius: 6px;
+      padding: 3px 8px;
+      color: #1e3a5f;
+    }
+    .chain-sub { color: #6b7a99; font-size: 11px; }
+
+    /* ── Buttons ── */
+    .actions { display: flex; gap: 8px; margin-top: 12px; }
+    button {
+      flex: 1;
+      padding: 9px 14px;
+      border: 0;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      transition: background .15s;
+    }
+    .btn-primary {
+      background: #2563eb;
+      color: #fff;
+    }
+    .btn-primary:hover { background: #1d4ed8; }
+    .btn-primary:disabled { background: #93b4f5; cursor: not-allowed; }
+    .btn-secondary {
+      background: #e8f0fe;
+      color: #1d4ed8;
+    }
+    .btn-secondary:hover { background: #dbeafe; }
+
+    /* ── Status ── */
+    #status {
+      margin-top: 8px;
+      min-height: 16px;
+      font-size: 12px;
+      color: #2563eb;
+      font-weight: 500;
+    }
+    #status.error { color: #c5221f; }
+
+    /* ── Warn ── */
+    .warn {
+      background: #fff8e1;
+      border: 1px solid #ffe082;
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 12px;
+      color: #7a5200;
+      margin-bottom: 8px;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═══ ШАПКА СБОРКИ ═══════════════════════════════════════ -->
+<h3>Шапка сборки (Таблица1)</h3>
+<div class="card" id="assemblyInfoCard">
+  <div id="assemblyInfoGrid" class="info-grid"></div>
+</div>
+
+<!-- ═══ СОСТАВ СПЯ ════════════════════════════════════════ -->
+<h3>Состав СПЯ</h3>
+<div class="card" id="spyCard">
+  <table class="spy-table" id="spyTable">
+    <thead><tr><th>Тип</th><th>Наименование</th><th>Арт.</th><th>Кол.</th><th>Ст.</th></tr></thead>
+    <tbody id="spyTbody"></tbody>
+  </table>
+</div>
+
+<!-- ═══ ПАРАМЕТРЫ ════════════════════════════════════════ -->
+<h3>Параметры провода</h3>
+<div class="card">
+  <label class="field-label">Провод (из СПЯ)</label>
+  <select id="wireSelect"></select>
+  <div class="row2" style="margin-top:6px">
+    <div>
+      <label class="field-label">Длина, мм</label>
+      <input type="number" id="lengthInput" placeholder="100" min="1" />
+    </div>
+    <div>
+      <label class="field-label">Кол-во, шт</label>
+      <input type="number" id="wireQtyInput" placeholder="1" min="1" value="1" />
+    </div>
+  </div>
+</div>
+
+<!-- ═══ СТОРОНА А ═══════════════════════════════════════ -->
+<h3>Сторона А</h3>
+<div class="card">
+  <div class="row2">
+    <div>
+      <label class="field-label">Терминал (из СПЯ)</label>
+      <select id="termSelectA"></select>
+    </div>
+    <div>
+      <label class="field-label">Разъём / Корпус (из СПЯ)</label>
+      <select id="connSelectA"></select>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ СТОРОНА В ═══════════════════════════════════════ -->
+<h3>Сторона В</h3>
+<div class="card">
+  <div class="toggle-row">
+    <input type="checkbox" id="sideBEnabled" />
+    <label for="sideBEnabled">Включить сторону В</label>
+  </div>
+  <div id="sideBFields" style="display:none">
+    <div class="row2">
+      <div>
+        <label class="field-label">Терминал (из СПЯ)</label>
+        <select id="termSelectB"></select>
+      </div>
+      <div>
+        <label class="field-label">Разъём / Корпус (из СПЯ)</label>
+        <select id="connSelectB"></select>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ ОПЕРАЦИИ ════════════════════════════════════════ -->
+<h3>Операции</h3>
+<div class="card" id="opsCard"></div>
+
+<!-- ═══ ЦЕПОЧКА РЕЗУЛЬТАТОВ ════════════════════════════ -->
+<h3>Цепочка результатов</h3>
+<div class="card">
+  <div class="chain" id="chainPreview"></div>
+</div>
+
+<!-- ═══ ДЕЙСТВИЯ ════════════════════════════════════════ -->
+<div class="actions">
+  <button class="btn-secondary" onclick="google.script.host.close()">Отмена</button>
+  <button class="btn-primary" id="generateBtn" onclick="generate()">Создать техкарты</button>
+</div>
+<div id="status"></div>
+
+<script>
+  let D = null;  // initialData parsed
+
+  // ── Init ────────────────────────────────────────────────
+  function init(raw) {
+    D = raw;
+    renderAssemblyInfo();
+    renderSpyTable();
+    renderWireSelect();
+    renderComponentSelects();
+    renderOpsCard();
+    renderChain();
+  }
+
+  // ── Assembly info ────────────────────────────────────────
+  function renderAssemblyInfo() {
+    const grid = document.getElementById('assemblyInfoGrid');
+    const info = D.assemblyInfo || {};
+    const entries = Object.entries(info);
+    if (!entries.length) {
+      grid.innerHTML = '<span style="color:#999;font-size:12px">Именованный диапазон «Таблица1» не найден</span>';
+      return;
+    }
+    grid.innerHTML = entries.map(([k, v]) =>
+      `<span class="info-label">${esc(k)}</span><span class="info-val">${esc(String(v ?? ''))}</span>`
+    ).join('');
+  }
+
+  // ── SPY Table ────────────────────────────────────────────
+  function renderSpyTable() {
+    const tbody = document.getElementById('spyTbody');
+    const comps = D.components || [];
+    if (!comps.length) {
+      tbody.innerHTML = '<tr><td colspan="5" style="color:#999;text-align:center;padding:8px">Именованный диапазон «СПЯ» не найден</td></tr>';
+      return;
+    }
+    tbody.innerHTML = comps.map(c => {
+      const badgeCls = typeBadgeClass(c.type);
+      return `<tr>
+        <td><span class="badge ${badgeCls}">${esc(c.type)}</span></td>
+        <td>${esc(c.name)}</td>
+        <td style="color:#6b7a99">${esc(c.art)}</td>
+        <td>${esc(String(c.qty))}</td>
+        <td>${esc(c.side)}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  function typeBadgeClass(t) {
+    const lc = (t || '').toLowerCase();
+    if (lc.includes('провод') || lc.includes('wire')) return 'wire';
+    if (lc.includes('терминал') || lc.includes('terminal')) return 'term';
+    if (lc.includes('соед') || lc.includes('conn')) return 'conn';
+    return '';
+  }
+
+  // ── Wire select ──────────────────────────────────────────
+  function renderWireSelect() {
+    const sel = document.getElementById('wireSelect');
+    const wires = getComponentsByTypes(['провод', 'wire']);
+    sel.innerHTML = '<option value="">— не выбран —</option>' +
+      wires.map(c => `<option value="${c.id}">${esc(c.name)}${c.art ? ' / ' + esc(c.art) : ''}</option>`).join('');
+
+    // Auto-select first wire
+    if (wires.length === 1) sel.value = wires[0].id;
+
+    // Auto-fill length from component or assemblyInfo
+    const lenField = document.getElementById('lengthInput');
+    if (wires.length === 1 && wires[0].length) lenField.value = wires[0].length;
+    else {
+      // Try to find a "Длина" key in assemblyInfo
+      const info = D.assemblyInfo || {};
+      for (const [k, v] of Object.entries(info)) {
+        if (k.toLowerCase().includes('длина') || k.toLowerCase().includes('length')) {
+          lenField.value = Number(v) || '';
+          break;
+        }
+      }
+    }
+    const qtyField = document.getElementById('wireQtyInput');
+    if (wires.length === 1) qtyField.value = wires[0].qty || 1;
+
+    sel.addEventListener('change', () => {
+      const w = getCompById(sel.value);
+      if (w) {
+        if (w.length) document.getElementById('lengthInput').value = w.length;
+        document.getElementById('wireQtyInput').value = w.qty || 1;
+      }
+      renderChain();
+    });
+    document.getElementById('lengthInput').addEventListener('input', renderChain);
+  }
+
+  // ── Terminal / Connector selects ─────────────────────────
+  function renderComponentSelects() {
+    const terminals = getComponentsByTypes(['терминал', 'terminal']);
+    const connectors = getComponentsByTypes(['соед', 'conn', 'корпус', 'housing']);
+
+    const termOptAll = '<option value="">— нет —</option>' +
+      terminals.map(c => `<option value="${c.id}">${esc(c.name)}${c.art ? ' / ' + esc(c.art) : ''}${c.side ? ' [' + esc(c.side) + ']' : ''}</option>`).join('');
+    const connOptAll = '<option value="">— нет —</option>' +
+      connectors.map(c => `<option value="${c.id}">${esc(c.name)}${c.art ? ' / ' + esc(c.art) : ''}${c.side ? ' [' + esc(c.side) + ']' : ''}</option>`).join('');
+
+    document.getElementById('termSelectA').innerHTML = termOptAll;
+    document.getElementById('connSelectA').innerHTML = connOptAll;
+    document.getElementById('termSelectB').innerHTML = termOptAll;
+    document.getElementById('connSelectB').innerHTML = connOptAll;
+
+    // Auto-select by side
+    const termA = terminals.find(c => c.side === 'А' || c.side === 'A');
+    const connA = connectors.find(c => c.side === 'А' || c.side === 'A');
+    const termB = terminals.find(c => c.side === 'В' || c.side === 'B');
+    const connB = connectors.find(c => c.side === 'В' || c.side === 'B');
+
+    if (termA) document.getElementById('termSelectA').value = termA.id;
+    else if (terminals.length === 1) document.getElementById('termSelectA').value = terminals[0].id;
+    if (connA) document.getElementById('connSelectA').value = connA.id;
+    else if (connectors.length === 1) document.getElementById('connSelectA').value = connectors[0].id;
+    if (termB) document.getElementById('termSelectB').value = termB.id;
+    if (connB) document.getElementById('connSelectB').value = connB.id;
+
+    ['termSelectA','connSelectA','termSelectB','connSelectB'].forEach(id =>
+      document.getElementById(id).addEventListener('change', () => { renderOpsCard(); renderChain(); })
+    );
+
+    document.getElementById('sideBEnabled').addEventListener('change', function() {
+      document.getElementById('sideBFields').style.display = this.checked ? '' : 'none';
+      renderOpsCard();
+      renderChain();
+    });
+  }
+
+  // ── Operations card ──────────────────────────────────────
+  function renderOpsCard() {
+    const card = document.getElementById('opsCard');
+    const sideB = document.getElementById('sideBEnabled').checked;
+
+    const allOps = [
+      { type: 'cutWire',  label: 'Резка',                     always: true  },
+      { type: 'prsTermA', label: 'Опрессовка терминалов (А)', sideA: true   },
+      { type: 'insTermA', label: 'Монтаж терминалов (А)',     sideA: true   },
+      { type: 'prsTermB', label: 'Опрессовка терминалов (В)', sideB: true   },
+      { type: 'insTermB', label: 'Монтаж терминалов (В)',     sideB: true   },
+    ];
+
+    const termA = document.getElementById('termSelectA').value;
+    const termB = document.getElementById('termSelectB').value;
+
+    const visibleOps = allOps.filter(op => {
+      if (op.always) return true;
+      if (op.sideA) return !!termA;
+      if (op.sideB) return sideB && !!termB;
+      return false;
+    });
+
+    card.innerHTML = visibleOps.map((op, i) => buildOpRow(op, i + 1)).join('');
+
+    // Wire up op selects to auto-fill times
+    visibleOps.forEach(op => {
+      const sel = document.getElementById(`opSel_${op.type}`);
+      if (sel) sel.addEventListener('change', () => fillOpTimes(op.type, sel.value));
+    });
+  }
+
+  function buildOpRow(op, num) {
+    const ops = D.ops || [];
+    const opOptions = '<option value="">— не выбрана —</option>' +
+      ops.map(o => `<option value="${esc(o.opNumber + '|' + o.opName + '|' + o.tPrep + '|' + o.tOp + '|' + o.tMachine)}">${esc(o.label || (o.opName + ' | ' + o.opNumber))}</option>`).join('');
+
+    const tmplOptions = '<option value="">— не выбран —</option>' +
+      (D.templates || []).map(t => `<option value="${esc(t.id)}">${esc(t.title)}${t.category ? ' [' + esc(t.category) + ']' : ''}</option>`).join('');
+
+    return `
+      <div class="op-row">
+        <div class="op-row-left">
+          <span class="op-num">${num}</span>
+          <span class="op-label">${esc(op.label)}</span>
+        </div>
+        <div>
+          <div class="op-fields">
+            <div>
+              <label class="field-label">Шаблон</label>
+              <select id="tmplSel_${op.type}">${tmplOptions}</select>
+            </div>
+            <div>
+              <label class="field-label">Операция (БД.ОП)</label>
+              <select id="opSel_${op.type}">${opOptions}</select>
+            </div>
+          </div>
+          <div class="op-times">
+            <div>
+              <label class="field-label">Вр. подг., сек</label>
+              <input type="number" id="tPrep_${op.type}" placeholder="0" min="0" />
+            </div>
+            <div>
+              <label class="field-label">Вр. оп., сек</label>
+              <input type="number" id="tOp_${op.type}" placeholder="0" min="0" />
+            </div>
+            <div>
+              <label class="field-label">Вр. маш., сек</label>
+              <input type="number" id="tMachine_${op.type}" placeholder="0" min="0" />
+            </div>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function fillOpTimes(opType, encodedVal) {
+    if (!encodedVal) return;
+    const parts = encodedVal.split('|');
+    // Format: opNumber|opName|tPrep|tOp|tMachine
+    const tPrep   = parts[2] || '';
+    const tOp     = parts[3] || '';
+    const tMachine= parts[4] || '';
+    const tPrepEl   = document.getElementById(`tPrep_${opType}`);
+    const tOpEl     = document.getElementById(`tOp_${opType}`);
+    const tMachEl   = document.getElementById(`tMachine_${opType}`);
+    if (tPrepEl)   tPrepEl.value   = tPrep;
+    if (tOpEl)     tOpEl.value     = tOp;
+    if (tMachEl)   tMachEl.value   = tMachine;
+  }
+
+  // ── Chain preview ─────────────────────────────────────────
+  function renderChain() {
+    const div = document.getElementById('chainPreview');
+    const cfg = buildConfig();
+    if (!cfg) { div.innerHTML = '<span style="color:#999">Заполните параметры</span>'; return; }
+
+    const items = [];
+    let prev = '';
+
+    for (const op of cfg.ops) {
+      const result = computeResult(op.type, cfg, prev);
+      items.push({ label: D.opLabels[op.type] || op.type, result });
+      prev = result;
+    }
+
+    if (!items.length) { div.innerHTML = '<span style="color:#999">Нет активных операций</span>'; return; }
+
+    div.innerHTML = items.map((item, i) => `
+      <div class="chain-item">
+        ${i > 0 ? '<span class="chain-arrow">↓</span>' : '<span style="width:14px"></span>'}
+        <div>
+          <span class="chain-label">${esc(item.label)}</span>
+          <span class="chain-sub">&nbsp;→&nbsp;${esc(item.result)}</span>
+        </div>
+      </div>`
+    ).join('');
+  }
+
+  function computeResult(opType, cfg, prev) {
+    const wire = cfg.wireName || '';
+    const len  = cfg.length ? `${cfg.length}мм` : '';
+    const ws   = [wire, len].filter(Boolean).join(' ');
+    const sA = cfg.sideA || {};
+    const sB = cfg.sideB || {};
+    switch (opType) {
+      case 'cutWire':  return ws;
+      case 'prsTermA': return [ws, sA.termName].filter(Boolean).join(' + ');
+      case 'insTermA': return [prev, sA.connName].filter(Boolean).join(' → ') + ' ст.А';
+      case 'prsTermB': return [ws, sB.termName].filter(Boolean).join(' + ');
+      case 'insTermB': return [prev, sB.connName].filter(Boolean).join(' → ') + ' ст.В';
+      default:         return prev;
+    }
+  }
+
+  // ── Build config ──────────────────────────────────────────
+  function buildConfig() {
+    const wireId = document.getElementById('wireSelect').value;
+    const wire   = getCompById(wireId);
+    const length = Number(document.getElementById('lengthInput').value) || 0;
+    const wireQty= Number(document.getElementById('wireQtyInput').value) || 1;
+
+    const sideB  = document.getElementById('sideBEnabled').checked;
+    const termA  = getCompById(document.getElementById('termSelectA').value);
+    const connA  = getCompById(document.getElementById('connSelectA').value);
+    const termB  = sideB ? getCompById(document.getElementById('termSelectB').value) : null;
+    const connB  = sideB ? getCompById(document.getElementById('connSelectB').value) : null;
+
+    // Active ops (those with template selected)
+    const allOpTypes = ['cutWire','prsTermA','insTermA','prsTermB','insTermB'];
+    const ops = allOpTypes
+      .filter(t => document.getElementById(`tmplSel_${t}`))
+      .map(t => {
+        const tmplSel = document.getElementById(`tmplSel_${t}`);
+        const opSelEl = document.getElementById(`opSel_${t}`);
+        if (!tmplSel) return null;
+        const opVal   = opSelEl ? opSelEl.value : '';
+        const opParts = opVal ? opVal.split('|') : [];
+        return {
+          type:       t,
+          templateId: tmplSel.value,
+          opNum:      opParts[0] || '',
+          opName:     opParts[1] || '',
+          tPrep:      (document.getElementById(`tPrep_${t}`)    || {}).value || opParts[2] || '',
+          tOp:        (document.getElementById(`tOp_${t}`)      || {}).value || opParts[3] || '',
+          tMachine:   (document.getElementById(`tMachine_${t}`) || {}).value || opParts[4] || '',
+        };
+      })
+      .filter(op => op && op.templateId);
+
+    const infoEntries = Object.entries(D.assemblyInfo || {});
+    const indexKey  = infoEntries.find(([k]) => /индекс|index/i.test(k));
+    const nameKey   = infoEntries.find(([k]) => /наименование|название|name/i.test(k));
+
+    return {
+      assemblyIndex: indexKey  ? String(indexKey[1]  ?? '') : '',
+      assemblyName:  nameKey   ? String(nameKey[1]   ?? '') : '',
+      wireName:  wire ? wire.name : '',
+      wireArt:   wire ? wire.art  : '',
+      wireQty,
+      length,
+      sideA: termA || connA ? {
+        termName: termA ? termA.name : '',
+        termArt:  termA ? termA.art  : '',
+        termQty:  termA ? termA.qty  : 1,
+        connName: connA ? connA.name : '',
+        connArt:  connA ? connA.art  : '',
+        connQty:  connA ? connA.qty  : 1,
+      } : null,
+      sideB: sideB && (termB || connB) ? {
+        termName: termB ? termB.name : '',
+        termArt:  termB ? termB.art  : '',
+        termQty:  termB ? termB.qty  : 1,
+        connName: connB ? connB.name : '',
+        connArt:  connB ? connB.art  : '',
+        connQty:  connB ? connB.qty  : 1,
+      } : null,
+      ops,
+    };
+  }
+
+  // ── Generate ──────────────────────────────────────────────
+  function generate() {
+    const cfg = buildConfig();
+    if (!cfg) { setStatus('Заполните параметры.', true); return; }
+    if (!cfg.ops.length) { setStatus('Выберите хотя бы один шаблон.', true); return; }
+    if (!cfg.length) { setStatus('Укажите длину провода.', true); return; }
+
+    setStatus('Создаю техкарты...', false);
+    document.getElementById('generateBtn').disabled = true;
+
+    google.script.run
+      .withSuccessHandler(result => {
+        setStatus(`Создано листов: ${result.sheets.length} — ${result.sheets.join(', ')}`, false);
+        setTimeout(() => google.script.host.close(), 1200);
+      })
+      .withFailureHandler(err => {
+        setStatus(err.message || 'Ошибка генерации.', true);
+        document.getElementById('generateBtn').disabled = false;
+      })
+      .generateAssemblyTechCards(cfg);
+  }
+
+  // ── Helpers ───────────────────────────────────────────────
+  function getComponentsByTypes(types) {
+    return (D.components || []).filter(c => {
+      const lc = (c.type || '').toLowerCase();
+      return types.some(t => lc.includes(t));
+    });
+  }
+
+  function getCompById(id) {
+    if (!id) return null;
+    return (D.components || []).find(c => c.id === id) || null;
+  }
+
+  function setStatus(msg, isError) {
+    const el = document.getElementById('status');
+    el.textContent = msg;
+    el.className = isError ? 'error' : '';
+  }
+
+  function esc(s) {
+    return String(s || '')
+      .replace(/&/g,'&amp;')
+      .replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;');
+  }
+
+  // ── Boot ──────────────────────────────────────────────────
+  init(<?!= initialData ?>);
+</script>
+</body>
+</html>
