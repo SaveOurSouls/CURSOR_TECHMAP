@@ -150,14 +150,72 @@ function insertTechOperationMatrix(matrix, targetCellA1) {
     return 'ОШИБКА: Не выбрана стартовая ячейка.';
   }
 
-  ensureSheetCapacity_(
-    sheet,
-    startCell.getRow() + matrix.length - 1,
-    startCell.getColumn() + width - 1
-  );
+  const startRow = startCell.getRow();
+  const startCol = startCell.getColumn();
 
-  sheet.getRange(startCell.getRow(), startCell.getColumn(), matrix.length, width).setValues(matrix);
-  sheet.getRange(startCell.getRow() + matrix.length, startCell.getColumn()).activate();
+  // Scan generously to detect any merged cells in the target area.
+  const scanCols = width + 20;
+  ensureSheetCapacity_(sheet, startRow + matrix.length - 1, startCol + scanCols - 1);
+
+  const mergedRanges = sheet
+    .getRange(startRow, startCol, matrix.length, scanCols)
+    .getMergedRanges();
+
+  if (!mergedRanges.length) {
+    // Fast path: no merged cells in the write area.
+    sheet.getRange(startRow, startCol, matrix.length, width).setValues(matrix);
+    sheet.getRange(startRow + matrix.length, startCol).activate();
+    return `Успешно выгружено ${matrix.length} строк.`;
+  }
+
+  // Build a lookup: absRow → Map<absCol, mergeWidth>.
+  // Only the first cell (top-left) of each merge is keyed; ghost cells are skipped.
+  const mergeByRow = {};
+  mergedRanges.forEach((mr) => {
+    const r = mr.getRow();
+    const c = mr.getColumn();
+    const w = mr.getNumColumns();
+    if (!mergeByRow[r]) mergeByRow[r] = {};
+    mergeByRow[r][c] = w;
+    // Mark ghost cells so we know to skip them.
+    for (let g = 1; g < w; g++) {
+      mergeByRow[r][c + g] = 0; // 0 = ghost
+    }
+  });
+
+  // Write row by row, padding empty strings into ghost cells so each
+  // setValues call aligns correctly with the sheet's merge structure.
+  for (let r = 0; r < matrix.length; r++) {
+    const absRow = startRow + r;
+    const rowMerges = mergeByRow[absRow] || {};
+    const rowData = matrix[r];
+
+    const padded = [];
+    let dataIdx = 0;
+    let absCol = startCol;
+
+    while (dataIdx < rowData.length) {
+      const mw = rowMerges[absCol];
+      if (mw === 0) {
+        // Ghost cell — insert placeholder and advance without consuming data.
+        padded.push('');
+        absCol++;
+      } else if (mw > 1) {
+        // First cell of a horizontal merge — consume one data value, pad ghosts.
+        padded.push(rowData[dataIdx++]);
+        for (let g = 1; g < mw; g++) padded.push('');
+        absCol += mw;
+      } else {
+        // Normal cell.
+        padded.push(rowData[dataIdx++]);
+        absCol++;
+      }
+    }
+
+    sheet.getRange(absRow, startCol, 1, padded.length).setValues([padded]);
+  }
+
+  sheet.getRange(startRow + matrix.length, startCol).activate();
   return `Успешно выгружено ${matrix.length} строк.`;
 }
 
