@@ -412,53 +412,36 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
       }
       Logger.log('  CutWire: %s wires / %s slots (before insert)', wires.length, slots.length);
 
-      // Попытка вставить дополнительные строки, если слотов меньше чем проводов.
-      // insertRowsAfter падает на шаблонах с объединёнными ячейками — перехватываем ошибку.
-      let insertOk = true;
+      // Вставляем дополнительные строки если слотов меньше чем проводов.
+      // insertRowsAfterSafe_ снимает объединения, вставляет, копирует, восстанавливает.
       if (wires.length > slots.length) {
         const insertCount = wires.length - slots.length;
         const lastSlot    = slots[slots.length - 1];
-        try {
-          const srcRange = sheet.getRange(kompRow + 1, 1, 1, lastCol);
-          sheet.insertRowsAfter(lastSlot + 1, insertCount);
-          for (let i = 0; i < insertCount; i++) {
-            srcRange.copyTo(sheet.getRange(lastSlot + 2 + i, 1, 1, lastCol));
-            slots.push(lastSlot + 1 + i);
-          }
+        const ok = insertRowsAfterSafe_(sheet, lastSlot + 1, insertCount, kompRow + 1);
+        if (ok) {
+          for (let i = 0; i < insertCount; i++) slots.push(lastSlot + 1 + i);
           const adj = r => (r >= 0 && r > lastSlot) ? r + insertCount : r;
           sfInRow   = adj(sfInRow);
           resultRow = adj(resultRow);
           sfOutRow  = adj(sfOutRow);
           timeRow   = adj(timeRow);
-          lastRow  = sheet.getLastRow();
-          values   = sheet.getRange(1, 1, lastRow, lastCol).getValues();
-          formulas = sheet.getRange(1, 1, lastRow, lastCol).getFormulas();
+          lastRow   = sheet.getLastRow();
+          values    = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+          formulas  = sheet.getRange(1, 1, lastRow, lastCol).getFormulas();
           Logger.log('  Inserted %s rows → slots %s', insertCount, JSON.stringify(slots.map(r => r + 1)));
-        } catch (e) {
-          insertOk = false;
-          Logger.log('  insertRowsAfter failed (%s) — fallback to multi-line in 1 slot', e.message);
+        } else {
+          Logger.log('  insertRowsAfterSafe_ returned false — filling available slots only');
         }
       }
 
-      if (!insertOk) {
-        // Резервный вариант: объединённые ячейки мешают вставке строк.
-        // Записываем все провода в первый доступный слот через \n.
-        const r0 = slots[0];
-        setCell(r0, cols.art,  wires.map(w => w.art  || w.name || '').join('\n'));
-        setCell(r0, cols.name, wires.map(w => w.name || '').join('\n'));
-        setCell(r0, cols.norm, wires.map(w =>
-          (w.qty > 0 && w.length > 0) ? w.qty * w.length / 1000 : (w.length || '')
-        ).join('\n'));
-      } else {
-        for (let i = 0; i < wires.length; i++) {
-          const w = wires[i];
-          const r = slots[i];
-          const normVal = (w.qty > 0 && w.length > 0) ? w.qty * w.length / 1000 : (w.length || '');
-          if (seqCol >= 0) setCell(r, seqCol, i + 1);
-          setCell(r, cols.art,  w.art  || w.name || '');
-          setCell(r, cols.name, w.name || '');
-          setCell(r, cols.norm, normVal !== '' ? normVal : '');
-        }
+      for (let i = 0; i < Math.min(wires.length, slots.length); i++) {
+        const w = wires[i];
+        const r = slots[i];
+        const normVal = (w.qty > 0 && w.length > 0) ? w.qty * w.length / 1000 : (w.length || '');
+        if (seqCol >= 0) setCell(r, seqCol, i + 1);
+        setCell(r, cols.art,  w.art  || w.name || '');
+        setCell(r, cols.name, w.name || '');
+        setCell(r, cols.norm, normVal !== '' ? normVal : '');
       }
     } else if (comp) {
       setCell(kompRow, cols.art,  comp.art);
@@ -534,6 +517,54 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
       }
     }
   }
+}
+
+// Inserts `count` rows after `afterRow` (1-based), handling merged cells gracefully.
+// Unmerges the whole sheet, inserts rows, copies srcRow template, then restores merges.
+// Returns true on success, false if an unrecoverable error occurs.
+function insertRowsAfterSafe_(sheet, afterRow, count, srcRow) {
+  const lastCol = sheet.getLastColumn();
+
+  // Snapshot all merged ranges before touching anything
+  const merges = sheet.getMergedRanges().map(r => ({
+    r1: r.getRow(), r2: r.getLastRow(),
+    c1: r.getColumn(), c2: r.getLastColumn()
+  }));
+
+  // Break all merges so insert/copy can proceed cleanly
+  merges.forEach(m => {
+    try {
+      sheet.getRange(m.r1, m.c1, m.r2 - m.r1 + 1, m.c2 - m.c1 + 1).breakApart();
+    } catch (e) { /* already unmerged or out of range */ }
+  });
+
+  try {
+    sheet.insertRowsAfter(afterRow, count);
+    // srcRow is 1-based; after insertion it may have shifted
+    const adjustedSrc = srcRow > afterRow ? srcRow + count : srcRow;
+    const srcRange = sheet.getRange(adjustedSrc, 1, 1, lastCol);
+    for (let i = 1; i <= count; i++) {
+      srcRange.copyTo(sheet.getRange(afterRow + i, 1, 1, lastCol));
+    }
+  } catch (e) {
+    Logger.log('  insertRowsAfterSafe_: insert/copy failed (%s)', e.message);
+    // Restore merges before returning failure
+    merges.forEach(m => {
+      try { sheet.getRange(m.r1, m.c1, m.r2 - m.r1 + 1, m.c2 - m.c1 + 1).merge(); } catch (e2) {}
+    });
+    return false;
+  }
+
+  // Restore merges with row positions adjusted for the insertion
+  merges.forEach(m => {
+    let r1 = m.r1, r2 = m.r2;
+    if (r1 > afterRow)      { r1 += count; r2 += count; }  // entirely below → shift
+    else if (r2 > afterRow) { r2 += count; }                // spans insertion → extend
+    // entirely above afterRow → unchanged
+    try { sheet.getRange(r1, m.c1, r2 - r1 + 1, m.c2 - m.c1 + 1).merge(); } catch (e) {}
+  });
+
+  return true;
 }
 
 // Looks backward from dataRow to find a header row with Артикул/ГРН/Норма columns.
