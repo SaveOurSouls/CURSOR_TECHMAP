@@ -526,7 +526,8 @@ function insertRowsAfterSafe_(sheet, afterRow, count, srcRow) {
   const lastCol = sheet.getLastColumn();
 
   // Snapshot all merged ranges before touching anything
-  const merges = sheet.getMergedRanges().map(r => ({
+  const fullRange = sheet.getRange(1, 1, sheet.getLastRow(), sheet.getLastColumn());
+  const merges = fullRange.getMergedRanges().map(r => ({
     r1: r.getRow(), r2: r.getLastRow(),
     c1: r.getColumn(), c2: r.getLastColumn()
   }));
