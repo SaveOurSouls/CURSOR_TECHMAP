@@ -207,20 +207,25 @@ function buildCombinedWireData_(wires) {
 }
 
 function computeOperationResult_(opType, config, prevResult, wireData) {
-  const wd = wireData || {};
-  const sA = config.sideA || {};
-  const sB = config.sideB || {};
+  const wd    = wireData || {};
+  const sA    = config.sideA || {};
+  const sB    = config.sideB || {};
+  const wires = Array.isArray(config.wires) ? config.wires : [];
 
   switch (opType) {
     case 'cutWire': {
-      // Build a readable summary: "Name 150мм; Name2 200мм"
-      const names   = String(wd.name   || '').split('\n').filter(Boolean);
-      const lengths = String(wd.length || '').split('\n').filter(Boolean);
-      const parts   = names.map((n, i) => {
-        const l = lengths[i] ? `${lengths[i]}мм` : '';
-        return [n, l].filter(Boolean).join(' ');
-      });
-      return parts.length ? parts.join('; ') : (wd.name || '');
+      // Format: "art lengthмм; art2 length2мм; ..."
+      const src = wires.length > 0 ? wires : (function() {
+        const arts    = String(wd.art || wd.name || '').split('\n').filter(Boolean);
+        const lengths = String(wd.length || '').split('\n').filter(Boolean);
+        return arts.map((a, i) => ({ art: a, length: lengths[i] || '' }));
+      })();
+      const parts = src.map(w => {
+        const a = (w.art || w.name || '').trim();
+        const l = w.length ? `${w.length}мм` : '';
+        return [a, l].filter(Boolean).join(' ');
+      }).filter(Boolean);
+      return parts.join('; ') || (wd.art || wd.name || '');
     }
     case 'prsTermA': return [prevResult, sA.termName].filter(Boolean).join(' + ');
     case 'insTermA': return [prevResult, sA.connName].filter(Boolean).join(' → ') + ' ст.А';
@@ -290,6 +295,9 @@ function replacePlaceholders_(sheet, phMap) {
 // ── Structural fill ───────────────────────────────────────────
 // Fills Комплектующие / Полуфабрикат / time rows by detecting the card structure.
 // Works without placeholder tokens so templates remain usable for manual work.
+//
+// CUT_WIRE Комплектующие: one row per wire (Артикул, ГРН, Норма=qty×length/1000 м)
+// Результат / Расчетное время Наименование: "art lengthмм; ..."  Норма: time value
 function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisResult, wireData) {
   const lastRow = sheet.getLastRow();
   const lastCol = sheet.getLastColumn();
@@ -302,16 +310,22 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
   const sB = config.sideB || {};
   const wd = wireData || {};
 
+  // Component data for non-CUT_WIRE ops (single row fill)
   const comp =
-      opType === 'cutWire'  ? { art: wd.art  || wd.name  || '', name: wd.name  || wd.art  || '', norm: String(wd.length  || '') }
-    : opType === 'prsTermA' ? { art: sA.termArt || sA.termName || '', name: sA.termName || '', norm: String(sA.termQty || '') }
+      opType === 'prsTermA' ? { art: sA.termArt || sA.termName || '', name: sA.termName || '', norm: String(sA.termQty || '') }
     : opType === 'insTermA' ? { art: sA.connArt || sA.connName || '', name: sA.connName || '', norm: String(sA.connQty || '') }
     : opType === 'prsTermB' ? { art: sB.termArt || sB.termName || '', name: sB.termName || '', norm: String(sB.termQty || '') }
     : opType === 'insTermB' ? { art: sB.connArt || sB.connName || '', name: sB.connName || '', norm: String(sB.connQty || '') }
     : null;
 
+  // Individual wire list for CUT_WIRE (each wire → own row)
+  const isCutWire = opType === 'cutWire';
+  const wires = isCutWire && Array.isArray(config.wires) && config.wires.length > 0
+      ? config.wires : null;
+
   // ── Debug: dump all non-empty rows ───────────────────────────
-  Logger.log('=== fillStructure: sheet=%s opType=%s comp=%s', sheet.getName(), opType, JSON.stringify(comp));
+  Logger.log('=== fillStructure: sheet=%s opType=%s comp=%s wires=%s',
+    sheet.getName(), opType, JSON.stringify(comp), JSON.stringify(wires));
   for (let r = 0; r < values.length; r++) {
     const cells = [];
     for (let c = 0; c < values[r].length; c++) {
@@ -322,19 +336,20 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
   }
 
   // ── Global column indices (scan ALL cells) ────────────────────
-  let artCol = -1, grnCol = -1, normCol = -1;
+  let artCol = -1, grnCol = -1, normCol = -1, seqCol = -1;
   for (let r = 0; r < values.length; r++) {
     for (let c = 0; c < values[r].length; c++) {
       const cell = String(values[r][c] || '').toLowerCase().trim();
-      if (artCol  < 0 && (cell === 'артикул'     || cell === 'art'       || cell === 'обозначение')) artCol  = c;
-      if (grnCol  < 0 && (cell === 'грн'          || cell === 'наименование' || cell === 'название'
+      if (artCol  < 0 && (cell === 'артикул'  || cell === 'art' || cell === 'обозначение'))          artCol  = c;
+      if (grnCol  < 0 && (cell === 'грн'       || cell === 'наименование' || cell === 'название'
                           || (cell.includes('грн') && cell.length < 6)))                              grnCol  = c;
-      if (normCol < 0 && (cell === 'норма'        || cell === 'кол-во'    || cell === 'qty'
+      if (normCol < 0 && (cell === 'норма'     || cell === 'кол-во' || cell === 'qty'
                           || (cell.includes('норма') && cell.length < 10)))                           normCol = c;
+      if (seqCol  < 0 && cell === '№')                                                               seqCol  = c;
     }
     if (artCol >= 0 && grnCol >= 0 && normCol >= 0) break;
   }
-  Logger.log('  GlobalCols: art=%s grn=%s norm=%s', artCol, grnCol, normCol);
+  Logger.log('  GlobalCols: art=%s grn=%s norm=%s seq=%s', artCol, grnCol, normCol, seqCol);
 
   // ── Section detection (scan ALL cells in each row) ────────────
   let kompRow = -1, sfInRow = -1, resultRow = -1, sfOutRow = -1, timeRow = -1;
@@ -342,14 +357,12 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
     for (let c = 0; c < values[r].length; c++) {
       const cell = String(values[r][c] || '').toLowerCase().trim();
       if (!cell) continue;
-
-      if (timeRow   < 0 && /расч[её]?тное\s*врем/i.test(cell))                { timeRow   = r; break; }
+      if (timeRow   < 0 && /расч[её]?тное\s*врем/i.test(cell))               { timeRow   = r; break; }
       if (resultRow < 0 && timeRow < 0 && /\bрезультат\b/.test(cell))          { resultRow = r; break; }
       if (kompRow   < 0 && cell.includes('комплектующ'))                        { kompRow   = r; break; }
       if (/полуфабрикат|^п\/ф/.test(cell)) {
-        if (resultRow >= 0 || timeRow >= 0) { if (sfOutRow < 0) sfOutRow = r; }
-        else                               { if (sfInRow  < 0) sfInRow  = r; }
-        break;
+        if (resultRow >= 0 || timeRow >= 0) { if (sfOutRow < 0) { sfOutRow = r; break; } }
+        else                               { if (sfInRow  < 0) { sfInRow  = r; break; } }
       }
     }
   }
@@ -376,11 +389,41 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
   }
 
   // ── Fill Комплектующие ────────────────────────────────────────
-  if (kompRow >= 0 && comp) {
+  if (kompRow >= 0) {
     const cols = resolveCols(kompRow);
-    setCell(kompRow, cols.art,  comp.art);
-    setCell(kompRow, cols.name, comp.name);
-    setCell(kompRow, cols.norm, comp.norm);
+
+    if (wires) {
+      // CUT_WIRE: fill one row per wire
+      // Find blank component slots between kompRow and the next section boundary
+      const bound = Math.min(
+        ...[sfInRow, resultRow, timeRow].filter(x => x > kompRow).concat([values.length])
+      );
+      const slots = [kompRow];
+      for (let r = kompRow + 1; r < bound; r++) {
+        const lbl = String(values[r][0] || '').trim();
+        if (lbl && !/^\d+$/.test(lbl)) break; // non-numeric label = boundary row
+        const artV  = cols.art  >= 0 ? String(values[r][cols.art]  || '').trim() : '';
+        const grnV  = cols.name >= 0 ? String(values[r][cols.name] || '').trim() : '';
+        if (!artV && !grnV) slots.push(r);
+        else break;
+      }
+      Logger.log('  CutWire: %s wires / %s slots', wires.length, slots.length);
+
+      for (let i = 0; i < wires.length; i++) {
+        const w = wires[i];
+        const r = i < slots.length ? slots[i] : slots[slots.length - 1];
+        // Норма = кол-во × длина / 1000 метров
+        const normVal = (w.qty > 0 && w.length > 0) ? w.qty * w.length / 1000 : (w.length || '');
+        if (seqCol >= 0) setCell(r, seqCol, i + 1);
+        setCell(r, cols.art,  w.art  || w.name || '');
+        setCell(r, cols.name, w.name || '');
+        setCell(r, cols.norm, normVal !== '' ? normVal : '');
+      }
+    } else if (comp) {
+      setCell(kompRow, cols.art,  comp.art);
+      setCell(kompRow, cols.name, comp.name);
+      setCell(kompRow, cols.norm, comp.norm);
+    }
   }
 
   // ── Fill input Полуфабрикат ───────────────────────────────────
@@ -389,16 +432,19 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
     setCell(sfInRow, cols.name >= 0 ? cols.name : cols.art, prevResult);
   }
 
-  // ── Fill Результат section ────────────────────────────────────
-  if (resultRow >= 0 && thisResult) {
+  // ── Fill Результат → Полуфабрикат (Наименование = thisResult) ─
+  if (sfOutRow >= 0 && thisResult) {
+    const cols  = resolveCols(sfOutRow);
+    const nameC = cols.name >= 0 ? cols.name : cols.art;
+    setCell(sfOutRow, nameC, thisResult);
+  } else if (resultRow >= 0 && thisResult && sfOutRow < 0) {
+    // No separate Полуфабрикат row — fill resultRow itself (or next blank row)
     const cols  = resolveCols(resultRow);
     const nameC = cols.name >= 0 ? cols.name : cols.art;
-    // Fill the result row itself; if its name-column already has non-formula text, try next row
     const existing = nameC >= 0 ? String(values[resultRow][nameC] || '').trim() : '';
     if (!existing) {
       setCell(resultRow, nameC, thisResult);
     } else {
-      // Result header has text in name col — look for the first empty data row right below
       let filled = false;
       for (let r = resultRow + 1; r < Math.min(values.length, resultRow + 4) && !filled; r++) {
         const v = nameC >= 0 ? String(values[r][nameC] || '').trim() : '';
@@ -407,33 +453,37 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
           filled = true;
         }
       }
-      if (!filled) setCell(resultRow, nameC, thisResult); // fallback: overwrite
+      if (!filled) setCell(resultRow, nameC, thisResult);
     }
   }
 
-  // ── Fill output Полуфабрикат (after Результат section) ───────
-  if (sfOutRow >= 0 && thisResult) {
-    const cols = resolveCols(sfOutRow);
-    setCell(sfOutRow, cols.name >= 0 ? cols.name : cols.art, thisResult);
-  }
-
-  // ── Fill time section ────────────────────────────────────────
-  // Collect ALL non-empty data rows after the time header, fill in order:
-  // 1 row → tOp; 2 rows → tPrep,tOp; 3+ rows → tPrep,tOp,tMachine
+  // ── Fill Расчетное время ─────────────────────────────────────
+  // Time data rows after "Расчетное время" header:
+  //   Наименование ← thisResult (wire description)
+  //   Норма        ← T_PREP / T_OP / T_MACHINE in order
   if (timeRow >= 0) {
     const timeDataRows = [];
     for (let r = timeRow + 1; r < values.length; r++) {
       if (values[r].some(c => String(c || '').trim())) timeDataRows.push(r);
       else if (timeDataRows.length > 0) break;
     }
+    Logger.log('  timeDataRows=%s', JSON.stringify(timeDataRows.map(r => r + 1)));
 
-    const tNormCol = normCol >= 0 ? normCol : (artCol >= 0 ? artCol + 1 : 1);
-    const tVals    = timeDataRows.length <= 1 ? [op.tOp   || '']
-                   : timeDataRows.length === 2 ? [op.tPrep || '', op.tOp || '']
-                   : [op.tPrep || '', op.tOp || '', op.tMachine || ''];
+    if (timeDataRows.length > 0) {
+      const cols     = resolveCols(timeDataRows[0]);
+      const tNormCol = cols.norm >= 0 ? cols.norm : normCol;
+      const tNameCol = cols.name >= 0 ? cols.name : grnCol;
 
-    for (let i = 0; i < timeDataRows.length && i < tVals.length; i++) {
-      setCell(timeDataRows[i], tNormCol, tVals[i]);
+      const tVals = timeDataRows.length <= 1 ? [op.tOp   || '']
+                  : timeDataRows.length === 2 ? [op.tPrep || '', op.tOp || '']
+                  : [op.tPrep || '', op.tOp || '', op.tMachine || ''];
+
+      for (let i = 0; i < timeDataRows.length && i < tVals.length; i++) {
+        const r = timeDataRows[i];
+        setCell(r, tNormCol, tVals[i]);
+        // First time row gets the wire description in Наименование
+        if (i === 0 && thisResult) setCell(r, tNameCol, thisResult);
+      }
     }
   }
 }

@@ -632,14 +632,14 @@
     const sB = cfg.sideB || {};
     switch (opType) {
       case 'cutWire': {
-        // Build a summary of all active wires for the chain preview
+        // Build a summary of all active wires for the chain preview (art + lengthмм)
         const aw = wireEntries.filter(w => w.compId);
         if (!aw.length) return '—';
         const parts = aw.map(w => {
           const c = getCompById(w.compId);
-          const n = c ? (c.name || c.art) : '?';
+          const a = c ? (c.art || c.name) : '?';
           const l = w.length ? `${w.length}мм` : '';
-          return [n, l].filter(Boolean).join(' ');
+          return [a, l].filter(Boolean).join(' ');
         });
         return parts.length === 1 ? parts[0] : parts.join('; ');
       }
