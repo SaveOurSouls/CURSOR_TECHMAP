@@ -12,10 +12,11 @@
       background: #f5f7fb;
       margin: 0;
       padding: 12px 14px 14px;
+      overflow-y: auto;
     }
 
     h3 {
-      font-size: 12px;
+      font-size: 11px;
       font-weight: 700;
       color: #4a5568;
       margin: 14px 0 5px;
@@ -29,7 +30,7 @@
       border: 1px solid #e2e8f0;
       border-radius: 8px;
       padding: 10px 12px;
-      margin-bottom: 10px;
+      margin-bottom: 8px;
     }
 
     /* ── Assembly info ── */
@@ -41,67 +42,84 @@
     /* ── SPY table ── */
     table { width: 100%; border-collapse: collapse; font-size: 12px; }
     th {
-      background: #f7fafc;
-      color: #718096;
-      font-weight: 600;
-      text-align: left;
-      padding: 4px 8px;
-      border-bottom: 1px solid #e2e8f0;
+      background: #f7fafc; color: #718096;
+      font-weight: 600; text-align: left;
+      padding: 4px 6px; border-bottom: 1px solid #e2e8f0;
     }
-    td { padding: 3px 8px; border-bottom: 1px solid #f7fafc; }
+    td { padding: 3px 6px; border-bottom: 1px solid #f7fafc; }
     tr:last-child td { border-bottom: none; }
 
     .badge {
-      display: inline-block;
-      padding: 1px 7px;
-      border-radius: 10px;
-      font-size: 11px;
-      font-weight: 600;
+      display: inline-block; padding: 1px 6px;
+      border-radius: 10px; font-size: 11px; font-weight: 600;
     }
-    .badge-wire { background: #fff3e0; color: #b45309; }
-    .badge-term { background: #ecfdf5; color: #065f46; }
-    .badge-conn { background: #eff6ff; color: #1d4ed8; }
-    .badge-other{ background: #f3f4f6; color: #374151; }
+    .badge-wire  { background: #fff3e0; color: #b45309; }
+    .badge-term  { background: #ecfdf5; color: #065f46; }
+    .badge-conn  { background: #eff6ff; color: #1d4ed8; }
+    .badge-other { background: #f3f4f6; color: #374151; }
 
     /* ── Form ── */
     .field-label {
-      display: block;
-      font-size: 11px;
-      font-weight: 600;
-      color: #718096;
-      margin: 0 0 3px;
-      text-transform: uppercase;
-      letter-spacing: .04em;
+      display: block; font-size: 11px; font-weight: 600;
+      color: #718096; margin: 0 0 3px;
+      text-transform: uppercase; letter-spacing: .04em;
     }
-
     select, input[type=number], input[type=text] {
-      width: 100%;
-      padding: 6px 8px;
-      border: 1px solid #cbd5e0;
-      border-radius: 6px;
-      font-size: 13px;
-      font-family: inherit;
-      color: #2d3748;
-      background: #fff;
+      width: 100%; padding: 6px 8px;
+      border: 1px solid #cbd5e0; border-radius: 6px;
+      font-size: 13px; font-family: inherit; color: #2d3748; background: #fff;
     }
     select:focus, input:focus {
-      outline: none;
-      border-color: #3b82f6;
+      outline: none; border-color: #3b82f6;
       box-shadow: 0 0 0 2px rgba(59,130,246,.15);
     }
 
     .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+    .row3 { display: grid; grid-template-columns: 1fr 80px 60px; gap: 8px; }
+
+    /* ── Wire entries ── */
+    .wire-entry {
+      display: grid;
+      grid-template-columns: 1fr 80px 60px 28px;
+      gap: 8px;
+      align-items: end;
+      padding: 6px 0;
+      border-bottom: 1px solid #f0f4f8;
+    }
+    .wire-entry:last-child { border-bottom: none; }
+    .wire-entry-num {
+      font-size: 11px; color: #a0aec0; font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .btn-remove {
+      width: 28px; height: 32px; flex: none;
+      border: 1px solid #fed7d7; border-radius: 6px;
+      background: #fff5f5; color: #e53e3e;
+      font-size: 16px; line-height: 1; cursor: pointer;
+      padding: 0; display: flex; align-items: center; justify-content: center;
+    }
+    .btn-remove:hover { background: #fed7d7; }
+    .btn-add {
+      margin-top: 8px;
+      padding: 6px 12px; border: 1px dashed #93c5fd;
+      border-radius: 6px; background: #eff6ff; color: #1d4ed8;
+      font-size: 12px; font-weight: 600; cursor: pointer;
+      width: 100%;
+    }
+    .btn-add:hover { background: #dbeafe; }
 
     /* ── Toggle ── */
-    .toggle { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-    .toggle input[type=checkbox] { width: 16px; height: 16px; accent-color: #3b82f6; cursor: pointer; }
-    .toggle label { font-weight: 600; cursor: pointer; }
+    .toggle-row {
+      display: flex; align-items: center; gap: 8px;
+      margin: 6px 0 4px;
+    }
+    .toggle-row input[type=checkbox] { width: 16px; height: 16px; accent-color: #3b82f6; cursor: pointer; }
+    .toggle-row label { font-weight: 600; cursor: pointer; font-size: 13px; }
 
     /* ── Operations ── */
     .op-item {
       display: grid;
-      grid-template-columns: 28px 1fr;
+      grid-template-columns: 26px 1fr;
       gap: 0 10px;
       padding: 9px 0;
       border-bottom: 1px solid #f0f4f8;
@@ -109,24 +127,18 @@
     }
     .op-item:last-child { border-bottom: none; padding-bottom: 0; }
     .op-badge {
-      width: 24px; height: 24px;
-      border-radius: 50%;
-      background: #3b82f6;
-      color: #fff;
+      width: 22px; height: 22px; border-radius: 50%;
+      background: #3b82f6; color: #fff;
       font-size: 11px; font-weight: 700;
       display: flex; align-items: center; justify-content: center;
-      margin-top: 1px;
+      margin-top: 2px;
     }
-    .op-title { font-weight: 600; font-size: 12px; margin-bottom: 6px; color: #1e3a5f; }
-    .op-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .op-title  { font-weight: 600; font-size: 12px; margin-bottom: 5px; color: #1e3a5f; }
     .op-times  { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-top: 5px; }
     .op-times input { font-size: 12px; padding: 5px 6px; }
-    .op-empty { color: #a0aec0; font-size: 12px; padding: 4px 0; }
-    .op-match {
-      font-size: 11px; margin: 4px 0 2px;
-      display: flex; align-items: center; gap: 4px;
-    }
-    .op-match.found  { color: #065f46; }
+    .op-empty  { color: #a0aec0; font-size: 12px; padding: 4px 0; }
+    .op-match  { font-size: 11px; margin: 4px 0 2px; display: flex; align-items: center; gap: 4px; }
+    .op-match.found     { color: #065f46; }
     .op-match.not-found { color: #9ca3af; }
 
     /* ── Chain ── */
@@ -139,26 +151,21 @@
       display: flex; align-items: center; justify-content: center;
       flex-shrink: 0;
     }
-    .chain-op   { color: #718096; min-width: 140px; }
-    .chain-arrow{ color: #93c5fd; }
+    .chain-op     { color: #718096; min-width: 160px; }
+    .chain-arrow  { color: #93c5fd; }
     .chain-result { color: #1e40af; font-weight: 500; }
 
     /* ── Actions ── */
     .actions { display: flex; gap: 8px; margin-top: 12px; }
-    button {
-      flex: 1;
-      padding: 9px 12px;
-      border: 0;
-      border-radius: 8px;
-      font-size: 13px;
-      font-weight: 600;
-      font-family: inherit;
-      cursor: pointer;
+    button.btn-primary, button.btn-secondary {
+      flex: 1; padding: 9px 12px; border: 0;
+      border-radius: 8px; font-size: 13px; font-weight: 600;
+      font-family: inherit; cursor: pointer;
     }
-    .btn-primary  { background: #2563eb; color: #fff; }
-    .btn-primary:hover { background: #1d4ed8; }
+    .btn-primary   { background: #2563eb; color: #fff; }
+    .btn-primary:hover   { background: #1d4ed8; }
     .btn-primary:disabled { background: #93c5fd; cursor: not-allowed; }
-    .btn-secondary{ background: #eff6ff; color: #1d4ed8; }
+    .btn-secondary { background: #eff6ff; color: #1d4ed8; }
 
     #status { margin-top: 6px; min-height: 16px; font-size: 12px; color: #2563eb; font-weight: 500; }
     #status.error { color: #dc2626; }
@@ -168,73 +175,82 @@
       border-radius: 6px; padding: 6px 10px;
       font-size: 12px; color: #92400e; margin-bottom: 6px;
     }
-
     .sep { height: 1px; background: #e2e8f0; margin: 6px 0; }
-
     .field-group { margin-bottom: 6px; }
     .field-group:last-child { margin-bottom: 0; }
+
+    .qty-hint {
+      font-size: 11px; color: #4a9d6f; font-weight: 600;
+      margin-top: 3px; min-height: 14px;
+    }
   </style>
 </head>
 <body>
 
-<!-- ═══ ДАННЫЕ ИЗ ЛИСТА ═════════════════════════════════════ -->
+<!-- ═══ ДАННЫЕ ИЗ ЛИСТА ══════════════════════════════════════ -->
 <h3>Данные из листа</h3>
 <div class="card">
   <div id="assemblyInfoBlock"></div>
   <div class="sep"></div>
   <table>
-    <thead><tr><th>Тип</th><th>Название / Артикул</th><th>Кол-во</th></tr></thead>
+    <thead>
+      <tr><th>Тип</th><th>Название (ГРН)</th><th>Артикул</th><th>Кол-во</th></tr>
+    </thead>
     <tbody id="spyBody"></tbody>
   </table>
 </div>
 
-<!-- ═══ ПАРАМЕТРЫ ════════════════════════════════════════════ -->
-<h3>Параметры</h3>
+<!-- ═══ КАБЕЛИ ═══════════════════════════════════════════════ -->
+<h3>Кабели</h3>
 <div class="card">
+  <div id="wireList"></div>
+  <button class="btn-add" onclick="addWire()">+ Добавить кабель</button>
+</div>
 
-  <div class="row2" style="margin-bottom:8px">
-    <div class="field-group">
-      <label class="field-label">Провод</label>
-      <select id="wireSelect"></select>
-    </div>
-    <div class="row2">
-      <div class="field-group">
-        <label class="field-label">Длина, мм</label>
-        <input type="number" id="lengthInput" placeholder="150" min="1" />
-      </div>
-      <div class="field-group">
-        <label class="field-label">Кол-во</label>
-        <input type="number" id="wireQtyInput" value="1" min="1" />
-      </div>
-    </div>
-  </div>
-
-  <div class="sep"></div>
-
-  <div class="row2" style="margin-top:8px">
+<!-- ═══ СТОРОНА А ════════════════════════════════════════════ -->
+<h3>Сторона А — компоненты</h3>
+<div class="card">
+  <div class="row2">
     <div class="field-group">
       <label class="field-label">Терминал</label>
-      <select id="termSelect"></select>
+      <select id="termSelectA"></select>
+      <div id="termQtyHintA" class="qty-hint">—</div>
     </div>
     <div class="field-group">
       <label class="field-label">Разъём / Корпус</label>
-      <select id="connSelect"></select>
+      <select id="connSelectA"></select>
+      <div id="connQtyHintA" class="qty-hint">—</div>
     </div>
   </div>
-
-  <div class="sep" style="margin-top:8px"></div>
-
-  <div class="toggle" style="margin-top:8px">
-    <input type="checkbox" id="sideBEnabled" />
-    <label for="sideBEnabled">Сторона В (те же компоненты)</label>
-  </div>
-
 </div>
 
-<!-- ═══ ОПЕРАЦИИ (АВТО) ═══════════════════════════════════════ -->
+<!-- ═══ СТОРОНА В (ОПЦИОНАЛЬНО) ══════════════════════════════ -->
+<div class="toggle-row">
+  <input type="checkbox" id="sideBEnabled" />
+  <label for="sideBEnabled">Включить сторону В</label>
+</div>
+<div id="sideBBlock" style="display:none">
+  <h3>Сторона В — компоненты</h3>
+  <div class="card">
+    <div class="row2">
+      <div class="field-group">
+        <label class="field-label">Терминал</label>
+        <select id="termSelectB"></select>
+        <div id="termQtyHintB" class="qty-hint">—</div>
+      </div>
+      <div class="field-group">
+        <label class="field-label">Разъём / Корпус</label>
+        <select id="connSelectB"></select>
+        <div id="connQtyHintB" class="qty-hint">—</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ ОПЕРАЦИИ ══════════════════════════════════════════════ -->
 <h3>Операции</h3>
 <div class="card" id="opsCard">
-  <div class="op-empty">Выберите провод и компоненты — операции определятся автоматически</div>
+  <div class="op-empty">Добавьте кабель — появятся операции</div>
 </div>
 
 <!-- ═══ ЦЕПОЧКА ══════════════════════════════════════════════ -->
@@ -245,7 +261,7 @@
   </div>
 </div>
 
-<!-- ═══ ДЕЙСТВИЯ ════════════════════════════════════════════ -->
+<!-- ═══ ДЕЙСТВИЯ ═════════════════════════════════════════════ -->
 <div class="actions">
   <button class="btn-secondary" onclick="google.script.host.close()">Отмена</button>
   <button class="btn-primary" id="generateBtn" onclick="generate()">Создать техкарты</button>
@@ -254,29 +270,58 @@
 
 <script>
   let D = null;
-  const matchedOps = {};  // opType → matched op record
+  const matchedOps = {};  // opKey → matched op record
 
-  // ── Init ────────────────────────────────────────────────────
+  // Wire entries state
+  let wireEntries = [];   // [{idx, compId, length, qty}]
+  let nextWireIdx = 0;
+
+  // ── Init ─────────────────────────────────────────────────────
   function init(raw) {
     D = raw;
     renderAssemblyInfo();
     renderSpyTable();
-    renderWireSelect();
-    renderComponentSelects();
-    document.getElementById('sideBEnabled').addEventListener('change', refresh);
-    refresh();
+    populateComponentSelects();
+
+    document.getElementById('sideBEnabled').addEventListener('change', () => {
+      document.getElementById('sideBBlock').style.display =
+        document.getElementById('sideBEnabled').checked ? '' : 'none';
+      refresh();
+    });
+
+    ['termSelectA','connSelectA','termSelectB','connSelectB'].forEach(id => {
+      document.getElementById(id).addEventListener('change', refresh);
+    });
+
+    // Add first wire entry and auto-fill length from assembly name
+    addWire();
+    autoFillFirstWire();
   }
 
   function refresh() {
+    renderQtyHints();
     renderOpsCard();
     renderChain();
   }
 
-  // ── Assembly info ────────────────────────────────────────────
+  function renderQtyHints() {
+    const numWires = wireEntries.filter(w => w.compId).length;
+    const termTxt  = numWires > 0 ? `${numWires} шт (= кол-во кабелей)` : '—';
+    const connTxt  = '1 шт (на сторону)';
+    ['A','B'].forEach(side => {
+      const th = document.getElementById(`termQtyHint${side}`);
+      const ch = document.getElementById(`connQtyHint${side}`);
+      const hasTerm = document.getElementById(`termSelect${side}`)?.value;
+      const hasConn = document.getElementById(`connSelect${side}`)?.value;
+      if (th) th.textContent = hasTerm ? termTxt : '—';
+      if (ch) ch.textContent = hasConn ? connTxt : '—';
+    });
+  }
+
+  // ── Assembly info ─────────────────────────────────────────────
   function renderAssemblyInfo() {
-    const block = document.getElementById('assemblyInfoBlock');
-    const info  = D.assemblyInfo || {};
-    const entries = Object.entries(info).filter(([,v]) => v !== '' && v != null);
+    const block   = document.getElementById('assemblyInfoBlock');
+    const entries = Object.entries(D.assemblyInfo || {}).filter(([,v]) => v !== '' && v != null);
     if (!entries.length) {
       block.innerHTML = '<div class="warn">Таблица1 не найдена на активном листе</div>';
       return;
@@ -284,22 +329,22 @@
     block.innerHTML = '<div class="info-kv">' +
       entries.map(([k, v]) =>
         `<div class="info-pair"><span>${esc(k)}: </span><strong>${esc(String(v))}</strong></div>`
-      ).join('') +
-      '</div>';
+      ).join('') + '</div>';
   }
 
-  // ── SPY table ────────────────────────────────────────────────
+  // ── SPY table ─────────────────────────────────────────────────
   function renderSpyTable() {
     const tbody = document.getElementById('spyBody');
     const comps = D.components || [];
     if (!comps.length) {
-      tbody.innerHTML = '<tr><td colspan="3" style="color:#a0aec0;text-align:center;padding:8px">Таблица СПЯ не найдена</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="4" style="color:#a0aec0;text-align:center;padding:8px">СПЯ не найдена</td></tr>';
       return;
     }
     tbody.innerHTML = comps.map(c =>
       `<tr>
         <td><span class="badge ${badgeCls(c.type)}">${esc(c.type)}</span></td>
         <td>${esc(c.name)}</td>
+        <td style="color:#718096">${esc(c.art)}</td>
         <td>${esc(String(c.qty))}</td>
       </tr>`
     ).join('');
@@ -307,151 +352,221 @@
 
   function badgeCls(t) {
     const lc = (t || '').toLowerCase();
-    if (lc.includes('провод') || lc.includes('wire')) return 'badge-wire';
-    if (lc.includes('терминал') || lc.includes('terminal')) return 'badge-term';
-    if (lc.includes('соед') || lc.includes('conn') || lc.includes('разъ')) return 'badge-conn';
+    if (lc.includes('провод') || lc.includes('wire') || lc.includes('кабель')) return 'badge-wire';
+    if (lc.includes('терминал') || lc.includes('terminal') || lc.includes('контакт')) return 'badge-term';
+    if (lc.includes('соед') || lc.includes('conn') || lc.includes('разъ') || lc.includes('корпус')) return 'badge-conn';
     return 'badge-other';
   }
 
-  // ── Wire select ──────────────────────────────────────────────
-  function renderWireSelect() {
-    const sel   = document.getElementById('wireSelect');
-    const wires = getByTypes(['провод', 'wire', 'кабель', 'cable']);
-    sel.innerHTML = '<option value="">— не выбран —</option>' +
-      wires.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
-    if (wires.length >= 1) sel.value = wires[0].id;
-
-    // Auto-fill length from assembly name or component
-    const lenEl = document.getElementById('lengthInput');
-    if (!lenEl.value) {
-      // Try to extract length from assembly name (e.g. "Кабель CAN 150mm")
-      const asmName = Object.values(D.assemblyInfo || {}).map(v => String(v)).join(' ');
-      const match = asmName.match(/(\d+)\s*мм/i);
-      if (match) lenEl.value = match[1];
-      else if (wires.length === 1 && wires[0].length) lenEl.value = wires[0].length;
-    }
-
-    sel.addEventListener('change', refresh);
-    document.getElementById('lengthInput').addEventListener('input', refresh);
-    document.getElementById('wireQtyInput').addEventListener('input', refresh);
-  }
-
-  // ── Terminal / Connector selects ─────────────────────────────
-  function renderComponentSelects() {
+  // ── Component selects (side A & B) ───────────────────────────
+  function populateComponentSelects() {
     const terms = getByTypes(['терминал', 'terminal', 'контакт']);
     const conns = getByTypes(['соед', 'conn', 'разъ', 'корпус', 'housing']);
 
-    const tOpts = '<option value="">— нет —</option>' +
-      terms.map(c => `<option value="${c.id}">${esc(c.name)} (×${c.qty})</option>`).join('');
-    const cOpts = '<option value="">— нет —</option>' +
-      conns.map(c => `<option value="${c.id}">${esc(c.name)} (×${c.qty})</option>`).join('');
+    const noneOpt  = '<option value="">— нет —</option>';
+    const termOpts = noneOpt + terms.map(c =>
+      `<option value="${c.id}">${esc(c.name || c.art)} [${esc(c.art)}] ×${c.qty}</option>`
+    ).join('');
+    const connOpts = noneOpt + conns.map(c =>
+      `<option value="${c.id}">${esc(c.name || c.art)} [${esc(c.art)}] ×${c.qty}</option>`
+    ).join('');
 
-    document.getElementById('termSelect').innerHTML = tOpts;
-    document.getElementById('connSelect').innerHTML = cOpts;
+    ['termSelectA','termSelectB'].forEach(id => document.getElementById(id).innerHTML = termOpts);
+    ['connSelectA','connSelectB'].forEach(id => document.getElementById(id).innerHTML = connOpts);
 
-    if (terms.length >= 1) document.getElementById('termSelect').value = terms[0].id;
-    if (conns.length >= 1) document.getElementById('connSelect').value = conns[0].id;
-
-    // Auto-suggest side B if connector qty > 1
-    if (conns.length >= 1 && conns[0].qty > 1) {
-      document.getElementById('sideBEnabled').checked = true;
+    if (terms.length) {
+      document.getElementById('termSelectA').value = terms[0].id;
+      document.getElementById('termSelectB').value = terms[0].id;
     }
-
-    ['termSelect','connSelect'].forEach(id =>
-      document.getElementById(id).addEventListener('change', refresh)
-    );
+    if (conns.length) {
+      document.getElementById('connSelectA').value = conns[0].id;
+      document.getElementById('connSelectB').value = conns[0].id;
+    }
   }
 
-  // ── Auto-determine active operations ────────────────────────
-  function getActiveOps() {
-    const wire   = getCompById(document.getElementById('wireSelect').value);
-    const term   = getCompById(document.getElementById('termSelect').value);
-    const conn   = getCompById(document.getElementById('connSelect').value);
-    const sideB  = document.getElementById('sideBEnabled').checked;
+  // ── Wire list ─────────────────────────────────────────────────
+  function addWire() {
+    const idx = nextWireIdx++;
+    wireEntries.push({ idx, compId: '', length: 0, qty: 1 });
+    renderWireList();
+    refresh();
+  }
 
+  function removeWire(idx) {
+    wireEntries = wireEntries.filter(w => w.idx !== idx);
+    renderWireList();
+    refresh();
+  }
+
+  function renderWireList() {
+    const container = document.getElementById('wireList');
+    if (!wireEntries.length) {
+      container.innerHTML = '<div style="color:#a0aec0;font-size:12px;padding:4px 0">Нет кабелей</div>';
+      return;
+    }
+
+    const wires = getByTypes(['провод', 'wire', 'кабель', 'cable']);
+    const wireOpts = '<option value="">— выберите —</option>' +
+      wires.map(c => `<option value="${c.id}">${esc(c.name || c.art)} [${esc(c.art)}]</option>`).join('');
+
+    container.innerHTML = wireEntries.map((w, n) => `
+      <div class="wire-entry" id="wireEntry_${w.idx}">
+        <div class="field-group">
+          <div class="wire-entry-num">Кабель ${n + 1}</div>
+          <select id="wireComp_${w.idx}" onchange="onWireChange(${w.idx})">${wireOpts}</select>
+        </div>
+        <div class="field-group">
+          <label class="field-label">Длина, мм</label>
+          <input type="number" id="wireLen_${w.idx}" value="${w.length || ''}" min="1"
+                 onchange="onWireChange(${w.idx})" oninput="onWireChange(${w.idx})" />
+        </div>
+        <div class="field-group">
+          <label class="field-label">Кол-во</label>
+          <input type="number" id="wireQty_${w.idx}" value="${w.qty || 1}" min="1"
+                 onchange="onWireChange(${w.idx})" oninput="onWireChange(${w.idx})" />
+        </div>
+        <button class="btn-remove" onclick="removeWire(${w.idx})" title="Удалить">×</button>
+      </div>
+    `).join('');
+
+    // Restore selected values
+    wireEntries.forEach(w => {
+      const sel = document.getElementById(`wireComp_${w.idx}`);
+      if (sel && w.compId) sel.value = w.compId;
+    });
+  }
+
+  function onWireChange(idx) {
+    const entry = wireEntries.find(w => w.idx === idx);
+    if (!entry) return;
+    const sel = document.getElementById(`wireComp_${idx}`);
+    const len = document.getElementById(`wireLen_${idx}`);
+    const qty = document.getElementById(`wireQty_${idx}`);
+    if (sel) entry.compId = sel.value;
+    if (len) entry.length = Number(len.value) || 0;
+    if (qty) entry.qty    = Number(qty.value) || 1;
+    refresh();
+  }
+
+  function autoFillFirstWire() {
+    if (!wireEntries.length) return;
+    const w     = wireEntries[0];
+    const wires = getByTypes(['провод', 'wire', 'кабель', 'cable']);
+    if (wires.length) {
+      w.compId = wires[0].id;
+      // Try to extract length from assembly name
+      const asmName = Object.values(D.assemblyInfo || {}).map(v => String(v)).join(' ');
+      const match   = asmName.match(/(\d+)\s*мм/i);
+      if (match) w.length = Number(match[1]);
+      else if (wires[0].length) w.length = wires[0].length;
+    }
+    renderWireList();
+    refresh();
+  }
+
+  // ── Active ops (auto-determined) ─────────────────────────────
+  function getActiveOps() {
     const ops = [];
-    if (wire) ops.push('cutWire');
-    if (term) ops.push('prsTermA');
-    if (conn) ops.push('insTermA');
-    if (sideB && term) ops.push('prsTermB');
-    if (sideB && conn) ops.push('insTermB');
+    const activeWires = wireEntries.filter(w => w.compId);
+
+    // All wires go into ONE CUT_WIRE operation
+    if (activeWires.length > 0) {
+      const names = activeWires.map(w => {
+        const c = getCompById(w.compId);
+        return c ? (c.name || c.art) : '?';
+      });
+      const label = names.length === 1
+        ? `Резка — ${names[0]}`
+        : `Резка — ${names.length} кабелей (${names.join(', ')})`;
+      ops.push({ type: 'cutWire', opKey: 'cutWire', wireArrayIdx: -1, label });
+    }
+
+    const termA = getCompById(document.getElementById('termSelectA').value);
+    const connA = getCompById(document.getElementById('connSelectA').value);
+    const sideB = document.getElementById('sideBEnabled').checked;
+    const termB = sideB ? getCompById(document.getElementById('termSelectB').value) : null;
+    const connB = sideB ? getCompById(document.getElementById('connSelectB').value) : null;
+
+    if (termA) ops.push({ type: 'prsTermA', opKey: 'prsTermA', label: 'Опрессовка терминалов (А)' });
+    if (connA) ops.push({ type: 'insTermA', opKey: 'insTermA', label: 'Монтаж в разъём (А)'       });
+    if (sideB && termB) ops.push({ type: 'prsTermB', opKey: 'prsTermB', label: 'Опрессовка терминалов (В)' });
+    if (sideB && connB) ops.push({ type: 'insTermB', opKey: 'insTermB', label: 'Монтаж в разъём (В)'       });
+
     return ops;
   }
 
-  // ── Ops card ─────────────────────────────────────────────────
+  // ── Ops card ──────────────────────────────────────────────────
   function renderOpsCard() {
     const card   = document.getElementById('opsCard');
     const active = getActiveOps();
     if (!active.length) {
-      card.innerHTML = '<div class="op-empty">Выберите провод — появится минимум операция Резка</div>';
+      card.innerHTML = '<div class="op-empty">Добавьте кабель — появятся операции</div>';
       return;
     }
-    card.innerHTML = active.map((opType, i) => buildOpItem(opType, i + 1)).join('');
+    card.innerHTML = active.map((opSpec, i) => buildOpItem(opSpec, i + 1)).join('');
 
-    active.forEach(opType => {
-      const tmplSel = document.getElementById(`tmplSel_${opType}`);
-      if (tmplSel) {
-        // Auto-match on initial render
-        onTemplateSelect(opType);
-        tmplSel.addEventListener('change', () => onTemplateSelect(opType));
+    active.forEach(opSpec => {
+      const sel = document.getElementById(`tmplSel_${opSpec.opKey}`);
+      if (sel) {
+        onTemplateSelect(opSpec.opKey);
+        sel.addEventListener('change', () => onTemplateSelect(opSpec.opKey));
       }
     });
   }
 
-  function buildOpItem(opType, num) {
-    const label    = D.opLabels[opType] || opType;
+  function buildOpItem(opSpec, num) {
     const tmplOpts = '<option value="">— не выбран —</option>' +
       (D.templates || []).map(t =>
-        `<option value="${esc(t.id)}">${esc(t.title)}</option>`
+        `<option value="${esc(t.id)}">${esc(t.title)}${t.category ? ' / ' + esc(t.category) : ''}</option>`
       ).join('');
 
     return `
       <div class="op-item">
         <div class="op-badge">${num}</div>
         <div>
-          <div class="op-title">${esc(label)}</div>
+          <div class="op-title">${esc(opSpec.label)}</div>
           <div class="field-group">
             <label class="field-label">Шаблон (_TC_LIBRARY)</label>
-            <select id="tmplSel_${opType}">${tmplOpts}</select>
+            <select id="tmplSel_${opSpec.opKey}">${tmplOpts}</select>
           </div>
-          <div id="opMatch_${opType}" class="op-match not-found">— выберите шаблон —</div>
+          <div id="opMatch_${opSpec.opKey}" class="op-match not-found">— выберите шаблон —</div>
           <div class="op-times">
             <div>
               <label class="field-label">Вр.подг, сек</label>
-              <input type="number" id="tPrep_${opType}" placeholder="0" min="0" />
+              <input type="number" id="tPrep_${opSpec.opKey}" placeholder="0" min="0" />
             </div>
             <div>
               <label class="field-label">Вр.оп, сек</label>
-              <input type="number" id="tOp_${opType}" placeholder="0" min="0" />
+              <input type="number" id="tOp_${opSpec.opKey}" placeholder="0" min="0" />
             </div>
             <div>
               <label class="field-label">Вр.маш, сек</label>
-              <input type="number" id="tMachine_${opType}" placeholder="0" min="0" />
+              <input type="number" id="tMachine_${opSpec.opKey}" placeholder="0" min="0" />
             </div>
           </div>
         </div>
       </div>`;
   }
 
-  // Auto-match БД.ОП record by template title similarity
-  function onTemplateSelect(opType) {
-    const tmplSel  = document.getElementById(`tmplSel_${opType}`);
-    const infoEl   = document.getElementById(`opMatch_${opType}`);
-    if (!tmplSel || !infoEl) return;
+  // ── Template → op auto-match ──────────────────────────────────
+  function onTemplateSelect(opKey) {
+    const sel    = document.getElementById(`tmplSel_${opKey}`);
+    const infoEl = document.getElementById(`opMatch_${opKey}`);
+    if (!sel || !infoEl) return;
 
-    const tmpl   = (D.templates || []).find(t => t.id === tmplSel.value);
-    const title  = tmpl ? (tmpl.title + ' ' + (tmpl.category || '')) : '';
+    const tmpl    = (D.templates || []).find(t => t.id === sel.value);
+    const title   = tmpl ? (tmpl.title + ' ' + (tmpl.category || '')) : '';
     const matched = matchOpByTitle(title);
 
-    matchedOps[opType] = matched || null;
+    matchedOps[opKey] = matched || null;
 
     if (matched) {
       infoEl.textContent = `✓ БД.ОП: ${matched.opName}${matched.opNumber ? ' | ' + matched.opNumber : ''}`;
       infoEl.className   = 'op-match found';
-      setVal(`tPrep_${opType}`,    matched.tPrep    || '');
-      setVal(`tOp_${opType}`,      matched.tOp      || '');
-      setVal(`tMachine_${opType}`, matched.tMachine  || '');
-    } else if (title) {
+      setVal(`tPrep_${opKey}`,    matched.tPrep    || '');
+      setVal(`tOp_${opKey}`,      matched.tOp      || '');
+      setVal(`tMachine_${opKey}`, matched.tMachine || '');
+    } else if (title.trim()) {
       infoEl.textContent = '— операция в БД.ОП не найдена, введите времена вручную';
       infoEl.className   = 'op-match not-found';
     } else {
@@ -463,18 +578,15 @@
   function matchOpByTitle(title) {
     const ops = D.ops || [];
     if (!title || !ops.length) return null;
-
-    // Normalize: lowercase, replace separators with space
     const norm = s => (s || '').toLowerCase().replace(/[_\-|.+]/g, ' ').replace(/\s+/g, ' ').trim();
     const tl   = norm(title);
 
-    // Pass 1: exact substring — op name fully contained in template title or vice versa
+    // Pass 1: exact substring
     for (const op of ops) {
       const on = norm(op.opName);
       if (on && (tl.includes(on) || on.includes(tl))) return op;
     }
-
-    // Pass 2: word overlap, require ≥2 significant words (len>3)
+    // Pass 2: ≥2 significant words (len > 3)
     let best = null, bestScore = 0;
     for (const op of ops) {
       const words = norm(op.opName).split(/\s+/).filter(w => w.length > 3);
@@ -497,33 +609,43 @@
       list.innerHTML = '<span style="color:#a0aec0;font-size:12px">—</span>';
       return;
     }
-    const cfg  = buildConfig();
-    let prev   = '';
-    list.innerHTML = active.map((opType, i) => {
-      const result = computeResult(opType, cfg, prev);
-      const html = `
+    const cfg = buildConfig();
+    let prev  = '';
+
+    const rows = active.map((opSpec, i) => {
+      const result = computeResult(opSpec.type, cfg, prev, null);
+      prev = result;
+
+      return `
         <div class="chain-row">
           <div class="chain-num">${i+1}</div>
-          <span class="chain-op">${esc(D.opLabels[opType] || opType)}</span>
+          <span class="chain-op">${esc(opSpec.label)}</span>
           <span class="chain-arrow">→</span>
           <span class="chain-result">${esc(result || '…')}</span>
         </div>`;
-      prev = result;
-      return html;
-    }).join('');
+    });
+    list.innerHTML = rows.join('');
   }
 
-  function computeResult(opType, cfg, prev) {
-    const wire   = cfg.wireName || '';
-    const len    = cfg.length ? `${cfg.length}мм` : '';
-    const ws     = [wire, len].filter(Boolean).join(' ');
-    const sA     = cfg.sideA || {};
-    const sB     = cfg.sideB || {};
+  function computeResult(opType, cfg, prev, wd) {
+    const sA = cfg.sideA || {};
+    const sB = cfg.sideB || {};
     switch (opType) {
-      case 'cutWire':  return ws;
-      case 'prsTermA': return [ws, sA.termName].filter(Boolean).join(' + ');
+      case 'cutWire': {
+        // Build a summary of all active wires for the chain preview
+        const aw = wireEntries.filter(w => w.compId);
+        if (!aw.length) return '—';
+        const parts = aw.map(w => {
+          const c = getCompById(w.compId);
+          const n = c ? (c.name || c.art) : '?';
+          const l = w.length ? `${w.length}мм` : '';
+          return [n, l].filter(Boolean).join(' ');
+        });
+        return parts.length === 1 ? parts[0] : parts.join('; ');
+      }
+      case 'prsTermA': return [prev, sA.termName].filter(Boolean).join(' + ');
       case 'insTermA': return [prev, sA.connName].filter(Boolean).join(' → ') + ' ст.А';
-      case 'prsTermB': return [ws, sB.termName].filter(Boolean).join(' + ');
+      case 'prsTermB': return [prev, sB.termName].filter(Boolean).join(' + ');
       case 'insTermB': return [prev, sB.connName].filter(Boolean).join(' → ') + ' ст.В';
       default:         return prev;
     }
@@ -531,51 +653,73 @@
 
   // ── Build config ──────────────────────────────────────────────
   function buildConfig() {
-    const wire   = getCompById(document.getElementById('wireSelect').value);
-    const term   = getCompById(document.getElementById('termSelect').value);
-    const conn   = getCompById(document.getElementById('connSelect').value);
     const sideB  = document.getElementById('sideBEnabled').checked;
-    const length = Number(document.getElementById('lengthInput').value) || 0;
-    const wireQty= Number(document.getElementById('wireQtyInput').value) || 1;
+    const termA  = getCompById(document.getElementById('termSelectA').value);
+    const connA  = getCompById(document.getElementById('connSelectA').value);
+    const termB  = sideB ? getCompById(document.getElementById('termSelectB').value) : null;
+    const connB  = sideB ? getCompById(document.getElementById('connSelectB').value) : null;
 
     const info    = D.assemblyInfo || {};
     const entries = Object.entries(info);
-    const findKey = (pattern) => {
+    const findKey = pattern => {
       const e = entries.find(([k]) => pattern.test(k));
       return e ? String(e[1] ?? '') : '';
     };
 
-    const sideInfo = term || conn ? {
-      termName: term ? term.name : '',
-      termArt:  term ? term.art  : '',
-      termQty:  term ? term.qty  : 0,
-      connName: conn ? conn.name : '',
-      connArt:  conn ? conn.art  : '',
-      connQty:  conn ? conn.qty  : 0,
+    // Active wires array (ordered, filtered to those with a component selected)
+    const activeWires = wireEntries.filter(w => w.compId);
+
+    // termQty = кол-во активных кабелей (контакт на каждый провод)
+    // connQty = всегда 1 (один разъём на сторону)
+    const numWires = activeWires.length || 1;
+
+    const sideAInfo = (termA || connA) ? {
+      termName: termA ? termA.name : '',
+      termArt:  termA ? termA.art  : '',
+      termQty:  termA ? numWires : 0,
+      connName: connA ? connA.name : '',
+      connArt:  connA ? connA.art  : '',
+      connQty:  connA ? 1 : 0,
     } : null;
 
-    const active = getActiveOps();
-    const ops = active.map(opType => {
-      const matched = matchedOps[opType] || null;
+    const sideBInfo = sideB && (termB || connB) ? {
+      termName: termB ? termB.name : '',
+      termArt:  termB ? termB.art  : '',
+      termQty:  termB ? numWires : 0,
+      connName: connB ? connB.name : '',
+      connArt:  connB ? connB.art  : '',
+      connQty:  connB ? 1 : 0,
+    } : null;
+    const wires = activeWires.map(w => {
+      const comp = getCompById(w.compId);
       return {
-        type:       opType,
-        templateId: (document.getElementById(`tmplSel_${opType}`) || {}).value || '',
+        name:   comp ? comp.name : '',
+        art:    comp ? comp.art  : '',
+        qty:    w.qty    || 1,
+        length: w.length || 0,
+      };
+    });
+
+    const activeOps = getActiveOps();
+    const ops = activeOps.map(opSpec => {
+      const matched = matchedOps[opSpec.opKey] || null;
+      return {
+        type:       opSpec.type,
+        wireIdx:    -1,  // -1 = use all wires (combined)
+        templateId: (document.getElementById(`tmplSel_${opSpec.opKey}`) || {}).value || '',
         opNum:      matched ? (matched.opNumber || '') : '',
-        tPrep:      (document.getElementById(`tPrep_${opType}`)    || {}).value || '',
-        tOp:        (document.getElementById(`tOp_${opType}`)      || {}).value || '',
-        tMachine:   (document.getElementById(`tMachine_${opType}`) || {}).value || '',
+        tPrep:      (document.getElementById(`tPrep_${opSpec.opKey}`)    || {}).value || '',
+        tOp:        (document.getElementById(`tOp_${opSpec.opKey}`)      || {}).value || '',
+        tMachine:   (document.getElementById(`tMachine_${opSpec.opKey}`) || {}).value || '',
       };
     });
 
     return {
       assemblyIndex: findKey(/индекс/i),
       assemblyName:  findKey(/наименование/i),
-      wireName:  wire ? wire.name : '',
-      wireArt:   wire ? wire.art  : '',
-      wireQty,
-      length,
-      sideA: sideInfo,
-      sideB: sideB ? sideInfo : null,
+      wires,
+      sideA: sideAInfo,
+      sideB: sideBInfo,
       ops,
     };
   }
@@ -584,8 +728,13 @@
   function generate() {
     const cfg = buildConfig();
     const opsWithTemplate = cfg.ops.filter(o => o.templateId);
-    if (!opsWithTemplate.length) { setStatus('Выберите шаблон хотя бы для одной операции.', true); return; }
-    if (!cfg.length)              { setStatus('Укажите длину провода.', true); return; }
+    if (!opsWithTemplate.length) {
+      setStatus('Выберите шаблон хотя бы для одной операции.', true); return;
+    }
+    const hasCutWireTemplate = cfg.ops.some(o => o.type === 'cutWire' && o.templateId);
+    if (hasCutWireTemplate && cfg.wires.some(w => !w.length)) {
+      setStatus('Укажите длину для каждого кабеля.', true); return;
+    }
 
     setStatus('Создаю техкарты…', false);
     document.getElementById('generateBtn').disabled = true;
@@ -593,7 +742,7 @@
     google.script.run
       .withSuccessHandler(r => {
         setStatus(`Готово — создано ${r.sheets.length} листов: ${r.sheets.join(', ')}`, false);
-        setTimeout(() => google.script.host.close(), 1500);
+        setTimeout(() => google.script.host.close(), 2000);
       })
       .withFailureHandler(err => {
         setStatus(err.message || 'Ошибка генерации.', true);
