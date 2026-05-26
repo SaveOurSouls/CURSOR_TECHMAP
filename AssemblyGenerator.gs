@@ -412,39 +412,53 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
       }
       Logger.log('  CutWire: %s wires / %s slots (before insert)', wires.length, slots.length);
 
-      // Insert additional rows if the template doesn't have enough slots
+      // Попытка вставить дополнительные строки, если слотов меньше чем проводов.
+      // insertRowsAfter падает на шаблонах с объединёнными ячейками — перехватываем ошибку.
+      let insertOk = true;
       if (wires.length > slots.length) {
         const insertCount = wires.length - slots.length;
-        const lastSlot    = slots[slots.length - 1]; // 0-indexed
-        // Copy the first component row N times right below the last existing slot
-        const srcRange = sheet.getRange(kompRow + 1, 1, 1, lastCol);
-        sheet.insertRowsAfter(lastSlot + 1, insertCount); // +1 converts to 1-indexed
-        for (let i = 0; i < insertCount; i++) {
-          srcRange.copyTo(sheet.getRange(lastSlot + 2 + i, 1, 1, lastCol));
-          slots.push(lastSlot + 1 + i); // add new 0-indexed slot indices
+        const lastSlot    = slots[slots.length - 1];
+        try {
+          const srcRange = sheet.getRange(kompRow + 1, 1, 1, lastCol);
+          sheet.insertRowsAfter(lastSlot + 1, insertCount);
+          for (let i = 0; i < insertCount; i++) {
+            srcRange.copyTo(sheet.getRange(lastSlot + 2 + i, 1, 1, lastCol));
+            slots.push(lastSlot + 1 + i);
+          }
+          const adj = r => (r >= 0 && r > lastSlot) ? r + insertCount : r;
+          sfInRow   = adj(sfInRow);
+          resultRow = adj(resultRow);
+          sfOutRow  = adj(sfOutRow);
+          timeRow   = adj(timeRow);
+          lastRow  = sheet.getLastRow();
+          values   = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+          formulas = sheet.getRange(1, 1, lastRow, lastCol).getFormulas();
+          Logger.log('  Inserted %s rows → slots %s', insertCount, JSON.stringify(slots.map(r => r + 1)));
+        } catch (e) {
+          insertOk = false;
+          Logger.log('  insertRowsAfter failed (%s) — fallback to multi-line in 1 slot', e.message);
         }
-        // Shift all section indices that come after the insertion point
-        const adj = r => (r >= 0 && r > lastSlot) ? r + insertCount : r;
-        sfInRow   = adj(sfInRow);
-        resultRow = adj(resultRow);
-        sfOutRow  = adj(sfOutRow);
-        timeRow   = adj(timeRow);
-        // Re-read values/formulas since the sheet changed
-        lastRow  = sheet.getLastRow();
-        values   = sheet.getRange(1, 1, lastRow, lastCol).getValues();
-        formulas = sheet.getRange(1, 1, lastRow, lastCol).getFormulas();
-        Logger.log('  Inserted %s rows → slots now %s', insertCount, JSON.stringify(slots.map(r => r + 1)));
       }
 
-      for (let i = 0; i < wires.length; i++) {
-        const w = wires[i];
-        const r = slots[i];
-        // Норма = кол-во × длина / 1000 метров
-        const normVal = (w.qty > 0 && w.length > 0) ? w.qty * w.length / 1000 : (w.length || '');
-        if (seqCol >= 0) setCell(r, seqCol, i + 1);
-        setCell(r, cols.art,  w.art  || w.name || '');
-        setCell(r, cols.name, w.name || '');
-        setCell(r, cols.norm, normVal !== '' ? normVal : '');
+      if (!insertOk) {
+        // Резервный вариант: объединённые ячейки мешают вставке строк.
+        // Записываем все провода в первый доступный слот через \n.
+        const r0 = slots[0];
+        setCell(r0, cols.art,  wires.map(w => w.art  || w.name || '').join('\n'));
+        setCell(r0, cols.name, wires.map(w => w.name || '').join('\n'));
+        setCell(r0, cols.norm, wires.map(w =>
+          (w.qty > 0 && w.length > 0) ? w.qty * w.length / 1000 : (w.length || '')
+        ).join('\n'));
+      } else {
+        for (let i = 0; i < wires.length; i++) {
+          const w = wires[i];
+          const r = slots[i];
+          const normVal = (w.qty > 0 && w.length > 0) ? w.qty * w.length / 1000 : (w.length || '');
+          if (seqCol >= 0) setCell(r, seqCol, i + 1);
+          setCell(r, cols.art,  w.art  || w.name || '');
+          setCell(r, cols.name, w.name || '');
+          setCell(r, cols.norm, normVal !== '' ? normVal : '');
+        }
       }
     } else if (comp) {
       setCell(kompRow, cols.art,  comp.art);
