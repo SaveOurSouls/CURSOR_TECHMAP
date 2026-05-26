@@ -569,11 +569,13 @@ function insertRowsAfterSafe_(sheet, afterRow, count, srcRow) {
     return false;
   }
 
-  // Restore merges with row positions adjusted for the insertion
+  // Restore merges with row positions adjusted for the insertion.
+  // Merges that SPAN the insertion point are NOT restored (left unmerged) — restoring
+  // them would create an oversized merged cell covering the Результат / time sections.
   merges.forEach(m => {
     let r1 = m.r1, r2 = m.r2;
-    if (r1 > afterRow)      { r1 += count; r2 += count; }  // entirely below → shift
-    else if (r2 > afterRow) { r2 += count; }                // spans insertion → extend
+    if (r1 > afterRow) { r1 += count; r2 += count; }  // entirely below → shift
+    else if (r2 > afterRow) { return; }                // spans insertion → skip
     // entirely above afterRow → unchanged
     try { sheet.getRange(r1, m.c1, r2 - r1 + 1, m.c2 - m.c1 + 1).merge(); } catch (e) {}
   });
