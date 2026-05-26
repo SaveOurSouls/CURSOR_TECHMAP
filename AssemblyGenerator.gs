@@ -470,10 +470,32 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
   }
 
   // ── Fill Результат → Полуфабрикат (Наименование = thisResult) ─
-  if (sfOutRow >= 0 && thisResult) {
-    const cols  = resolveCols(sfOutRow);
-    const nameC = cols.name >= 0 ? cols.name : cols.art;
-    setCell(sfOutRow, nameC, thisResult);
+  // Use a fresh sheet read so that any merge changes from insertRowsAfterSafe_
+  // don't hide the target cell as a secondary merged cell.
+  if (thisResult && (sfOutRow >= 0 || resultRow >= 0)) {
+    const freshVals = sheet.getRange(1, 1, sheet.getLastRow(), lastCol).getValues();
+    let fRes = -1, fSfOut = -1;
+    for (let r = 0; r < freshVals.length; r++) {
+      for (let c = 0; c < freshVals[r].length; c++) {
+        const cell = String(freshVals[r][c] || '').toLowerCase().trim();
+        if (!cell) continue;
+        if (fRes < 0 && /\bрезультат\b/.test(cell))                  { fRes    = r; break; }
+        if (fRes >= 0 && fSfOut < 0 && /полуфабрикат|^п\/ф/.test(cell)) { fSfOut = r; break; }
+      }
+    }
+    Logger.log('  freshResult=%s freshSfOut=%s', fRes, fSfOut);
+    if (fSfOut >= 0) {
+      const hdr = findColHeadersAbove_(freshVals, fSfOut);
+      const nameC = hdr.name >= 0 ? hdr.name : (hdr.art >= 0 ? hdr.art : grnCol);
+      if (nameC >= 0) {
+        Logger.log('  -> Результат setCell[r%s,c%s]=%s', fSfOut + 1, nameC + 1, thisResult.substring(0, 40));
+        const rng = sheet.getRange(fSfOut + 1, nameC + 1);
+        try { rng.breakApart(); } catch(e) {}
+        rng.setValue(thisResult);
+      }
+    }
+  }
+  if (false) {  // keep else-if structure below unreachable but intact for reference
   } else if (resultRow >= 0 && thisResult && sfOutRow < 0) {
     // No separate Полуфабрикат row found — fill resultRow itself or first non-header row below it
     const cols  = resolveCols(resultRow);
@@ -570,12 +592,10 @@ function insertRowsAfterSafe_(sheet, afterRow, count, srcRow) {
   }
 
   // Restore merges with row positions adjusted for the insertion.
-  // Merges that SPAN the insertion point are NOT restored (left unmerged) — restoring
-  // them would create an oversized merged cell covering the Результат / time sections.
   merges.forEach(m => {
     let r1 = m.r1, r2 = m.r2;
-    if (r1 > afterRow) { r1 += count; r2 += count; }  // entirely below → shift
-    else if (r2 > afterRow) { return; }                // spans insertion → skip
+    if (r1 > afterRow)      { r1 += count; r2 += count; }  // entirely below → shift
+    else if (r2 > afterRow) { r2 += count; }                // spans insertion → extend
     // entirely above afterRow → unchanged
     try { sheet.getRange(r1, m.c1, r2 - r1 + 1, m.c2 - m.c1 + 1).merge(); } catch (e) {}
   });
