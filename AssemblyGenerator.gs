@@ -90,13 +90,13 @@ function scanForSpyTable_(data) {
 
     const typeIdx = lower.findIndex(c => c === 'тип' || c === 'type');
 
-    // ГРН is always right after the first "#" auto-number column
-    const firstHashIdx = lower.findIndex(c => c === '#');
-    let nameIdx = (firstHashIdx >= 0 && firstHashIdx + 1 < lower.length) ? firstHashIdx + 1 : -1;
+    // ГРН: search by keyword first (explicit header), then fall back to column after '#'
+    let nameIdx = lower.findIndex(c =>
+      c === 'грн' || c.includes('грн') || c === 'наименование' || c === 'название'
+    );
     if (nameIdx < 0) {
-      nameIdx = lower.findIndex(c =>
-        c.includes('грн') || c.includes('грм') || c.includes('наименование') || c.includes('название')
-      );
+      const firstHashIdx = lower.findIndex(c => c === '#');
+      nameIdx = (firstHashIdx >= 0 && firstHashIdx + 1 < lower.length) ? firstHashIdx + 1 : -1;
     }
 
     if (typeIdx < 0 || nameIdx < 0) continue;
@@ -299,12 +299,12 @@ function replacePlaceholders_(sheet, phMap) {
 // CUT_WIRE Комплектующие: one row per wire (Артикул, ГРН, Норма=qty×length/1000 м)
 // Результат / Расчетное время Наименование: "art lengthмм; ..."  Норма: time value
 function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisResult, wireData) {
-  const lastRow = sheet.getLastRow();
+  let lastRow = sheet.getLastRow();
   const lastCol = sheet.getLastColumn();
   if (lastRow < 1 || lastCol < 1) return;
 
-  const values   = sheet.getRange(1, 1, lastRow, lastCol).getValues();
-  const formulas = sheet.getRange(1, 1, lastRow, lastCol).getFormulas();
+  let values   = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+  let formulas = sheet.getRange(1, 1, lastRow, lastCol).getFormulas();
 
   const sA = config.sideA || {};
   const sB = config.sideB || {};
@@ -374,8 +374,11 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
     if (col < 0 || col >= lastCol) return;
     const v = val == null ? '' : String(val);
     if (!v) return;
-    if (formulas[r] && formulas[r][col]) return;
-    Logger.log('  -> setCell[r%s,c%s]=%s', r + 1, col + 1, v);
+    const fml = formulas[r] && formulas[r][col];
+    // Skip cells with real calculation formulas.
+    // Allow overwriting `=""` / `=''` (blank-string formulas used for conditional formatting).
+    if (fml && !/^=""$|^=''$/.test(fml.trim())) return;
+    Logger.log('  -> setCell[r%s,c%s]=%s (fml=%s)', r + 1, col + 1, v, fml || '');
     sheet.getRange(r + 1, col + 1).setValue(v);
   }
 
@@ -407,11 +410,35 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
         if (!artV && !grnV) slots.push(r);
         else break;
       }
-      Logger.log('  CutWire: %s wires / %s slots', wires.length, slots.length);
+      Logger.log('  CutWire: %s wires / %s slots (before insert)', wires.length, slots.length);
+
+      // Insert additional rows if the template doesn't have enough slots
+      if (wires.length > slots.length) {
+        const insertCount = wires.length - slots.length;
+        const lastSlot    = slots[slots.length - 1]; // 0-indexed
+        // Copy the first component row N times right below the last existing slot
+        const srcRange = sheet.getRange(kompRow + 1, 1, 1, lastCol);
+        sheet.insertRowsAfter(lastSlot + 1, insertCount); // +1 converts to 1-indexed
+        for (let i = 0; i < insertCount; i++) {
+          srcRange.copyTo(sheet.getRange(lastSlot + 2 + i, 1, 1, lastCol));
+          slots.push(lastSlot + 1 + i); // add new 0-indexed slot indices
+        }
+        // Shift all section indices that come after the insertion point
+        const adj = r => (r >= 0 && r > lastSlot) ? r + insertCount : r;
+        sfInRow   = adj(sfInRow);
+        resultRow = adj(resultRow);
+        sfOutRow  = adj(sfOutRow);
+        timeRow   = adj(timeRow);
+        // Re-read values/formulas since the sheet changed
+        lastRow  = sheet.getLastRow();
+        values   = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+        formulas = sheet.getRange(1, 1, lastRow, lastCol).getFormulas();
+        Logger.log('  Inserted %s rows → slots now %s', insertCount, JSON.stringify(slots.map(r => r + 1)));
+      }
 
       for (let i = 0; i < wires.length; i++) {
         const w = wires[i];
-        const r = i < slots.length ? slots[i] : slots[slots.length - 1];
+        const r = slots[i];
         // Норма = кол-во × длина / 1000 метров
         const normVal = (w.qty > 0 && w.length > 0) ? w.qty * w.length / 1000 : (w.length || '');
         if (seqCol >= 0) setCell(r, seqCol, i + 1);
@@ -438,7 +465,7 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
     const nameC = cols.name >= 0 ? cols.name : cols.art;
     setCell(sfOutRow, nameC, thisResult);
   } else if (resultRow >= 0 && thisResult && sfOutRow < 0) {
-    // No separate Полуфабрикат row — fill resultRow itself (or next blank row)
+    // No separate Полуфабрикат row found — fill resultRow itself or first non-header row below it
     const cols  = resolveCols(resultRow);
     const nameC = cols.name >= 0 ? cols.name : cols.art;
     const existing = nameC >= 0 ? String(values[resultRow][nameC] || '').trim() : '';
@@ -446,9 +473,13 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
       setCell(resultRow, nameC, thisResult);
     } else {
       let filled = false;
-      for (let r = resultRow + 1; r < Math.min(values.length, resultRow + 4) && !filled; r++) {
+      for (let r = resultRow + 1; r < Math.min(values.length, resultRow + 6) && !filled; r++) {
+        // Skip sub-header rows
+        const rowCells = values[r].map(c => String(c || '').toLowerCase().trim());
+        if (rowCells.some(v => v === 'наименование' || v === 'норма' || v === 'обозначение')) continue;
         const v = nameC >= 0 ? String(values[r][nameC] || '').trim() : '';
-        if (!v && !(formulas[r] && formulas[r][nameC])) {
+        const fml = formulas[r] && formulas[r][nameC];
+        if ((!v || fml === '=""' || fml === "=''") && !(fml && !/^=""$|^=''$/.test(fml.trim()))) {
           setCell(r, nameC, thisResult);
           filled = true;
         }
@@ -464,8 +495,11 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
   if (timeRow >= 0) {
     const timeDataRows = [];
     for (let r = timeRow + 1; r < values.length; r++) {
-      if (values[r].some(c => String(c || '').trim())) timeDataRows.push(r);
-      else if (timeDataRows.length > 0) break;
+      const rowCells = values[r].map(c => String(c || '').toLowerCase().trim());
+      if (!rowCells.some(v => v)) { if (timeDataRows.length > 0) break; continue; }
+      // Skip sub-header rows (contain column header keywords like "наименование", "норма")
+      if (rowCells.some(v => v === 'наименование' || v === 'норма' || v === 'обозначение' || v === 'факт')) continue;
+      timeDataRows.push(r);
     }
     Logger.log('  timeDataRows=%s', JSON.stringify(timeDataRows.map(r => r + 1)));
 
