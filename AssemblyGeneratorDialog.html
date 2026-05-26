@@ -717,6 +717,7 @@
     return {
       assemblyIndex: findKey(/индекс/i),
       assemblyName:  findKey(/наименование/i),
+      partQty:       Number(findKey(/кол[- ]?во|количеств/i)) || 1,
       wires,
       sideA: sideAInfo,
       sideB: sideBInfo,

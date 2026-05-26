@@ -73,7 +73,7 @@ function scanForTable1_(data) {
     const result  = {};
     headers.forEach((h, i) => {
       if (!h || /^\d+$/.test(h)) return;
-      if (h.length > 2 && !h.includes(' ')) return;
+      if (h.length > 2 && !/[\s\-]/.test(h)) return;
       const v = dataRow[i];
       if (v !== '' && v != null) result[h] = v;
     });
@@ -352,20 +352,25 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
   Logger.log('  GlobalCols: art=%s grn=%s norm=%s seq=%s', artCol, grnCol, normCol, seqCol);
 
   // ── Section detection (scan ALL cells in each row) ────────────
-  let kompRow = -1, sfInRow = -1, resultRow = -1, sfOutRow = -1, timeRow = -1;
-  for (let r = 0; r < values.length; r++) {
-    for (let c = 0; c < values[r].length; c++) {
-      const cell = String(values[r][c] || '').toLowerCase().trim();
-      if (!cell) continue;
-      if (timeRow   < 0 && /расч[её]?тное\s*врем/i.test(cell))               { timeRow   = r; break; }
-      if (resultRow < 0 && timeRow < 0 && /\bрезультат\b/.test(cell))          { resultRow = r; break; }
-      if (kompRow   < 0 && cell.includes('комплектующ'))                        { kompRow   = r; break; }
-      if (/полуфабрикат|^п\/ф/.test(cell)) {
-        if (resultRow >= 0 || timeRow >= 0) { if (sfOutRow < 0) { sfOutRow = r; break; } }
-        else                               { if (sfInRow  < 0) { sfInRow  = r; break; } }
+  function detectSections(v) {
+    let kp = -1, sfI = -1, res = -1, sfO = -1, tm = -1;
+    for (let r = 0; r < v.length; r++) {
+      for (let c = 0; c < v[r].length; c++) {
+        const cell = String(v[r][c] || '').toLowerCase().trim();
+        if (!cell) continue;
+        if (tm  < 0 && /расч[её]?тное\s*врем/i.test(cell))        { tm  = r; break; }
+        if (res < 0 && tm < 0 && /\bрезультат\b/.test(cell))       { res = r; break; }
+        if (kp  < 0 && cell.includes('комплектующ'))                { kp  = r; break; }
+        if (/полуфабрикат|^п\/ф/.test(cell)) {
+          if (res >= 0 || tm >= 0) { if (sfO < 0) { sfO = r; break; } }
+          else                     { if (sfI < 0) { sfI = r; break; } }
+        }
       }
     }
+    return { kompRow: kp, sfInRow: sfI, resultRow: res, sfOutRow: sfO, timeRow: tm };
   }
+
+  let { kompRow, sfInRow, resultRow, sfOutRow, timeRow } = detectSections(values);
   Logger.log('  Sections: komp=%s sfIn=%s result=%s sfOut=%s time=%s',
     kompRow, sfInRow, resultRow, sfOutRow, timeRow);
 
@@ -420,28 +425,36 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
         const ok = insertRowsAfterSafe_(sheet, lastSlot + 1, insertCount, kompRow + 1);
         if (ok) {
           for (let i = 0; i < insertCount; i++) slots.push(lastSlot + 1 + i);
-          const adj = r => (r >= 0 && r > lastSlot) ? r + insertCount : r;
-          sfInRow   = adj(sfInRow);
-          resultRow = adj(resultRow);
-          sfOutRow  = adj(sfOutRow);
-          timeRow   = adj(timeRow);
-          lastRow   = sheet.getLastRow();
-          values    = sheet.getRange(1, 1, lastRow, lastCol).getValues();
-          formulas  = sheet.getRange(1, 1, lastRow, lastCol).getFormulas();
-          Logger.log('  Inserted %s rows → slots %s', insertCount, JSON.stringify(slots.map(r => r + 1)));
+          lastRow  = sheet.getLastRow();
+          values   = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+          formulas = sheet.getRange(1, 1, lastRow, lastCol).getFormulas();
+          // Re-detect sections on fresh values after row insertion
+          const sec = detectSections(values);
+          sfInRow   = sec.sfInRow;
+          resultRow = sec.resultRow;
+          sfOutRow  = sec.sfOutRow;
+          timeRow   = sec.timeRow;
+          Logger.log('  Inserted %s rows → slots %s; re-detected: result=%s sfOut=%s time=%s',
+            insertCount, JSON.stringify(slots.map(r => r + 1)), resultRow, sfOutRow, timeRow);
         } else {
           Logger.log('  insertRowsAfterSafe_ returned false — filling available slots only');
         }
       }
 
+      const partQty = (config.partQty > 0) ? config.partQty : 1;
       for (let i = 0; i < Math.min(wires.length, slots.length); i++) {
         const w = wires[i];
         const r = slots[i];
-        const normVal = (w.qty > 0 && w.length > 0) ? w.qty * w.length / 1000 : (w.length || '');
+        let normVal = '';
+        if (w.qty > 0 && w.length > 0) {
+          normVal = String(w.qty * w.length * partQty / 1000).replace('.', ',');
+        } else if (w.length > 0) {
+          normVal = String(w.length * partQty / 1000).replace('.', ',');
+        }
         if (seqCol >= 0) setCell(r, seqCol, i + 1);
         setCell(r, cols.art,  w.art  || w.name || '');
         setCell(r, cols.name, w.name || '');
-        setCell(r, cols.norm, normVal !== '' ? normVal : '');
+        setCell(r, cols.norm, normVal);
       }
     } else if (comp) {
       setCell(kompRow, cols.art,  comp.art);
