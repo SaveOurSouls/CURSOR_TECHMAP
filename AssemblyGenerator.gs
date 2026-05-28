@@ -269,7 +269,7 @@ function buildCutTolerance_(wireData) {
   const len = parseFloat(String(wd.length || '').split('\n')[0].replace(',', '.')) || 0;
   if (!len) return '';
   const raw = len / 1000 * (ASSEMBLY_GEN.toleranceMmPerM || 8);
-  const tol = Math.max(1, Math.round(raw));
+  const tol = Math.max(1, Math.ceil(raw));
   const tolStr = String(tol);
   return `(+/-)${tolStr}мм`;
 }

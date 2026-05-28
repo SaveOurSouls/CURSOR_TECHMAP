@@ -109,5 +109,5 @@ const ASSEMBLY_GEN = {
     lengthKd:     '[L КД]',
   },
   // Linear tolerance: at 1000mm → ±toleranceMmPerM mm; scales proportionally
-  toleranceMmPerM: 8,
+  toleranceMmPerM: 7,
 };
