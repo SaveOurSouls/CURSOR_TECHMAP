@@ -16,26 +16,41 @@ function diagnoseTerSheet(searchArticle) {
   const sheet  = srcSS.getSheetByName(tab.sourceSheetName);
   if (!sheet) { Logger.log('Sheet not found: ' + tab.sourceSheetName); return; }
 
-  const lastCol    = sheet.getLastColumn();
-  const headerRow  = sheet.getRange(tab.headerRowNumber, 1, 1, lastCol).getValues()[0];
+  const lastCol   = sheet.getLastColumn();
+  const headerRow = sheet.getRange(tab.headerRowNumber, 1, 1, lastCol).getValues()[0];
 
   Logger.log('=== БД.ТЕР HEADERS ===');
   headerRow.forEach((h, i) => {
-    if (String(h).trim()) Logger.log(`col ${i + 1} (${columnLetter_(i)}): "${h}"  →  normalized: "${String(h).toLowerCase().trim()}"`);
+    if (String(h).trim()) Logger.log(`col ${i+1} (${columnLetter_(i)}): "${h}"  →  "${String(h).toLowerCase().replace(/\s+/g,' ').trim()}"`);
   });
 
-  if (searchArticle) {
-    Logger.log('\n=== ПОИСК АРТИКУЛА: ' + searchArticle + ' ===');
-    const data    = sheet.getRange(tab.headerRowNumber + 1, 1, sheet.getLastRow() - tab.headerRowNumber, lastCol).getValues();
-    const artCol  = headerRow.findIndex(h => /артикул.*reel|артикул контакта/i.test(String(h)));
-    Logger.log('Колонка артикула (REEL): ' + (artCol >= 0 ? `${artCol + 1} (${columnLetter_(artCol)})` : 'не найдена'));
-    const row = data.find(r => String(r[artCol] || '').trim().toLowerCase() === searchArticle.toLowerCase());
-    if (row) {
-      Logger.log('Строка найдена!');
-      headerRow.forEach((h, i) => { if (String(h).trim()) Logger.log(`  ${h}: "${row[i]}"`); });
-    } else {
-      Logger.log('Строка с артикулом не найдена');
+  if (!searchArticle) return;
+
+  Logger.log('\n=== ПОИСК: "' + searchArticle + '" (по всем колонкам) ===');
+  const data   = sheet.getRange(tab.headerRowNumber + 1, 1, Math.min(sheet.getLastRow() - tab.headerRowNumber, 2000), lastCol).getValues();
+  const artLow = searchArticle.toLowerCase().trim();
+
+  // Find row where ANY cell exactly matches the article
+  let found = null;
+  let foundRowNum = -1;
+  for (let i = 0; i < data.length; i++) {
+    if (data[i].some(c => String(c || '').trim().toLowerCase() === artLow)) {
+      found = data[i]; foundRowNum = i + tab.headerRowNumber + 1; break;
     }
+  }
+
+  if (found) {
+    Logger.log('Строка найдена — row ' + foundRowNum);
+    // Find L+ and L- column indices
+    const lpIdx = headerRow.findIndex(h => String(h).trim() === 'L+');
+    const lmIdx = headerRow.findIndex(h => String(h).trim() === 'L-');
+    Logger.log(`L+ (col ${lpIdx+1}): "${found[lpIdx]}"`);
+    Logger.log(`L- (col ${lmIdx+1}): "${found[lmIdx]}"`);
+    Logger.log('--- все значения ---');
+    headerRow.forEach((h, i) => { if (String(h).trim()) Logger.log(`  [${columnLetter_(i)}] ${h}: "${found[i]}"`); });
+  } else {
+    Logger.log('Артикул не найден в первых 2000 строках');
+    Logger.log('Первые 3 значения в кол.G: ' + data.slice(0,3).map(r => r[6]).join(' | '));
   }
 }
 
