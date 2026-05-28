@@ -445,7 +445,7 @@
 
     const wires = getByTypes(['провод', 'wire', 'кабель', 'cable']);
     const wireOpts = '<option value="">— выберите —</option>' +
-      wires.map(c => `<option value="${c.id}">${esc(c.name || c.art)} [${esc(c.art)}]</option>`).join('');
+      wires.map(c => `<option value="${c.id}">${esc(c.art || c.name)}</option>`).join('');
 
     container.innerHTML = wireEntries.map((w, n) => {
       const lenField = advancedLengthMode ? `
