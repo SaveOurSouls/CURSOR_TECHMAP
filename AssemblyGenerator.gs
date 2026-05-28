@@ -346,11 +346,12 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
   const sB = config.sideB || {};
   const wd = wireData || {};
 
+  const pQty = (config.partQty > 0) ? config.partQty : 1;
   const comp =
-      opType === 'prsTermA' ? { art: sA.termArt || sA.termName || '', name: sA.termName || '', norm: String(sA.termQty || '') }
-    : opType === 'insTermA' ? { art: sA.connArt || sA.connName || '', name: sA.connName || '', norm: String(sA.connQty || '') }
-    : opType === 'prsTermB' ? { art: sB.termArt || sB.termName || '', name: sB.termName || '', norm: String(sB.termQty || '') }
-    : opType === 'insTermB' ? { art: sB.connArt || sB.connName || '', name: sB.connName || '', norm: String(sB.connQty || '') }
+      opType === 'prsTermA' ? { art: sA.termArt || sA.termName || '', name: sA.termName || '', norm: String((sA.termQty || 0) * pQty) }
+    : opType === 'insTermA' ? { art: sA.connArt || sA.connName || '', name: sA.connName || '', norm: String((sA.connQty || 0) * pQty) }
+    : opType === 'prsTermB' ? { art: sB.termArt || sB.termName || '', name: sB.termName || '', norm: String((sB.termQty || 0) * pQty) }
+    : opType === 'insTermB' ? { art: sB.connArt || sB.connName || '', name: sB.connName || '', norm: String((sB.connQty || 0) * pQty) }
     : null;
 
   const isCutWire = opType === 'cutWire';
@@ -617,15 +618,30 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
           if (tNormCol >= 0) fillMergedCell_(sheet, rowNum, tNormCol + 1, wNorm, mergeMap);
         }
       } else {
-        const secToMin = v => {
+        // For terminal/connector ops multiply tOp by component qty × partQty
+        const opCompQty =
+          opType === 'prsTermA' ? (sA.termQty || 1) :
+          opType === 'insTermA' ? (sA.connQty || 1) :
+          opType === 'prsTermB' ? (sB.termQty || 1) :
+          opType === 'insTermB' ? (sB.connQty || 1) : 1;
+        const pQtyTime = (config.partQty > 0) ? config.partQty : 1;
+
+        const secPrepToMin = v => {
           const s = parseFloat(String(v || '').replace(',', '.'));
           if (!s) return '';
           const m = s / 60;
           return String(m % 1 === 0 ? m : m.toFixed(2)).replace('.', ',');
         };
-        const tVals = timeDataRows.length <= 1 ? [secToMin(op.tOp)]
-                    : timeDataRows.length === 2 ? [secToMin(op.tPrep), secToMin(op.tOp)]
-                    : [secToMin(op.tPrep), secToMin(op.tOp), secToMin(op.tMachine)];
+        const secOpToMin = v => {
+          const s = parseFloat(String(v || '').replace(',', '.'));
+          if (!s) return '';
+          const m = s * opCompQty * pQtyTime / 60;
+          return String(m % 1 === 0 ? m : m.toFixed(2)).replace('.', ',');
+        };
+
+        const tVals = timeDataRows.length <= 1 ? [secOpToMin(op.tOp)]
+                    : timeDataRows.length === 2 ? [secPrepToMin(op.tPrep), secOpToMin(op.tOp)]
+                    : [secPrepToMin(op.tPrep), secOpToMin(op.tOp), secOpToMin(op.tMachine)];
 
         for (let i = 0; i < timeDataRows.length && i < tVals.length; i++) {
           const r = timeDataRows[i];
