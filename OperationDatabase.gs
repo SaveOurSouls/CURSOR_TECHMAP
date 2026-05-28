@@ -495,8 +495,10 @@ function buildTechOperationsTerRecord_(row, headerMap, sourceSheet, namedColumns
   const artISL       = getTechOperationsCellByAliases_(row, headerMap, ['артикул (контакта isl)', 'артикул контакта isl']);
   const artSAG       = getTechOperationsCellByAliases_(row, headerMap, ['артикул (контакт sag)', 'артикул контакт sag']);
   const terArticle   = getTechOperationsCellByAliases_(row, headerMap, ['артикул контакта (reel)', 'артикул контакта', 'артикул']);
-  const lPlus        = getTechOperationsCellByAliases_(row, headerMap, ['l+', 'l+ в мм', 'l+(мм)', 'l +']);
-  const lMinus       = getTechOperationsCellByAliases_(row, headerMap, ['l-', 'l−', 'l–', 'l—', 'l- в мм', 'l-(мм)', 'l −', 'l -']);
+  const lPlus  = getTechOperationsCellByAliases_(row, headerMap, ['l+', 'l+ в мм', 'l+(мм)', 'l +'])
+              || getTechOperationsCellByHeaderRegex_(row, headerMap, /^l\s*\+/);
+  const lMinus = getTechOperationsCellByAliases_(row, headerMap, ['l-', 'l−', 'l–', 'l—', 'l- в мм', 'l-(мм)', 'l −', 'l -'])
+              || getTechOperationsCellByHeaderRegex_(row, headerMap, /^l\s*[-−–—]/);
 
   const displayText = joinTechOperationsParts_([manufacturer, series, productName], ' | ');
   if (!displayText) return null;
@@ -544,6 +546,13 @@ function buildTechOperationsCoaxRecord_(row, headerMap, sourceSheet, namedColumn
     exportValues: (namedColumns || []).map(({ index }) => normalizeString_(row[index]) || ''),
     sourceSheet,
   };
+}
+
+function getTechOperationsCellByHeaderRegex_(row, headerMap, pattern) {
+  for (const [key, idx] of Object.entries(headerMap)) {
+    if (pattern.test(key)) return normalizeString_(row[idx]);
+  }
+  return '';
 }
 
 function getTechOperationsCellByAliases_(row, headerMap, aliases) {

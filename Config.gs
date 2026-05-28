@@ -28,8 +28,8 @@ const TECHOPS_DB_APP = {
     'sourceSheet', 'sortKey',
     'extra1', 'extra2', 'extra3', 'extra4', 'extra5', 'extra6', 'extra7',
   ],
-  cacheKeyPrefix:   'techmap-techops-db-v7',
-  schemaVersion:    7,
+  cacheKeyPrefix:   'techmap-techops-db-v8',
+  schemaVersion:    8,
   cacheChunkSize:   80000,
   cacheTtlSeconds:  21600,
   tabs: {

@@ -542,6 +542,12 @@
     const sideB   = document.getElementById('sideBEnabled').checked;
     const termB   = sideB ? getCompById(document.getElementById('termSelectB').value) : null;
     const terRecs = D.terRecords || [];
+
+    // Debug: open browser DevTools (F12) → Console to see these
+    console.log('[TER] records loaded:', terRecs.length);
+    if (termA) console.log('[TER] looking for art:', termA.art,
+      '→', terRecs.find(r => (r.article||'').toLowerCase().trim() === (termA.art||'').toLowerCase().trim()) || 'NOT FOUND');
+
     const findTer = comp => {
       if (!comp) return null;
       const art = (comp.art || '').toLowerCase().trim();
