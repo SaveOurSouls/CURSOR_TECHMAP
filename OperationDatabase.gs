@@ -54,6 +54,43 @@ function diagnoseTerSheet(searchArticle) {
   }
 }
 
+/** Проверяет что реально хранится в _TC_TECHOPS_DB для конкретного артикула TER. */
+function diagnoseDbRecord(searchArticle) {
+  const ss        = SpreadsheetApp.getActive();
+  const dataSheet = ss.getSheetByName(TECHOPS_DB_APP.dataSheetName);
+  const metaSheet = ss.getSheetByName(TECHOPS_DB_APP.metaSheetName);
+
+  if (!dataSheet) { Logger.log('DB-лист не найден: ' + TECHOPS_DB_APP.dataSheetName); return; }
+
+  // Schema version from meta
+  if (metaSheet) {
+    const meta = metaSheet.getDataRange().getValues();
+    const sv = meta.find(r => r[0] === 'schemaVersion');
+    Logger.log('schemaVersion в DB: ' + (sv ? sv[1] : 'не найдена'));
+    Logger.log('schemaVersion в коде: ' + TECHOPS_DB_APP.schemaVersion);
+  }
+
+  const data   = dataSheet.getDataRange().getValues();
+  const artLow = (searchArticle || '').toLowerCase().trim();
+  Logger.log('Всего строк в DB: ' + (data.length - 1));
+
+  let terCount = 0;
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] !== 'ter') continue;
+    terCount++;
+    if (String(data[i][10] || '').toLowerCase().trim() === artLow) {
+      Logger.log('Найдена TER-запись (строка ' + (i + 1) + '):');
+      Logger.log('  row[6]  terManufacturer : "' + data[i][6]  + '"');
+      Logger.log('  row[10] terArticle      : "' + data[i][10] + '"');
+      Logger.log('  row[11] terLPlus        : "' + data[i][11] + '"');
+      Logger.log('  row[12] terLMinus       : "' + data[i][12] + '"');
+      return;
+    }
+  }
+  Logger.log('TER-записей всего: ' + terCount);
+  Logger.log('Артикул "' + searchArticle + '" в DB не найден');
+}
+
 function columnLetter_(idx) {
   let s = ''; let n = idx;
   do { s = String.fromCharCode(65 + (n % 26)) + s; n = Math.floor(n / 26) - 1; } while (n >= 0);
