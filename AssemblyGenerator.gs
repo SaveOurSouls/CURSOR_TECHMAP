@@ -103,7 +103,12 @@ function scanForSpyTable_(data) {
 
 function readTerRecordsForGenerator_() {
   try {
-    const snapshot = getTechOperationsSnapshot_();
+    let snapshot = getTechOperationsSnapshot_();
+    // Auto-resync if schema version changed (e.g. new L+/L- extraction was added)
+    if (String(snapshot.meta && snapshot.meta.schemaVersion) !== String(TECHOPS_DB_APP.schemaVersion)) {
+      syncTechOperationsDatabase();
+      snapshot = getTechOperationsSnapshot_();
+    }
     return (snapshot.records || [])
       .filter(r => r.tabKey === 'ter' && r.terArticle)
       .map(r => ({
