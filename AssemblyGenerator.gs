@@ -422,7 +422,11 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
           const n = w.length * partQty / 1000;
           if (isFinite(n)) normVal = String(n).replace('.', ',');
         }
-        if (seqCol >= 0) setCell(r, seqCol, i + 1);
+        if (seqCol >= 0) {
+          let sr = r + 1, sc = seqCol + 1;
+          if (mergeMap[sr] && mergeMap[sr][sc]) { const p = mergeMap[sr][sc]; sr = p.r; sc = p.c; }
+          try { sheet.getRange(sr, sc).setValue(i + 1); } catch (e) {}
+        }
         setCell(r, cols.art,  w.art  || w.name || '');
         setCell(r, cols.name, w.name || '');
         setCell(r, cols.norm, normVal);
@@ -523,7 +527,13 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
       const tNameCol = cols.name >= 0 ? cols.name : grnCol;
 
       if (isCutWire && wires && wires.length > 0 && tNameCol >= 0) {
-        const partQty = (config.partQty > 0) ? config.partQty : 1;
+        const partQty  = (config.partQty > 0) ? config.partQty : 1;
+        const tOpSec   = parseFloat(String(op.tOp   || '').replace(',', '.')) || 0;
+        const tPrepSec = parseFloat(String(op.tPrep || '').replace(',', '.')) || 0;
+        const tOpMin   = tOpSec   / 60;
+        const tPrepMin = tPrepSec / 60;
+        const hasTPrep = tPrepSec > 0;
+        const slotsNeeded = wires.length + (hasTPrep ? 1 : 0);
 
         const timeSlots = [...timeDataRows];
         for (let r = timeDataRows[timeDataRows.length - 1] + 1; r < values.length; r++) {
@@ -535,8 +545,8 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
           else break;
         }
 
-        if (wires.length > timeSlots.length) {
-          const insertCount = wires.length - timeSlots.length;
+        if (slotsNeeded > timeSlots.length) {
+          const insertCount = slotsNeeded - timeSlots.length;
           const lastSlot    = timeSlots[timeSlots.length - 1];
           const ok = insertRowsAfterSafe_(sheet, lastSlot + 1, insertCount, timeDataRows[0] + 1);
           if (ok) {
@@ -547,11 +557,18 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
           }
         }
 
-        const tOpSec = parseFloat(String(op.tOp || '').replace(',', '.')) || 0;
-        const tOpMin = tOpSec / 60;
-        for (let i = 0; i < Math.min(wires.length, timeSlots.length); i++) {
+        let wireOffset = 0;
+        if (hasTPrep && timeSlots.length > 0) {
+          const prepNorm = isFinite(tPrepMin)
+            ? String(tPrepMin % 1 === 0 ? tPrepMin : tPrepMin.toFixed(2)).replace('.', ',')
+            : '';
+          if (tNormCol >= 0) fillMergedCell_(sheet, timeSlots[0] + 1, tNormCol + 1, prepNorm, mergeMap);
+          wireOffset = 1;
+        }
+
+        for (let i = 0; i < Math.min(wires.length, timeSlots.length - wireOffset); i++) {
           const w      = wires[i];
-          const rowNum = timeSlots[i] + 1;
+          const rowNum = timeSlots[i + wireOffset] + 1;
           const wName  = [w.art || w.name, w.length ? w.length + 'мм' : ''].filter(Boolean).join(' ');
           const rawNorm = tOpMin > 0 ? tOpMin * w.qty * partQty : w.qty * partQty;
           const wNorm = isFinite(rawNorm)
