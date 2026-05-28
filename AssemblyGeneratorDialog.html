@@ -362,15 +362,30 @@
 
   function renderQtyHints() {
     const numWires = wireEntries.filter(w => w.compId).length;
-    const termTxt  = numWires > 0 ? `${numWires} шт (= кол-во кабелей)` : '—';
     const connTxt  = '1 шт (на сторону)';
     ['A','B'].forEach(side => {
-      const th = document.getElementById(`termQtyHint${side}`);
-      const ch = document.getElementById(`connQtyHint${side}`);
-      const hasTerm = document.getElementById(`termSelect${side}`)?.value;
-      const hasConn = document.getElementById(`connSelect${side}`)?.value;
-      if (th) th.textContent = hasTerm ? termTxt : '—';
-      if (ch) ch.textContent = hasConn ? connTxt : '—';
+      const th      = document.getElementById(`termQtyHint${side}`);
+      const ch      = document.getElementById(`connQtyHint${side}`);
+      const termSel = document.getElementById(`termSelect${side}`);
+      const connSel = document.getElementById(`connSelect${side}`);
+      if (ch) ch.textContent = (connSel && connSel.value) ? connTxt : '—';
+      if (!th) return;
+      if (!termSel || !termSel.value) { th.textContent = '—'; th.style.color = ''; return; }
+      const qtyPart = numWires > 0 ? `${numWires} шт` : '—';
+      const comp    = getCompById(termSel.value);
+      const terRec  = comp ? (D.terRecords || []).find(r =>
+        (r.article || '').toLowerCase().trim() === (comp.art || '').toLowerCase().trim()
+      ) : null;
+      if (!terRec) {
+        th.textContent = `${qtyPart} | L+/L−: нет в БД.ТЕР`;
+        th.style.color = '#b45309';
+      } else if (!terRec.lPlus && !terRec.lMinus) {
+        th.textContent = `${qtyPart} | L+: пусто, L−: пусто`;
+        th.style.color = '#b45309';
+      } else {
+        th.textContent = `${qtyPart} | L+: ${terRec.lPlus || '—'}  L−: ${terRec.lMinus || '—'}`;
+        th.style.color = '#065f46';
+      }
     });
   }
 
