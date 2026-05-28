@@ -909,19 +909,19 @@
     const numWires = activeWires.length || 1;
 
     const sideAInfo = (termA || connA) ? {
-      termName: termA ? (termA.art || termA.name) : '',
+      termName: termA ? termA.name : '',
       termArt:  termA ? termA.art  : '',
       termQty:  termA ? numWires : 0,
-      connName: connA ? (connA.art || connA.name) : '',
+      connName: connA ? connA.name : '',
       connArt:  connA ? connA.art  : '',
       connQty:  connA ? 1 : 0,
     } : null;
 
     const sideBInfo = sideB && (termB || connB) ? {
-      termName: termB ? (termB.art || termB.name) : '',
+      termName: termB ? termB.name : '',
       termArt:  termB ? termB.art  : '',
       termQty:  termB ? numWires : 0,
-      connName: connB ? (connB.art || connB.name) : '',
+      connName: connB ? connB.name : '',
       connArt:  connB ? connB.art  : '',
       connQty:  connB ? 1 : 0,
     } : null;

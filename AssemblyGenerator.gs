@@ -551,6 +551,60 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
           fillMergedCell_(sheet, rowNum, nameC + 1, wName, mergeMap);
           if (normC >= 0) fillMergedCell_(sheet, rowNum, normC + 1, wNorm, mergeMap);
         }
+      } else if (['prsTermA','insTermA','prsTermB','insTermB'].includes(opType)
+                 && Array.isArray(config.wires) && config.wires.length > 0 && nameC >= 0) {
+        // Per-wire rows for terminal ops: "{wire art} {len}мм + {termArt}" etc.
+        const termWires = config.wires;
+        const partQty   = (config.partQty > 0) ? config.partQty : 1;
+        const side      = (opType === 'prsTermA' || opType === 'insTermA') ? sA : sB;
+        const termArt   = side.termArt || side.termName || '';
+        const connArt   = (opType === 'insTermA' || opType === 'insTermB')
+                          ? (side.connArt || side.connName || '') : '';
+        const sideLabel = (opType === 'prsTermA' || opType === 'insTermA') ? 'А' : 'В';
+
+        const buildTermWireName = w => {
+          const base = [w.art || w.name, w.length ? w.length + 'мм' : ''].filter(Boolean).join(' ');
+          const withTerm = termArt ? base + ' + ' + termArt : base;
+          return connArt ? withTerm + ' → ' + connArt + ' ст.' + sideLabel : withTerm;
+        };
+
+        let resTimeBound2 = values.length;
+        for (let r = fSfOut + 1; r < values.length; r++) {
+          if (values[r].some(c => /расс?ч[её]?тное\s*врем/i.test(String(c || '')))) {
+            resTimeBound2 = r; break;
+          }
+        }
+        const resSlots2 = [fSfOut];
+        for (let r = fSfOut + 1; r < resTimeBound2; r++) {
+          const fc = String(values[r][0] || '').toLowerCase().trim();
+          if (fc && !/полуфабрикат|^п\/ф/.test(fc) && !/^\d+$/.test(fc)) break;
+          if (!String(values[r][nameC] || '').trim()) resSlots2.push(r);
+          else break;
+        }
+        if (termWires.length > resSlots2.length) {
+          const insertCount = termWires.length - resSlots2.length;
+          const lastSlot    = resSlots2[resSlots2.length - 1];
+          const ok = insertRowsAfterSafe_(sheet, lastSlot + 1, insertCount, fSfOut + 1);
+          if (ok) {
+            for (let i = 0; i < insertCount; i++) resSlots2.push(lastSlot + 1 + i);
+            values   = sheet.getRange(1, 1, sheet.getLastRow(), lastCol).getValues();
+            formulas = sheet.getRange(1, 1, values.length, lastCol).getFormulas();
+            mergeMap = buildMergeMap_(sheet);
+            const sec3 = detectSections(values);
+            timeRow    = sec3.timeRow;
+          }
+        }
+        for (let i = 0; i < Math.min(termWires.length, resSlots2.length); i++) {
+          const w      = termWires[i];
+          const rowNum = resSlots2[i] + 1;
+          if (seqCol >= 0) {
+            let sr = rowNum, sc = seqCol + 1;
+            if (mergeMap[sr] && mergeMap[sr][sc]) { const p = mergeMap[sr][sc]; sr = p.r; sc = p.c; }
+            try { sheet.getRange(sr, sc).setValue(i + 1); } catch (e) {}
+          }
+          fillMergedCell_(sheet, rowNum, nameC + 1, buildTermWireName(w), mergeMap);
+          if (normC >= 0) fillMergedCell_(sheet, rowNum, normC + 1, String(w.qty * partQty).replace('.', ','), mergeMap);
+        }
       } else if (nameC >= 0) {
         fillMergedCell_(sheet, fSfOut + 1, nameC + 1, thisResult, mergeMap);
       }
