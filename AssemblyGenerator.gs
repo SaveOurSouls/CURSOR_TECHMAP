@@ -671,15 +671,52 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
           fillMergedCell_(sheet, rowNum, tNameCol + 1, wName, mergeMap);
           if (tNormCol >= 0) fillMergedCell_(sheet, rowNum, tNormCol + 1, wNorm, mergeMap);
         }
-      } else {
-        // For terminal/connector ops multiply tOp by component qty × partQty
-        const opCompQty =
-          opType === 'prsTermA' ? (sA.termQty || 1) :
-          opType === 'insTermA' ? (sA.connQty || 1) :
-          opType === 'prsTermB' ? (sB.termQty || 1) :
-          opType === 'insTermB' ? (sB.connQty || 1) : 1;
-        const pQtyTime = (config.partQty > 0) ? config.partQty : 1;
+      } else if (['prsTermA','insTermA','prsTermB','insTermB'].includes(opType)
+                 && Array.isArray(config.wires) && config.wires.length > 0 && tNameCol >= 0) {
+        // Per-wire time rows for terminal ops (same pattern as isCutWire)
+        const termWires2 = config.wires;
+        const pQtyT      = (config.partQty > 0) ? config.partQty : 1;
+        const tOpSec2    = parseFloat(String(op.tOp   || '').replace(',', '.')) || 0;
+        const tPrepSec2  = parseFloat(String(op.tPrep || '').replace(',', '.')) || 0;
+        const tOpMin2    = tOpSec2  / 60;
+        const tPrepMin2  = tPrepSec2 / 60;
 
+        const timeSlots2 = [...timeDataRows];
+        for (let r = timeDataRows[timeDataRows.length - 1] + 1; r < values.length; r++) {
+          const rc = values[r].map(c => String(c || '').toLowerCase().trim());
+          if (!rc.some(v => v)) break;
+          if (rc.some(v => v === 'наименование' || v === 'норма' || v === 'обозначение' || v === 'факт')) continue;
+          if (!String(values[r][tNameCol] || '').trim()) timeSlots2.push(r);
+          else break;
+        }
+        if (termWires2.length > timeSlots2.length) {
+          const insertCount = termWires2.length - timeSlots2.length;
+          const lastSlot    = timeSlots2[timeSlots2.length - 1];
+          const ok = insertRowsAfterSafe_(sheet, lastSlot + 1, insertCount, timeDataRows[0] + 1);
+          if (ok) {
+            for (let i = 0; i < insertCount; i++) timeSlots2.push(lastSlot + 1 + i);
+            values   = sheet.getRange(1, 1, sheet.getLastRow(), lastCol).getValues();
+            formulas = sheet.getRange(1, 1, sheet.getLastRow(), lastCol).getFormulas();
+            mergeMap = buildMergeMap_(sheet);
+          }
+        }
+        for (let i = 0; i < Math.min(termWires2.length, timeSlots2.length); i++) {
+          const w      = termWires2[i];
+          const rowNum = timeSlots2[i] + 1;
+          const wName  = [w.art || w.name, w.length ? w.length + 'мм' : ''].filter(Boolean).join(' ');
+          const rawNorm = (tOpMin2 > 0 ? tOpMin2 * w.qty * pQtyT : w.qty * pQtyT) + tPrepMin2;
+          const wNorm  = isFinite(rawNorm)
+            ? String(rawNorm % 1 === 0 ? rawNorm : rawNorm.toFixed(2)).replace('.', ',')
+            : '';
+          if (seqCol >= 0) {
+            let sr = rowNum, sc = seqCol + 1;
+            if (mergeMap[sr] && mergeMap[sr][sc]) { const p = mergeMap[sr][sc]; sr = p.r; sc = p.c; }
+            try { sheet.getRange(sr, sc).setValue(i + 1); } catch (e) {}
+          }
+          fillMergedCell_(sheet, rowNum, tNameCol + 1, wName, mergeMap);
+          if (tNormCol >= 0) fillMergedCell_(sheet, rowNum, tNormCol + 1, wNorm, mergeMap);
+        }
+      } else {
         const secPrepToMin = v => {
           const s = parseFloat(String(v || '').replace(',', '.'));
           if (!s) return '';
@@ -689,14 +726,12 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
         const secOpToMin = v => {
           const s = parseFloat(String(v || '').replace(',', '.'));
           if (!s) return '';
-          const m = s * opCompQty * pQtyTime / 60;
+          const m = s / 60;
           return String(m % 1 === 0 ? m : m.toFixed(2)).replace('.', ',');
         };
-
         const tVals = timeDataRows.length <= 1 ? [secOpToMin(op.tOp)]
                     : timeDataRows.length === 2 ? [secPrepToMin(op.tPrep), secOpToMin(op.tOp)]
                     : [secPrepToMin(op.tPrep), secOpToMin(op.tOp), secOpToMin(op.tMachine)];
-
         for (let i = 0; i < timeDataRows.length && i < tVals.length; i++) {
           const r = timeDataRows[i];
           setCell(r, tNormCol, tVals[i]);
