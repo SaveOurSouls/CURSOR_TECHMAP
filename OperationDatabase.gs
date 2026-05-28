@@ -1,65 +1,9 @@
-﻿const TECHOPS_DB_APP = {
-  sourceSpreadsheetId: '1W3VK9Fw71lYdw1Klcsn_za5-2EhvLoXIAKZVYOCnKcs',
-  metaSheetName: '_TC_TECHOPS_META',
-  dataSheetName: '_TC_TECHOPS_DB',
-  metaHeaders: ['key', 'value'],
-  dataHeaders: ['tabKey', 'displayText', 'normalizedSearch', 'exportJson', 'sourceSheet', 'sortKey', 'extra1', 'extra2', 'extra3', 'extra4', 'extra5', 'extra6', 'extra7'],
-  cacheKeyPrefix: 'techmap-techops-db-v7',
-  schemaVersion: 7,
-  cacheChunkSize: 80000,
-  cacheTtlSeconds: 21600,
-  tabs: {
-    ob: {
-      key: 'ob',
-      label: 'БД.ОБ',
-      sourceSheetName: 'БД.ОБ',
-      headerRowNumber: 2,
-      searchPlaceholder: 'Поиск по полю "Для базы"...',
-      outputLabels: ['Для базы'],
-    },
-    op: {
-      key: 'op',
-      label: 'БД.ОП',
-      sourceSheetName: 'БД.ОП',
-      headerRowNumber: 2,
-      searchPlaceholder: 'Поиск по номеру или названию операции...',
-      outputLabels: [
-        'Номер | Название',
-        'Время Операции',
-        'Время подготовки, сек',
-        'Расход на настройку м; шт;',
-        'Время машины, сек/оп; сек/м',
-      ],
-    },
-    ter: {
-      key: 'ter',
-      label: 'БД.ТЕР',
-      sourceSheetName: 'БД.ТЕР',
-      headerRowNumber: 1,
-      searchPlaceholder: 'Поиск по производителю, серии, product name...',
-      outputLabels: ['Тип', 'Производитель', 'Product Name', 'Series', 'Шаг', 'Тип конт.', 'Арт. ISL', 'Арт. SAG', 'Аппликатор'],
-    },
-    coax: {
-      key: 'coax',
-      label: 'БД.КОАКС',
-      sourceSheetName: 'БД.КОАКС',
-      headerRowNumber: 2,
-      searchPlaceholder: 'Поиск по артикулам, сериям, проводу, размерам...',
-      outputLabels: ['Артикул', 'Программа', 'D1', 'D2', 'D3', 'L1', 'L2', 'L3', 'L+', 'L-'],
-    },
-  },
-  tabOrder: ['ob', 'op', 'ter', 'coax'],
-};
+// ============================================================
+//  OperationDatabase.gs — база техопераций
+//  Зависимости: Config.gs, Utils.gs
+// ============================================================
 
-
-function refreshTechOperationsDatabase() {
-  return syncTechOperationsDatabaseMenu();
-}
-
-// Backward-compatible alias used by menu/sidebar wiring.
-function refreshOperationDatabase() {
-  return refreshTechOperationsDatabase();
-}
+// ── Public API ───────────────────────────────────────────────
 
 function syncTechOperationsDatabaseMenu() {
   const summary = syncTechOperationsDatabase();
@@ -74,63 +18,47 @@ function syncTechOperationsDatabaseMenu() {
 function syncTechOperationsDatabase() {
   const ss = SpreadsheetApp.getActive();
   ensureTechOperationsInfrastructure_(ss);
-  clearTechOperationsCache_();
+  getTechOpsCache_().clear();
 
   const snapshot = fetchTechOperationsSnapshotFromSource_();
   writeTechOperationsSnapshotToSheets_(snapshot);
-  cacheTechOperationsSnapshot_(snapshot);
+  getTechOpsCache_().save(snapshot);
   return buildTechOperationsSummary_(snapshot);
-}
-
-function clearTechOperationsCache_() {
-  const cache = CacheService.getDocumentCache();
-  const countValue = cache.get(`${TECHOPS_DB_APP.cacheKeyPrefix}:count`);
-  const count = toInt_(countValue) || 0;
-  cache.remove(`${TECHOPS_DB_APP.cacheKeyPrefix}:count`);
-  for (let i = 0; i < count; i += 1) {
-    cache.remove(`${TECHOPS_DB_APP.cacheKeyPrefix}:chunk:${i}`);
-  }
 }
 
 function getTechOperationsDatabase(forceRefresh) {
   if (forceRefresh) {
     syncTechOperationsDatabase();
-    return buildTechOperationsPayload_(loadTechOperationsSnapshotFromCache_() || loadTechOperationsSnapshotFromSheets_());
+    return buildTechOperationsPayload_(getTechOpsCache_().load() || loadTechOperationsSnapshotFromSheets_());
   }
 
-  // Fast path: cache warm and schema version matches — no sheet reads at all
-  const cached = loadTechOperationsSnapshotFromCache_();
+  const cached = getTechOpsCache_().load();
   if (cached && cached.records && cached.records.length &&
       String(cached.meta && cached.meta.schemaVersion) === String(TECHOPS_DB_APP.schemaVersion)) {
     return buildTechOperationsPayload_(cached);
   }
 
-  // Cache miss or stale schema: load from sheets
   ensureTechOperationsInfrastructure_(SpreadsheetApp.getActive());
   const stored = loadTechOperationsSnapshotFromSheets_();
   if (!stored.records.length ||
       String(stored.meta.schemaVersion) !== String(TECHOPS_DB_APP.schemaVersion)) {
     syncTechOperationsDatabase();
-    return buildTechOperationsPayload_(loadTechOperationsSnapshotFromCache_() || loadTechOperationsSnapshotFromSheets_());
+    return buildTechOperationsPayload_(getTechOpsCache_().load() || loadTechOperationsSnapshotFromSheets_());
   }
-  cacheTechOperationsSnapshot_(stored);
+  getTechOpsCache_().save(stored);
   return buildTechOperationsPayload_(stored);
 }
 
-// Backward-compatible alias used by the workspace sidebar.
+/** Backward-compatible alias used by the workspace sidebar. */
 function getOperationDatabase(forceRefresh) {
   return getTechOperationsDatabase(forceRefresh);
 }
 
 function insertTechOperationMatrix(matrix, targetCellA1) {
-  if (!matrix || !matrix.length) {
-    return 'Нет данных для выгрузки';
-  }
+  if (!matrix || !matrix.length) return 'Нет данных для выгрузки';
 
   const width = Array.isArray(matrix[0]) ? matrix[0].length : 0;
-  if (!width) {
-    return 'Нет данных для выгрузки';
-  }
+  if (!width) return 'Нет данных для выгрузки';
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getActiveSheet();
@@ -146,9 +74,7 @@ function insertTechOperationMatrix(matrix, targetCellA1) {
     startCell = ss.getCurrentCell() || sheet.getActiveCell();
   }
 
-  if (!startCell) {
-    return 'ОШИБКА: Не выбрана стартовая ячейка.';
-  }
+  if (!startCell) return 'ОШИБКА: Не выбрана стартовая ячейка.';
 
   const startRow = startCell.getRow();
   const startCol = startCell.getColumn();
@@ -157,14 +83,13 @@ function insertTechOperationMatrix(matrix, targetCellA1) {
 
   ensureSheetCapacity_(sheet, startRow + numRows - 1, writeEnd + 20);
 
-  // Scan from column 1 — getMergedRanges() may miss merges whose top-left
-  // cell lies to the LEFT of startCol but whose body overlaps our write area.
+  // Сканируем от col 1 — getMergedRanges() может пропустить мёрджи, чья верхняя
+  // левая ячейка левее startCol но тело перекрывает зону записи.
   const scanWidth = writeEnd + 20;
   const mergedRanges = sheet
     .getRange(startRow, 1, numRows, scanWidth)
     .getMergedRanges();
 
-  // Check whether any merge actually overlaps the write area [startCol, writeEnd].
   const writeAreaHasMerges = mergedRanges.some((mr) => {
     const mStart = mr.getColumn();
     const mEnd   = mStart + mr.getNumColumns() - 1;
@@ -177,8 +102,6 @@ function insertTechOperationMatrix(matrix, targetCellA1) {
     return `Успешно выгружено ${numRows} строк.`;
   }
 
-  // Build full merge map (keyed from col 1 so ghost cells to the left of
-  // startCol are also recorded and handled correctly in the write loop).
   const mergeByRow = {};
   mergedRanges.forEach((mr) => {
     const r = mr.getRow();
@@ -189,7 +112,6 @@ function insertTechOperationMatrix(matrix, targetCellA1) {
     for (let g = 1; g < w; g++) mergeByRow[r][c + g] = 0;
   });
 
-  // Parse each row into segments: 'n' = normal run, 'm' = merge top-left.
   const allSegs = matrix.map((rowData, ri) => {
     const absRow = startRow + ri;
     const rowMerges = mergeByRow[absRow] || {};
@@ -221,8 +143,6 @@ function insertTechOperationMatrix(matrix, targetCellA1) {
     return segs;
   });
 
-  // When all rows share the same segment structure, write each normal segment
-  // as one multi-row setValues call instead of N separate calls.
   const tmpl = allSegs[0];
   const uniform = numRows === 1 || allSegs.every((segs) =>
     segs.length === tmpl.length &&
@@ -258,11 +178,9 @@ function insertTechOperationMatrix(matrix, targetCellA1) {
   return `Успешно выгружено ${numRows} строк.`;
 }
 
-// Backward-compatible alias used by the workspace sidebar.
+/** Backward-compatible alias used by the workspace sidebar. */
 function insertOperationRows(matrix, targetCellA1) {
-  return {
-    message: insertTechOperationMatrix(matrix, targetCellA1),
-  };
+  return { message: insertTechOperationMatrix(matrix, targetCellA1) };
 }
 
 function writeSingleCellNames(text, targetCellA1) {
@@ -281,20 +199,18 @@ function writeSingleCellNames(text, targetCellA1) {
   } else {
     targetCell = ss.getCurrentCell() || sheet.getActiveCell();
   }
-  if (!targetCell) {
-    return { ok: false, message: 'ОШИБКА: Не выбрана стартовая ячейка.' };
-  }
+  if (!targetCell) return { ok: false, message: 'ОШИБКА: Не выбрана стартовая ячейка.' };
   targetCell.setValue(text);
   return { ok: true, message: 'Записано в ' + targetCell.getA1Notation() };
 }
 
-function ensureTechOperationsDatabaseReady_() {
-  ensureTechOperationsInfrastructure_(SpreadsheetApp.getActive());
-  const snapshot = getTechOperationsSnapshot_();
-  if (!snapshot.records.length) {
-    syncTechOperationsDatabase();
-  }
+// ── Cache ────────────────────────────────────────────────────
+
+function getTechOpsCache_() {
+  return ChunkCache_(TECHOPS_DB_APP.cacheKeyPrefix, TECHOPS_DB_APP.cacheChunkSize, TECHOPS_DB_APP.cacheTtlSeconds);
 }
+
+// ── Infrastructure ───────────────────────────────────────────
 
 function ensureTechOperationsInfrastructure_(ssArg) {
   const ss = ssArg || SpreadsheetApp.getActive();
@@ -331,7 +247,6 @@ function ensureTechOperationsDataSheet_(ss) {
     return sheet;
   }
 
-  // Schema check: rebuild only when column count changed
   const existingCols = sheet.getLastColumn();
   if (existingCols > 0 && existingCols !== TECHOPS_DB_APP.dataHeaders.length) {
     sheet.clear();
@@ -351,6 +266,8 @@ function ensureTechOperationsDataSheet_(ss) {
 
   return sheet;
 }
+
+// ── Snapshot fetch from source ───────────────────────────────
 
 function fetchTechOperationsSnapshotFromSource_() {
   const sourceSs = SpreadsheetApp.openById(TECHOPS_DB_APP.sourceSpreadsheetId);
@@ -373,20 +290,14 @@ function fetchTechOperationsSnapshotFromSource_() {
       sheetFound: false,
     };
     const sheet = sourceSs.getSheetByName(config.sourceSheetName);
-    if (!sheet) {
-      return;
-    }
+    if (!sheet) return;
     diagnosticsByTab[tabKey].sheetFound = true;
 
     const values = sheet.getDataRange().getDisplayValues();
-    if (values.length < 2) {
-      return;
-    }
+    if (values.length < 2) return;
 
     const headerRowIndex = detectTechOperationsHeaderRow_(values, tabKey);
-    if (headerRowIndex < 0) {
-      return;
-    }
+    if (headerRowIndex < 0) return;
     diagnosticsByTab[tabKey].headerRowNumber = headerRowIndex + 1;
 
     const headerMap = buildTechOperationsHeaderMap_(values[headerRowIndex]);
@@ -395,15 +306,14 @@ function fetchTechOperationsSnapshotFromSource_() {
       .filter(({ name }) => name !== '');
     columnHeadersByTab[tabKey] = namedColumns.map(({ name }) => name);
     const diagnostics = buildTechOperationsHeaderDiagnostics_(tabKey, headerMap, values[headerRowIndex]);
-    diagnosticsByTab[tabKey].foundHeaders = diagnostics.foundHeaders;
+    diagnosticsByTab[tabKey].foundHeaders  = diagnostics.foundHeaders;
     diagnosticsByTab[tabKey].matchedGroups = diagnostics.matchedGroups;
     diagnosticsByTab[tabKey].missingGroups = diagnostics.missingGroups;
+
     for (let rowIndex = headerRowIndex + 1; rowIndex < values.length; rowIndex += 1) {
       const row = values[rowIndex];
       const record = buildTechOperationsRecordFromRow_(tabKey, row, headerMap, config.sourceSheetName, namedColumns);
-      if (!record || !record.displayText) {
-        continue;
-      }
+      if (!record || !record.displayText) continue;
       countsByTab[tabKey] += 1;
       diagnosticsByTab[tabKey].parsedRows += 1;
       records.push(record);
@@ -433,13 +343,13 @@ function fetchTechOperationsSnapshotFromSource_() {
   };
 }
 
+// ── Header parsing ───────────────────────────────────────────
+
 function buildTechOperationsHeaderMap_(headersRow) {
   const map = {};
   headersRow.forEach((header, index) => {
-    const normalized = normalizeTechOperationsHeader_(header);
-    if (normalized) {
-      map[normalized] = index;
-    }
+    const normalized = normalizeHeader_(header);
+    if (normalized) map[normalized] = index;
   });
   return map;
 }
@@ -448,9 +358,7 @@ function detectTechOperationsHeaderRow_(values, tabKey) {
   const config = TECHOPS_DB_APP.tabs[tabKey];
   if (config && config.headerRowNumber) {
     const explicitIndex = Number(config.headerRowNumber) - 1;
-    if (explicitIndex >= 0 && explicitIndex < values.length) {
-      return explicitIndex;
-    }
+    if (explicitIndex >= 0 && explicitIndex < values.length) return explicitIndex;
   }
 
   const aliases = getTechOperationsHeaderAliasesForTab_(tabKey);
@@ -462,19 +370,12 @@ function detectTechOperationsHeaderRow_(values, tabKey) {
     const headerMap = buildTechOperationsHeaderMap_(values[rowIndex]);
     let score = 0;
     aliases.forEach((aliasGroup) => {
-      const found = aliasGroup.some((alias) => {
-        const key = normalizeTechOperationsHeader_(alias);
+      if (aliasGroup.some((alias) => {
+        const key = normalizeHeader_(alias);
         return headerMap[key] === 0 || headerMap[key] > 0;
-      });
-      if (found) {
-        score += 1;
-      }
+      })) score += 1;
     });
-
-    if (score > bestScore) {
-      bestScore = score;
-      bestIndex = rowIndex;
-    }
+    if (score > bestScore) { bestScore = score; bestIndex = rowIndex; }
   }
 
   const minimumScore = Math.max(1, Math.min(2, aliases.length));
@@ -517,56 +418,42 @@ function getTechOperationsHeaderAliasesForTab_(tabKey) {
 
 function buildTechOperationsHeaderDiagnostics_(tabKey, headerMap, headersRow) {
   const aliasGroups = getTechOperationsHeaderAliasesForTab_(tabKey);
-  const foundHeaders = (headersRow || [])
-    .map((header) => normalizeString_(header))
-    .filter(Boolean);
+  const foundHeaders = (headersRow || []).map((h) => normalizeString_(h)).filter(Boolean);
   const matchedGroups = [];
   const missingGroups = [];
 
   aliasGroups.forEach((group) => {
-    const matchedAlias = group.find((alias) => {
-      const key = normalizeTechOperationsHeader_(alias);
+    const matched = group.some((alias) => {
+      const key = normalizeHeader_(alias);
       return headerMap[key] === 0 || headerMap[key] > 0;
     });
-    if (matchedAlias) {
-      matchedGroups.push(group[0]);
-    } else {
-      missingGroups.push(group[0]);
-    }
+    if (matched) matchedGroups.push(group[0]);
+    else missingGroups.push(group[0]);
   });
 
-  return {
-    foundHeaders,
-    matchedGroups,
-    missingGroups,
-  };
+  return { foundHeaders, matchedGroups, missingGroups };
 }
+
+// ── Record builders ──────────────────────────────────────────
 
 function buildTechOperationsRecordFromRow_(tabKey, row, headerMap, sourceSheet, namedColumns) {
   switch (tabKey) {
-    case 'ob':
-      return buildTechOperationsObRecord_(row, headerMap, sourceSheet, namedColumns);
-    case 'op':
-      return buildTechOperationsOpRecord_(row, headerMap, sourceSheet, namedColumns);
-    case 'ter':
-      return buildTechOperationsTerRecord_(row, headerMap, sourceSheet, namedColumns);
-    case 'coax':
-      return buildTechOperationsCoaxRecord_(row, headerMap, sourceSheet, namedColumns);
-    default:
-      return null;
+    case 'ob':   return buildTechOperationsObRecord_(row, headerMap, sourceSheet, namedColumns);
+    case 'op':   return buildTechOperationsOpRecord_(row, headerMap, sourceSheet, namedColumns);
+    case 'ter':  return buildTechOperationsTerRecord_(row, headerMap, sourceSheet, namedColumns);
+    case 'coax': return buildTechOperationsCoaxRecord_(row, headerMap, sourceSheet, namedColumns);
+    default:     return null;
   }
 }
 
 function buildTechOperationsObRecord_(row, headerMap, sourceSheet, namedColumns) {
   const baseValue = getTechOperationsCellByAliases_(row, headerMap, ['для базы', 'длябазы']);
-  if (!baseValue) {
-    return null;
-  }
+  if (!baseValue) return null;
   const obType = getTechOperationsCellByAliases_(row, headerMap, ['тип', 'type', 'категория', 'category', 'группа']);
   return {
     tabKey: 'ob',
     displayText: baseValue,
-    normalizedSearch: normalizeTechOperationsSearch_(baseValue),
+    normalizedSearch: normalizeSearch_(baseValue),
     exportValues: (namedColumns || []).map(({ index }) => normalizeString_(row[index]) || ''),
     sourceSheet,
     obType: obType || '',
@@ -581,17 +468,14 @@ function buildTechOperationsOpRecord_(row, headerMap, sourceSheet, namedColumns)
   const tPrep  = getTechOperationsCellByAliases_(row, headerMap, ['время подготовки, сек', 'время подготовки сек', 'время подготовки']);
   const tMach  = getTechOperationsCellByAliases_(row, headerMap, ['время машины, сек/оп; сек/м', 'время машины сек/оп; сек/м', 'время машины']);
 
-  // Display as "Название | Номер" so list is sorted and shown by name first
   const displayText = joinTechOperationsParts_([name, number], ' | ');
-  if (!displayText) {
-    return null;
-  }
+  if (!displayText) return null;
 
   return {
     tabKey: 'op',
     displayText,
     sortKey: name || number,
-    normalizedSearch: normalizeTechOperationsSearch_(number + ' ' + name),
+    normalizedSearch: normalizeSearch_(number + ' ' + name),
     exportValues: (namedColumns || []).map(({ index }) => normalizeString_(row[index]) || ''),
     sourceSheet,
     opNumber: number,
@@ -606,16 +490,14 @@ function buildTechOperationsTerRecord_(row, headerMap, sourceSheet, namedColumns
   const manufacturer = getTechOperationsCellByAliases_(row, headerMap, ['производитель', 'бренд', 'manufacturer']);
   const series       = getTechOperationsCellByAliases_(row, headerMap, ['series', 'серия разъемов', 'серия']);
   const productName  = getTechOperationsCellByAliases_(row, headerMap, ['product name', 'productname', 'комплектующая']);
-  const connType   = getTechOperationsCellByAliases_(row, headerMap, ['тип разъёма', 'тип разъема']);
-  const terType    = getTechOperationsCellByAliases_(row, headerMap, ['тип контакта', 'тип конт.', 'тип конт']);
-  const artISL     = getTechOperationsCellByAliases_(row, headerMap, ['артикул (контакта isl)', 'артикул контакта isl']);
-  const artSAG     = getTechOperationsCellByAliases_(row, headerMap, ['артикул (контакт sag)', 'артикул контакт sag']);
-  const terArticle = getTechOperationsCellByAliases_(row, headerMap, ['артикул контакта (reel)', 'артикул контакта', 'артикул']);
+  const connType     = getTechOperationsCellByAliases_(row, headerMap, ['тип разъёма', 'тип разъема']);
+  const terType      = getTechOperationsCellByAliases_(row, headerMap, ['тип контакта', 'тип конт.', 'тип конт']);
+  const artISL       = getTechOperationsCellByAliases_(row, headerMap, ['артикул (контакта isl)', 'артикул контакта isl']);
+  const artSAG       = getTechOperationsCellByAliases_(row, headerMap, ['артикул (контакт sag)', 'артикул контакт sag']);
+  const terArticle   = getTechOperationsCellByAliases_(row, headerMap, ['артикул контакта (reel)', 'артикул контакта', 'артикул']);
 
   const displayText = joinTechOperationsParts_([manufacturer, series, productName], ' | ');
-  if (!displayText) {
-    return null;
-  }
+  if (!displayText) return null;
 
   return {
     tabKey: 'ter',
@@ -625,7 +507,7 @@ function buildTechOperationsTerRecord_(row, headerMap, sourceSheet, namedColumns
     terComponent:    productName,
     terType,
     terArticle,
-    normalizedSearch: normalizeTechOperationsSearch_(
+    normalizedSearch: normalizeSearch_(
       [manufacturer, series, productName, connType, terType, artISL, artSAG].join(' ')
     ),
     exportValues: (namedColumns || []).map(({ index }) => normalizeString_(row[index]) || ''),
@@ -642,31 +524,27 @@ function buildTechOperationsCoaxRecord_(row, headerMap, sourceSheet, namedColumn
   const program    = getTechOperationsCellByAliases_(row, headerMap, ['программа']);
 
   const displayText = joinTechOperationsParts_([typeSeries, wire, supplier], ' | ');
-  if (!displayText) {
-    return null;
-  }
-
-  const exportValues = (namedColumns || []).map(({ index }) => normalizeString_(row[index]) || '');
+  if (!displayText) return null;
 
   return {
     tabKey: 'coax',
     displayText,
-    coaxWire:     wire,
-    coaxType:     typeSeries,
-    coaxMfr:      mfr,
-    coaxArticle:  article,
-    sortKey: `${wire}\u0000${typeSeries}\u0000${mfr}\u0000${article}`,
-    normalizedSearch: normalizeTechOperationsSearch_(
+    coaxWire:    wire,
+    coaxType:    typeSeries,
+    coaxMfr:     mfr,
+    coaxArticle: article,
+    sortKey: `${wire} ${typeSeries} ${mfr} ${article}`,
+    normalizedSearch: normalizeSearch_(
       [article, typeSeries, mfr, supplier, wire, program].join(' ')
     ),
-    exportValues,
+    exportValues: (namedColumns || []).map(({ index }) => normalizeString_(row[index]) || ''),
     sourceSheet,
   };
 }
 
 function getTechOperationsCellByAliases_(row, headerMap, aliases) {
   for (let index = 0; index < aliases.length; index += 1) {
-    const headerIndex = headerMap[normalizeTechOperationsHeader_(aliases[index])];
+    const headerIndex = headerMap[normalizeHeader_(aliases[index])];
     if (headerIndex === 0 || headerIndex > 0) {
       return normalizeString_(row[headerIndex]);
     }
@@ -674,23 +552,32 @@ function getTechOperationsCellByAliases_(row, headerMap, aliases) {
   return '';
 }
 
-function normalizeTechOperationsHeader_(value) {
-  return String(value || '')
-    .toLowerCase()
-    .replace(/\u00a0/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function normalizeTechOperationsSearch_(value) {
-  return String(value || '')
-    .toLowerCase()
-    .replace(/\u00a0/g, ' ')
-    .replace(/\s+/g, '');
-}
-
 function joinTechOperationsParts_(parts, delimiter) {
   return (parts || []).filter((part) => normalizeString_(part)).join(delimiter || ' | ');
+}
+
+// ── Snapshot persistence ─────────────────────────────────────
+
+/**
+ * Десериализует запись из строки _TC_OP_DATA с учётом типа (tabKey).
+ * Устраняет мультиплексирование col 6-10, где раньше один столбец
+ * использовался для нескольких полей разных вкладок одновременно.
+ */
+function parseTechOpsRow_(row) {
+  const tabKey = row[0];
+  const base = {
+    tabKey,
+    displayText:      row[1],
+    normalizedSearch: row[2],
+    exportValues:     parseJsonArray_(row[3]),
+    sourceSheet:      row[4],
+    sortKey:          row[5] || '',
+  };
+  if (tabKey === 'op')   return { ...base, opNumber: row[6] || '', opName: row[7] || '', tOp: row[8] || '', tPrep: row[9] || '', tMachine: row[10] || '' };
+  if (tabKey === 'ter')  return { ...base, terManufacturer: row[6] || '', terSeries: row[7] || '', terComponent: row[8] || '', terType: row[9] || '', terArticle: row[10] || '' };
+  if (tabKey === 'coax') return { ...base, coaxWire: row[9] || '', coaxType: row[10] || '', coaxMfr: row[11] || '', coaxArticle: row[12] || '' };
+  if (tabKey === 'ob')   return { ...base, obType: row[6] || '' };
+  return base;
 }
 
 function writeTechOperationsSnapshotToSheets_(snapshot) {
@@ -750,19 +637,6 @@ function writeTechOperationsSnapshotToSheets_(snapshot) {
   hideTechOperationsSheets_();
 }
 
-function getTechOperationsSnapshot_() {
-  const cached = loadTechOperationsSnapshotFromCache_();
-  if (cached && cached.records && cached.records.length) {
-    return cached;
-  }
-
-  const stored = loadTechOperationsSnapshotFromSheets_();
-  if (stored.records.length) {
-    cacheTechOperationsSnapshot_(stored);
-  }
-  return stored;
-}
-
 function loadTechOperationsSnapshotFromSheets_() {
   const ss = SpreadsheetApp.getActive();
   const dataSheet = ss.getSheetByName(TECHOPS_DB_APP.dataSheetName);
@@ -776,31 +650,7 @@ function loadTechOperationsSnapshotFromSheets_() {
         .getRange(2, 1, lastRow - 1, TECHOPS_DB_APP.dataHeaders.length)
         .getValues()
         .filter((row) => row[0] && row[1])
-        .forEach((row) => {
-          records.push({
-            tabKey: row[0],
-            displayText: row[1],
-            normalizedSearch: row[2],
-            exportValues: parseJsonArray_(row[3]),
-            sourceSheet: row[4],
-            sortKey: row[5] || '',
-            terManufacturer: row[6] || '',
-            opNumber:        row[6] || '',
-            obType:          row[6] || '',
-            terSeries:       row[7] || '',
-            opName:          row[7] || '',
-            terComponent:    row[8] || '',
-            tOp:             row[8] || '',
-            terType:         row[9]  || '',
-            coaxWire:        row[9]  || '',
-            tPrep:           row[9]  || '',
-            terArticle:      row[10] || '',
-            coaxType:        row[10] || '',
-            tMachine:        row[10] || '',
-            coaxMfr:         row[11] || '',
-            coaxArticle:     row[12] || '',
-          });
-        });
+        .forEach((row) => records.push(parseTechOpsRow_(row)));
     }
   }
 
@@ -820,21 +670,13 @@ function loadTechOperationsSnapshotFromSheets_() {
       metaSheet.getRange(2, 1, metaLastRow - 1, 2).getValues().forEach((row) => {
         const key = row[0];
         const value = row[1];
-        if (key === 'sourceSpreadsheetId') {
-          meta.sourceSpreadsheetId = value || TECHOPS_DB_APP.sourceSpreadsheetId;
-        } else if (key === 'updatedAt') {
-          meta.updatedAt = value || '';
-        } else if (key === 'recordCount') {
-          meta.recordCount = toInt_(value);
-        } else if (key === 'schemaVersion') {
-          meta.schemaVersion = toInt_(value);
-        } else if (key === 'countsByTabJson') {
-          try { meta.countsByTab = JSON.parse(value) || {}; } catch (e) {}
-        } else if (key === 'diagnosticsByTabJson') {
-          try { meta.diagnosticsByTab = JSON.parse(value) || {}; } catch (e) {}
-        } else if (key === 'columnHeadersByTabJson') {
-          try { meta.columnHeadersByTab = JSON.parse(value) || {}; } catch (e) {}
-        }
+        if      (key === 'sourceSpreadsheetId') meta.sourceSpreadsheetId = value || TECHOPS_DB_APP.sourceSpreadsheetId;
+        else if (key === 'updatedAt')           meta.updatedAt = value || '';
+        else if (key === 'recordCount')         meta.recordCount = toInt_(value);
+        else if (key === 'schemaVersion')       meta.schemaVersion = toInt_(value);
+        else if (key === 'countsByTabJson')     try { meta.countsByTab = JSON.parse(value) || {}; } catch (e) {}
+        else if (key === 'diagnosticsByTabJson') try { meta.diagnosticsByTab = JSON.parse(value) || {}; } catch (e) {}
+        else if (key === 'columnHeadersByTabJson') try { meta.columnHeadersByTab = JSON.parse(value) || {}; } catch (e) {}
       });
     }
   }
@@ -842,29 +684,18 @@ function loadTechOperationsSnapshotFromSheets_() {
   return { meta, records };
 }
 
-function buildTechOperationsPayload_(snapshot) {
-  const payload = {
-    meta: buildTechOperationsSummary_(snapshot),
-    tabs: {},
-    dbOb: [],
-    dbOp: [],
-    dbTer: [],
-    dbKoax: [],
-  };
+// ── Payload builder ──────────────────────────────────────────
 
-  const payloadKeyMap = {
-    ob: 'dbOb',
-    op: 'dbOp',
-    ter: 'dbTer',
-    coax: 'dbKoax',
-  };
+function buildTechOperationsPayload_(snapshot) {
+  const payload = { meta: buildTechOperationsSummary_(snapshot), tabs: {}, dbOb: [], dbOp: [], dbTer: [], dbKoax: [] };
+
+  const payloadKeyMap = { ob: 'dbOb', op: 'dbOp', ter: 'dbTer', coax: 'dbKoax' };
 
   TECHOPS_DB_APP.tabOrder.forEach((tabKey) => {
     const config = TECHOPS_DB_APP.tabs[tabKey];
     const items = (snapshot.records || [])
       .filter((record) => {
         if (record.tabKey !== tabKey) return false;
-        // Skip separator/placeholder rows in БД.ОБ (no letters or digits)
         if (tabKey === 'ob' && !/[а-яёa-z0-9]/i.test(record.displayText || '')) return false;
         return true;
       })
@@ -882,6 +713,9 @@ function buildTechOperationsPayload_(snapshot) {
         if (tabKey === 'op') {
           item.opNumber = record.opNumber || '';
           item.opName   = record.opName   || record.sortKey || '';
+          item.tOp      = record.tOp      || '';
+          item.tPrep    = record.tPrep    || '';
+          item.tMachine = record.tMachine || '';
         }
         if (tabKey === 'ob') {
           item.obType = record.obType || '';
@@ -899,10 +733,9 @@ function buildTechOperationsPayload_(snapshot) {
           item.coaxType    = record.coaxType    || '';
           item.coaxMfr     = record.coaxMfr     || '';
           item.coaxArticle = record.coaxArticle || '';
-          // Leaf label shown at level 4 (Артикул); if empty use Тип+Провод
           item.label = item.coaxArticle ||
             joinTechOperationsParts_([item.coaxType, item.coaxWire], ' | ');
-          item.sortKey = `${item.coaxWire}\u0000${item.coaxType}\u0000${item.coaxMfr}\u0000${item.coaxArticle}`;
+          item.sortKey = `${item.coaxWire} ${item.coaxType} ${item.coaxMfr} ${item.coaxArticle}`;
         }
         return item;
       });
@@ -925,73 +758,26 @@ function buildTechOperationsPayload_(snapshot) {
 function buildTechOperationsSummary_(snapshot) {
   return {
     sourceSpreadsheetId: snapshot.meta.sourceSpreadsheetId || TECHOPS_DB_APP.sourceSpreadsheetId,
-    updatedAt: snapshot.meta.updatedAt || '',
-    recordCount: snapshot.meta.recordCount || (snapshot.records ? snapshot.records.length : 0),
-    countsByTab: snapshot.meta.countsByTab || {},
+    updatedAt:    snapshot.meta.updatedAt || '',
+    recordCount:  snapshot.meta.recordCount || (snapshot.records ? snapshot.records.length : 0),
+    countsByTab:  snapshot.meta.countsByTab || {},
     diagnosticsByTab: snapshot.meta.diagnosticsByTab || {},
   };
-}
-
-function cacheTechOperationsSnapshot_(snapshot) {
-  const cache = CacheService.getDocumentCache();
-  const serialized = JSON.stringify(snapshot);
-  const chunkCount = Math.ceil(serialized.length / TECHOPS_DB_APP.cacheChunkSize) || 1;
-  cache.put(
-    `${TECHOPS_DB_APP.cacheKeyPrefix}:count`,
-    String(chunkCount),
-    TECHOPS_DB_APP.cacheTtlSeconds
-  );
-
-  for (let index = 0; index < chunkCount; index += 1) {
-    const chunk = serialized.slice(
-      index * TECHOPS_DB_APP.cacheChunkSize,
-      (index + 1) * TECHOPS_DB_APP.cacheChunkSize
-    );
-    cache.put(
-      `${TECHOPS_DB_APP.cacheKeyPrefix}:chunk:${index}`,
-      chunk,
-      TECHOPS_DB_APP.cacheTtlSeconds
-    );
-  }
-}
-
-function loadTechOperationsSnapshotFromCache_() {
-  const cache = CacheService.getDocumentCache();
-  const countValue = cache.get(`${TECHOPS_DB_APP.cacheKeyPrefix}:count`);
-  const count = toInt_(countValue);
-  if (!count) {
-    return null;
-  }
-
-  let serialized = '';
-  for (let index = 0; index < count; index += 1) {
-    const chunk = cache.get(`${TECHOPS_DB_APP.cacheKeyPrefix}:chunk:${index}`);
-    if (chunk === null || chunk === undefined) {
-      return null;
-    }
-    serialized += chunk;
-  }
-
-  try {
-    return JSON.parse(serialized);
-  } catch (error) {
-    return null;
-  }
 }
 
 function hideTechOperationsSheets_() {
   const ss = SpreadsheetApp.getActive();
   [TECHOPS_DB_APP.metaSheetName, TECHOPS_DB_APP.dataSheetName].forEach((sheetName) => {
     const sheet = ss.getSheetByName(sheetName);
-    if (sheet) {
-      sheet.hideSheet();
-    }
+    if (sheet) sheet.hideSheet();
   });
 }
 
-function isTechOperationsSystemSheet_(sheetName) {
-  return (
-    sheetName === TECHOPS_DB_APP.metaSheetName ||
-    sheetName === TECHOPS_DB_APP.dataSheetName
-  );
+/** Возвращает snapshot из кеша или листов; используется AssemblyGenerator. */
+function getTechOperationsSnapshot_() {
+  const cached = getTechOpsCache_().load();
+  if (cached && cached.records && cached.records.length) return cached;
+  const stored = loadTechOperationsSnapshotFromSheets_();
+  if (stored.records.length) getTechOpsCache_().save(stored);
+  return stored;
 }

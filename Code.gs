@@ -1,27 +1,3 @@
-const TECHMAP_APP = {
-  menuTitle: 'Техкарты',
-  librarySheetName: '_TC_LIBRARY',
-  storeSheetName: '_TC_STORE',
-  canvasSheetName: '_TC_CANVAS',
-  legacyTemplatePrefix: '_TPL_',
-  catalogHeaders: [
-    'id',
-    'title',
-    'category',
-    'description',
-    'storeRow',
-    'storeColumn',
-    'height',
-    'width',
-    'sourceSheet',
-    'sourceRange',
-    'updatedAt',
-    'rowHeightsJson',
-    'columnWidthsJson',
-    'imagesJson',
-  ],
-};
-
 /**
  * Возвращает полное имя текущего листа.
  * Используется в шапке техкарты как =SHEETNAME() или =GET_NAME(...)
@@ -116,10 +92,12 @@ function showSaveTemplateDialog() {
   );
 }
 
+/** @returns {string} Метка версии каталога для инвалидации кеша на стороне sidebar. */
 function getCatalogVersion() {
   return PropertiesService.getUserProperties().getProperty('tc_catalog_version') || '0';
 }
 
+/** @returns {Object[]} Список шаблонов для отображения в sidebar. */
 function getTemplateCatalog() {
   return readCatalog_().map((item) => ({
     id: item.id,
@@ -132,6 +110,11 @@ function getTemplateCatalog() {
 }
 
 
+/**
+ * Сохраняет выделенный диапазон как шаблон.
+ * @param {Object} formData — данные из диалога SaveTemplateDialog.
+ * @returns {Object} { action, id, title, sizeLabel }
+ */
 function saveSelectedRangeAsTemplate(formData) {
   ensureInfrastructure_();
 
@@ -199,6 +182,12 @@ function saveSelectedRangeAsTemplate(formData) {
   };
 }
 
+/**
+ * Вставляет шаблон на новый лист.
+ * Вызывается как из sidebar, так и из generateAssemblyTechCards.
+ * @param {string} templateId
+ * @returns {Object} { title, sheetName, insertedRange }
+ */
 function insertTemplate(templateId) {
   if (!templateId) {
     throw new Error('Не передан идентификатор шаблона.');
@@ -266,6 +255,11 @@ function insertTemplate(templateId) {
   };
 }
 
+/**
+ * Удаляет шаблон из каталога и очищает его слот в _TC_STORE.
+ * @param {string} templateId
+ * @returns {Object} { deleted, id, title }
+ */
 function deleteTemplate(templateId) {
   if (!templateId) {
     throw new Error('Не передан идентификатор шаблона.');

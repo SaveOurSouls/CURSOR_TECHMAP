@@ -1,35 +1,7 @@
 // ============================================================
-//  Assembly Generator — генератор техкарт межплатных сборок
+//  AssemblyGenerator.gs — генератор техкарт межплатных сборок
+//  Зависимости: Config.gs, Utils.gs, TemplateStore.gs, OperationDatabase.gs
 // ============================================================
-
-const ASSEMBLY_GEN = {
-  placeholders: {
-    index:        '{{INDEX}}',
-    name:         '{{NAME}}',
-    wireName:     '{{WIRE_NAME}}',
-    wireArt:      '{{WIRE_ART}}',
-    wireQty:      '{{WIRE_QTY}}',
-    length:       '{{LENGTH}}',
-    semifinished: '{{SEMIFINISHED}}',
-    result:       '{{RESULT}}',
-    termNameA:    '{{TERM_A_NAME}}',
-    termArtA:     '{{TERM_A_ART}}',
-    termQtyA:     '{{TERM_A_QTY}}',
-    connNameA:    '{{CONN_A_NAME}}',
-    connArtA:     '{{CONN_A_ART}}',
-    connQtyA:     '{{CONN_A_QTY}}',
-    termNameB:    '{{TERM_B_NAME}}',
-    termArtB:     '{{TERM_B_ART}}',
-    termQtyB:     '{{TERM_B_QTY}}',
-    connNameB:    '{{CONN_B_NAME}}',
-    connArtB:     '{{CONN_B_ART}}',
-    connQtyB:     '{{CONN_B_QTY}}',
-    opNum:        '{{OP_NUM}}',
-    tPrep:        '{{T_PREP}}',
-    tOp:          '{{T_OP}}',
-    tMachine:     '{{T_MACHINE}}',
-  },
-};
 
 // ── Entry point ──────────────────────────────────────────────
 
@@ -90,7 +62,6 @@ function scanForSpyTable_(data) {
 
     const typeIdx = lower.findIndex(c => c === 'тип' || c === 'type');
 
-    // ГРН: search by keyword first (explicit header), then fall back to column after '#'
     let nameIdx = lower.findIndex(c =>
       c === 'грн' || c.includes('грн') || c === 'наименование' || c === 'название'
     );
@@ -101,7 +72,6 @@ function scanForSpyTable_(data) {
 
     if (typeIdx < 0 || nameIdx < 0) continue;
 
-    // Артикул column — separate from ГРН
     const artIdx    = lower.findIndex(c => c.includes('артикул') || c === 'art' || c === 'article');
     const qtyIdx    = lower.findIndex(c => c.includes('кол-во') || c.includes('qty'));
     const sideIdx   = lower.findIndex(c => c === 'ст.' || c === 'ст' || c.includes('сторона') || c === 'side');
@@ -114,7 +84,6 @@ function scanForSpyTable_(data) {
       const type = String(drow[typeIdx] || '').trim();
       const name = String(drow[nameIdx] || '').trim();
       if (!type && !name) continue;
-      // art from Артикул column; fallback to name if column absent
       const art = artIdx >= 0 ? String(drow[artIdx] || '').trim() : name;
       components.push({
         id:     `spy-${dr}`,
@@ -149,7 +118,7 @@ function readOpRecordsForGenerator_() {
 
 // ── Generator ─────────────────────────────────────────────────
 
-// config.wires  = [{name, art, qty, length}, ...]  — ordered array of active wire entries
+// config.wires  = [{name, art, qty, length}, ...]
 // config.ops    = [{type, wireIdx, templateId, opNum, tPrep, tOp, tMachine}, ...]
 //   wireIdx = -1 means "use all wires combined" (for the single CUT_WIRE op)
 // config.sideA  = {termName, termArt, termQty, connName, connArt, connQty}
@@ -163,38 +132,43 @@ function generateAssemblyTechCards(config) {
   const createdSheets = [];
   let prevResult = '';
 
-  for (const op of config.ops) {
-    if (!op.templateId) continue;
+  try {
+    for (const op of config.ops) {
+      if (!op.templateId) continue;
 
-    // For cutWire: combine all wires into one placeholder set
-    const wireData = (op.type === 'cutWire' && Array.isArray(config.wires))
-      ? buildCombinedWireData_(config.wires)
-      : null;
+      const wireData = (op.type === 'cutWire' && Array.isArray(config.wires))
+        ? buildCombinedWireData_(config.wires)
+        : null;
 
-    const insertResult = insertTemplate(op.templateId);
-    const sheet = ss.getSheetByName(insertResult.sheetName);
-    if (!sheet) throw new Error(`Лист "${insertResult.sheetName}" не найден.`);
+      const insertResult = insertTemplate(op.templateId);
+      const sheet = ss.getSheetByName(insertResult.sheetName);
+      if (!sheet) throw new Error(`Лист "${insertResult.sheetName}" не найден.`);
 
-    const thisResult = computeOperationResult_(op.type, config, prevResult, wireData);
+      const thisResult = computeOperationResult_(op.type, config, prevResult, wireData);
 
-    // Token replacement (for {{INDEX}}, {{NAME}} etc. if present in template)
-    const phMap = buildPlaceholderMap_(op, config, prevResult, thisResult, wireData);
-    replacePlaceholders_(sheet, phMap);
+      const phMap = buildPlaceholderMap_(op, config, prevResult, thisResult, wireData);
+      replacePlaceholders_(sheet, phMap);
 
-    // Structural fill: finds Комплектующие / Полуфабрикат / time rows by label,
-    // fills them without requiring placeholder tokens in the template.
-    fillTechCardStructurally_(sheet, op, op.type, config, prevResult, thisResult, wireData);
+      fillTechCardStructurally_(sheet, op, op.type, config, prevResult, thisResult, wireData);
 
-    prevResult = thisResult;
+      prevResult = thisResult;
+      createdSheets.push(insertResult.sheetName);
+    }
 
-    createdSheets.push(insertResult.sheetName);
+    return { ok: true, sheets: createdSheets };
+  } catch (e) {
+    // Откат: удаляем все созданные листы при ошибке
+    createdSheets.forEach(name => {
+      try {
+        const s = ss.getSheetByName(name);
+        if (s) ss.deleteSheet(s);
+      } catch (_) {}
+    });
+    throw e;
   }
-
-  return { ok: true, sheets: createdSheets };
 }
 
 // Combines multiple wire entries into a single data object for the CUT_WIRE tech card.
-// Single wire: returns as-is. Multiple wires: joins fields with newlines.
 function buildCombinedWireData_(wires) {
   if (!wires || !wires.length) return {};
   if (wires.length === 1) return wires[0];
@@ -214,7 +188,6 @@ function computeOperationResult_(opType, config, prevResult, wireData) {
 
   switch (opType) {
     case 'cutWire': {
-      // Format: "art lengthмм; art2 length2мм; ..."
       const src = wires.length > 0 ? wires : (function() {
         const arts    = String(wd.art || wd.name || '').split('\n').filter(Boolean);
         const lengths = String(wd.length || '').split('\n').filter(Boolean);
@@ -277,27 +250,49 @@ function replacePlaceholders_(sheet, phMap) {
   const values   = range.getValues();
   const formulas = range.getFormulas();
 
+  const dirtyRows = {};
   for (let r = 0; r < values.length; r++) {
     for (let c = 0; c < values[r].length; c++) {
       if (formulas[r][c]) continue;
       const val = values[r][c];
       if (typeof val !== 'string' || val === '') continue;
-
       let nv = val;
       for (const [token, repl] of Object.entries(phMap)) {
         if (nv.includes(token)) nv = nv.split(token).join(String(repl));
       }
-      if (nv !== val) sheet.getRange(r + 1, c + 1).setValue(nv);
+      if (nv !== val) {
+        if (!dirtyRows[r]) dirtyRows[r] = [];
+        dirtyRows[r].push({ c, val: nv });
+      }
+    }
+  }
+
+  for (const [rStr, changes] of Object.entries(dirtyRows)) {
+    const r = Number(rStr);
+    changes.sort((a, b) => a.c - b.c);
+    let i = 0;
+    while (i < changes.length) {
+      const start = changes[i].c;
+      const spanVals = [changes[i].val];
+      let j = i + 1;
+      while (j < changes.length && changes[j].c === changes[j - 1].c + 1) {
+        spanVals.push(changes[j].val);
+        j++;
+      }
+      try {
+        sheet.getRange(r + 1, start + 1, 1, spanVals.length).setValues([spanVals]);
+      } catch (e) {
+        for (let k = 0; k < spanVals.length; k++) {
+          try { sheet.getRange(r + 1, start + k + 1).setValue(spanVals[k]); } catch (e2) {}
+        }
+      }
+      i = j;
     }
   }
 }
 
 // ── Structural fill ───────────────────────────────────────────
-// Fills Комплектующие / Полуфабрикат / time rows by detecting the card structure.
-// Works without placeholder tokens so templates remain usable for manual work.
-//
-// CUT_WIRE Комплектующие: one row per wire (Артикул, ГРН, Норма=qty×length/1000 м)
-// Результат / Расчетное время Наименование: "art lengthмм; ..."  Норма: time value
+
 function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisResult, wireData) {
   let lastRow = sheet.getLastRow();
   const lastCol = sheet.getLastColumn();
@@ -305,12 +300,12 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
 
   let values   = sheet.getRange(1, 1, lastRow, lastCol).getValues();
   let formulas = sheet.getRange(1, 1, lastRow, lastCol).getFormulas();
+  let mergeMap = buildMergeMap_(sheet);
 
   const sA = config.sideA || {};
   const sB = config.sideB || {};
   const wd = wireData || {};
 
-  // Component data for non-CUT_WIRE ops (single row fill)
   const comp =
       opType === 'prsTermA' ? { art: sA.termArt || sA.termName || '', name: sA.termName || '', norm: String(sA.termQty || '') }
     : opType === 'insTermA' ? { art: sA.connArt || sA.connName || '', name: sA.connName || '', norm: String(sA.connQty || '') }
@@ -318,48 +313,34 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
     : opType === 'insTermB' ? { art: sB.connArt || sB.connName || '', name: sB.connName || '', norm: String(sB.connQty || '') }
     : null;
 
-  // Individual wire list for CUT_WIRE (each wire → own row)
   const isCutWire = opType === 'cutWire';
   const wires = isCutWire && Array.isArray(config.wires) && config.wires.length > 0
       ? config.wires : null;
 
-  // ── Debug: dump all non-empty rows ───────────────────────────
-  Logger.log('=== fillStructure: sheet=%s opType=%s comp=%s wires=%s',
-    sheet.getName(), opType, JSON.stringify(comp), JSON.stringify(wires));
-  for (let r = 0; r < values.length; r++) {
-    const cells = [];
-    for (let c = 0; c < values[r].length; c++) {
-      const v = String(values[r][c] || '').trim();
-      if (v) cells.push('c' + (c + 1) + ':' + v.substring(0, 25));
-    }
-    if (cells.length) Logger.log('  r%s: %s', r + 1, cells.join(' | '));
-  }
-
-  // ── Global column indices (scan ALL cells) ────────────────────
+  // ── Global column indices ─────────────────────────────────────
   let artCol = -1, grnCol = -1, normCol = -1, seqCol = -1;
   for (let r = 0; r < values.length; r++) {
     for (let c = 0; c < values[r].length; c++) {
       const cell = String(values[r][c] || '').toLowerCase().trim();
-      if (artCol  < 0 && (cell === 'артикул'  || cell === 'art' || cell === 'обозначение'))          artCol  = c;
+      if (artCol  < 0 && (cell === 'артикул'  || cell === 'art' || cell === 'обозначение'))         artCol  = c;
       if (grnCol  < 0 && (cell === 'грн'       || cell === 'наименование' || cell === 'название'
-                          || (cell.includes('грн') && cell.length < 6)))                              grnCol  = c;
+                          || (cell.includes('грн') && cell.length < 6)))                             grnCol  = c;
       if (normCol < 0 && (cell === 'норма'     || cell === 'кол-во' || cell === 'qty'
-                          || (cell.includes('норма') && cell.length < 10)))                           normCol = c;
-      if (seqCol  < 0 && cell === '№')                                                               seqCol  = c;
+                          || (cell.includes('норма') && cell.length < 10)))                          normCol = c;
+      if (seqCol  < 0 && cell === '№')                                                              seqCol  = c;
     }
     if (artCol >= 0 && grnCol >= 0 && normCol >= 0) break;
   }
-  Logger.log('  GlobalCols: art=%s grn=%s norm=%s seq=%s', artCol, grnCol, normCol, seqCol);
 
-  // ── Section detection (scan ALL cells in each row) ────────────
+  // ── Section detection ─────────────────────────────────────────
   function detectSections(v) {
     let kp = -1, sfI = -1, res = -1, sfO = -1, tm = -1;
     for (let r = 0; r < v.length; r++) {
       for (let c = 0; c < v[r].length; c++) {
         const cell = String(v[r][c] || '').toLowerCase().trim();
         if (!cell) continue;
-        if (tm  < 0 && /расч[её]?тное\s*врем/i.test(cell))        { tm  = r; break; }
-        if (res < 0 && tm < 0 && /\bрезультат\b/.test(cell))       { res = r; break; }
+        if (tm  < 0 && /расс?ч[её]?тное\s*врем/i.test(cell))       { tm  = r; break; }
+        if (res < 0 && tm < 0 && /результат/.test(cell))            { res = r; break; }
         if (kp  < 0 && cell.includes('комплектующ'))                { kp  = r; break; }
         if (/полуфабрикат|^п\/ф/.test(cell)) {
           if (res >= 0 || tm >= 0) { if (sfO < 0) { sfO = r; break; } }
@@ -371,8 +352,6 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
   }
 
   let { kompRow, sfInRow, resultRow, sfOutRow, timeRow } = detectSections(values);
-  Logger.log('  Sections: komp=%s sfIn=%s result=%s sfOut=%s time=%s',
-    kompRow, sfInRow, resultRow, sfOutRow, timeRow);
 
   // ── Helpers ──────────────────────────────────────────────────
   function setCell(r, col, val) {
@@ -380,11 +359,10 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
     const v = val == null ? '' : String(val);
     if (!v) return;
     const fml = formulas[r] && formulas[r][col];
-    // Skip cells with real calculation formulas.
-    // Allow overwriting `=""` / `=''` (blank-string formulas used for conditional formatting).
     if (fml && !/^=""$|^=''$/.test(fml.trim())) return;
-    Logger.log('  -> setCell[r%s,c%s]=%s (fml=%s)', r + 1, col + 1, v, fml || '');
-    sheet.getRange(r + 1, col + 1).setValue(v);
+    let wr = r + 1, wc = col + 1;
+    if (mergeMap[wr] && mergeMap[wr][wc]) { const p = mergeMap[wr][wc]; wr = p.r; wc = p.c; }
+    try { sheet.getRange(wr, wc).setValue(v); } catch (e) {}
   }
 
   function resolveCols(dataRow) {
@@ -401,24 +379,19 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
     const cols = resolveCols(kompRow);
 
     if (wires) {
-      // CUT_WIRE: fill one row per wire
-      // Find blank component slots between kompRow and the next section boundary
       const bound = Math.min(
         ...[sfInRow, resultRow, timeRow].filter(x => x > kompRow).concat([values.length])
       );
       const slots = [kompRow];
       for (let r = kompRow + 1; r < bound; r++) {
         const lbl = String(values[r][0] || '').trim();
-        if (lbl && !/^\d+$/.test(lbl)) break; // non-numeric label = boundary row
+        if (lbl && !/^\d+$/.test(lbl)) break;
         const artV  = cols.art  >= 0 ? String(values[r][cols.art]  || '').trim() : '';
         const grnV  = cols.name >= 0 ? String(values[r][cols.name] || '').trim() : '';
         if (!artV && !grnV) slots.push(r);
         else break;
       }
-      Logger.log('  CutWire: %s wires / %s slots (before insert)', wires.length, slots.length);
 
-      // Вставляем дополнительные строки если слотов меньше чем проводов.
-      // insertRowsAfterSafe_ снимает объединения, вставляет, копирует, восстанавливает.
       if (wires.length > slots.length) {
         const insertCount = wires.length - slots.length;
         const lastSlot    = slots[slots.length - 1];
@@ -428,16 +401,12 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
           lastRow  = sheet.getLastRow();
           values   = sheet.getRange(1, 1, lastRow, lastCol).getValues();
           formulas = sheet.getRange(1, 1, lastRow, lastCol).getFormulas();
-          // Re-detect sections on fresh values after row insertion
+          mergeMap = buildMergeMap_(sheet);
           const sec = detectSections(values);
           sfInRow   = sec.sfInRow;
           resultRow = sec.resultRow;
           sfOutRow  = sec.sfOutRow;
           timeRow   = sec.timeRow;
-          Logger.log('  Inserted %s rows → slots %s; re-detected: result=%s sfOut=%s time=%s',
-            insertCount, JSON.stringify(slots.map(r => r + 1)), resultRow, sfOutRow, timeRow);
-        } else {
-          Logger.log('  insertRowsAfterSafe_ returned false — filling available slots only');
         }
       }
 
@@ -447,9 +416,11 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
         const r = slots[i];
         let normVal = '';
         if (w.qty > 0 && w.length > 0) {
-          normVal = String(w.qty * w.length * partQty / 1000).replace('.', ',');
+          const n = w.qty * w.length * partQty / 1000;
+          if (isFinite(n)) normVal = String(n).replace('.', ',');
         } else if (w.length > 0) {
-          normVal = String(w.length * partQty / 1000).replace('.', ',');
+          const n = w.length * partQty / 1000;
+          if (isFinite(n)) normVal = String(n).replace('.', ',');
         }
         if (seqCol >= 0) setCell(r, seqCol, i + 1);
         setCell(r, cols.art,  w.art  || w.name || '');
@@ -469,138 +440,237 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
     setCell(sfInRow, cols.name >= 0 ? cols.name : cols.art, prevResult);
   }
 
-  // ── Fill Результат → Полуфабрикат (Наименование = thisResult) ─
-  // Use a fresh sheet read so that any merge changes from insertRowsAfterSafe_
-  // don't hide the target cell as a secondary merged cell.
+  // ── Fill Результат → Полуфабрикат ────────────────────────────
   if (thisResult && (sfOutRow >= 0 || resultRow >= 0)) {
-    const freshVals = sheet.getRange(1, 1, sheet.getLastRow(), lastCol).getValues();
     let fRes = -1, fSfOut = -1;
-    for (let r = 0; r < freshVals.length; r++) {
-      for (let c = 0; c < freshVals[r].length; c++) {
-        const cell = String(freshVals[r][c] || '').toLowerCase().trim();
+    for (let r = 0; r < values.length; r++) {
+      for (let c = 0; c < values[r].length; c++) {
+        const cell = String(values[r][c] || '').toLowerCase().trim();
         if (!cell) continue;
-        if (fRes < 0 && /\bрезультат\b/.test(cell))                  { fRes    = r; break; }
+        if (fRes < 0 && /результат/.test(cell))                         { fRes   = r; break; }
         if (fRes >= 0 && fSfOut < 0 && /полуфабрикат|^п\/ф/.test(cell)) { fSfOut = r; break; }
       }
     }
-    Logger.log('  freshResult=%s freshSfOut=%s', fRes, fSfOut);
+
     if (fSfOut >= 0) {
-      const hdr = findColHeadersAbove_(freshVals, fSfOut);
+      const hdr   = findColHeadersAbove_(values, fSfOut);
       const nameC = hdr.name >= 0 ? hdr.name : (hdr.art >= 0 ? hdr.art : grnCol);
-      if (nameC >= 0) {
-        Logger.log('  -> Результат setCell[r%s,c%s]=%s', fSfOut + 1, nameC + 1, thisResult.substring(0, 40));
-        const rng = sheet.getRange(fSfOut + 1, nameC + 1);
-        try { rng.breakApart(); } catch(e) {}
-        rng.setValue(thisResult);
-      }
-    }
-  }
-  if (false) {  // keep else-if structure below unreachable but intact for reference
-  } else if (resultRow >= 0 && thisResult && sfOutRow < 0) {
-    // No separate Полуфабрикат row found — fill resultRow itself or first non-header row below it
-    const cols  = resolveCols(resultRow);
-    const nameC = cols.name >= 0 ? cols.name : cols.art;
-    const existing = nameC >= 0 ? String(values[resultRow][nameC] || '').trim() : '';
-    if (!existing) {
-      setCell(resultRow, nameC, thisResult);
-    } else {
-      let filled = false;
-      for (let r = resultRow + 1; r < Math.min(values.length, resultRow + 6) && !filled; r++) {
-        // Skip sub-header rows
-        const rowCells = values[r].map(c => String(c || '').toLowerCase().trim());
-        if (rowCells.some(v => v === 'наименование' || v === 'норма' || v === 'обозначение')) continue;
-        const v = nameC >= 0 ? String(values[r][nameC] || '').trim() : '';
-        const fml = formulas[r] && formulas[r][nameC];
-        if ((!v || fml === '=""' || fml === "=''") && !(fml && !/^=""$|^=''$/.test(fml.trim()))) {
-          setCell(r, nameC, thisResult);
-          filled = true;
+      const normC = hdr.norm >= 0 ? hdr.norm : normCol;
+
+      if (isCutWire && wires && wires.length > 0 && nameC >= 0) {
+        const partQty = (config.partQty > 0) ? config.partQty : 1;
+
+        let resTimeBound = values.length;
+        for (let r = fSfOut + 1; r < values.length; r++) {
+          for (let c = 0; c < values[r].length; c++) {
+            if (/расс?ч[её]?тное\s*врем/i.test(String(values[r][c] || ''))) {
+              resTimeBound = r; break;
+            }
+          }
+          if (resTimeBound < values.length) break;
         }
+
+        const resSlots = [fSfOut];
+        for (let r = fSfOut + 1; r < resTimeBound; r++) {
+          const firstCell = String(values[r][0] || '').toLowerCase().trim();
+          if (firstCell && !/полуфабрикат|^п\/ф/.test(firstCell) && !/^\d+$/.test(firstCell)) break;
+          const nameV = String(values[r][nameC] || '').trim();
+          if (!nameV) resSlots.push(r);
+          else break;
+        }
+
+        if (wires.length > resSlots.length) {
+          const insertCount = wires.length - resSlots.length;
+          const lastSlot    = resSlots[resSlots.length - 1];
+          const ok = insertRowsAfterSafe_(sheet, lastSlot + 1, insertCount, fSfOut + 1);
+          if (ok) {
+            for (let i = 0; i < insertCount; i++) resSlots.push(lastSlot + 1 + i);
+            values   = sheet.getRange(1, 1, sheet.getLastRow(), lastCol).getValues();
+            formulas = sheet.getRange(1, 1, values.length, lastCol).getFormulas();
+            mergeMap = buildMergeMap_(sheet);
+            const sec2 = detectSections(values);
+            timeRow    = sec2.timeRow;
+          }
+        }
+
+        for (let i = 0; i < Math.min(wires.length, resSlots.length); i++) {
+          const w      = wires[i];
+          const rowNum = resSlots[i] + 1;
+          const wName  = [w.art || w.name, w.length ? w.length + 'мм' : ''].filter(Boolean).join(' ');
+          const wNorm  = String(w.qty * partQty).replace('.', ',');
+          fillMergedCell_(sheet, rowNum, nameC + 1, wName, mergeMap);
+          if (normC >= 0) fillMergedCell_(sheet, rowNum, normC + 1, wNorm, mergeMap);
+        }
+      } else if (nameC >= 0) {
+        fillMergedCell_(sheet, fSfOut + 1, nameC + 1, thisResult, mergeMap);
       }
-      if (!filled) setCell(resultRow, nameC, thisResult);
     }
   }
 
-  // ── Fill Расчетное время ─────────────────────────────────────
-  // Time data rows after "Расчетное время" header:
-  //   Наименование ← thisResult (wire description)
-  //   Норма        ← T_PREP / T_OP / T_MACHINE in order
+  // ── Fill Расчетное время ──────────────────────────────────────
   if (timeRow >= 0) {
     const timeDataRows = [];
     for (let r = timeRow + 1; r < values.length; r++) {
       const rowCells = values[r].map(c => String(c || '').toLowerCase().trim());
       if (!rowCells.some(v => v)) { if (timeDataRows.length > 0) break; continue; }
-      // Skip sub-header rows (contain column header keywords like "наименование", "норма")
       if (rowCells.some(v => v === 'наименование' || v === 'норма' || v === 'обозначение' || v === 'факт')) continue;
       timeDataRows.push(r);
     }
-    Logger.log('  timeDataRows=%s', JSON.stringify(timeDataRows.map(r => r + 1)));
 
     if (timeDataRows.length > 0) {
       const cols     = resolveCols(timeDataRows[0]);
       const tNormCol = cols.norm >= 0 ? cols.norm : normCol;
       const tNameCol = cols.name >= 0 ? cols.name : grnCol;
 
-      const tVals = timeDataRows.length <= 1 ? [op.tOp   || '']
-                  : timeDataRows.length === 2 ? [op.tPrep || '', op.tOp || '']
-                  : [op.tPrep || '', op.tOp || '', op.tMachine || ''];
+      if (isCutWire && wires && wires.length > 0 && tNameCol >= 0) {
+        const partQty = (config.partQty > 0) ? config.partQty : 1;
 
-      for (let i = 0; i < timeDataRows.length && i < tVals.length; i++) {
-        const r = timeDataRows[i];
-        setCell(r, tNormCol, tVals[i]);
-        // First time row gets the wire description in Наименование
-        if (i === 0 && thisResult) setCell(r, tNameCol, thisResult);
+        const timeSlots = [...timeDataRows];
+        for (let r = timeDataRows[timeDataRows.length - 1] + 1; r < values.length; r++) {
+          const rowCells = values[r].map(c => String(c || '').toLowerCase().trim());
+          if (!rowCells.some(v => v)) break;
+          if (rowCells.some(v => v === 'наименование' || v === 'норма' || v === 'обозначение' || v === 'факт')) continue;
+          const nameV = tNameCol >= 0 ? String(values[r][tNameCol] || '').trim() : '';
+          if (!nameV) timeSlots.push(r);
+          else break;
+        }
+
+        if (wires.length > timeSlots.length) {
+          const insertCount = wires.length - timeSlots.length;
+          const lastSlot    = timeSlots[timeSlots.length - 1];
+          const ok = insertRowsAfterSafe_(sheet, lastSlot + 1, insertCount, timeDataRows[0] + 1);
+          if (ok) {
+            for (let i = 0; i < insertCount; i++) timeSlots.push(lastSlot + 1 + i);
+            values   = sheet.getRange(1, 1, sheet.getLastRow(), lastCol).getValues();
+            formulas = sheet.getRange(1, 1, sheet.getLastRow(), lastCol).getFormulas();
+            mergeMap = buildMergeMap_(sheet);
+          }
+        }
+
+        const tOpSec = parseFloat(String(op.tOp || '').replace(',', '.')) || 0;
+        const tOpMin = tOpSec / 60;
+        for (let i = 0; i < Math.min(wires.length, timeSlots.length); i++) {
+          const w      = wires[i];
+          const rowNum = timeSlots[i] + 1;
+          const wName  = [w.art || w.name, w.length ? w.length + 'мм' : ''].filter(Boolean).join(' ');
+          const rawNorm = tOpMin > 0 ? tOpMin * w.qty * partQty : w.qty * partQty;
+          const wNorm = isFinite(rawNorm)
+            ? String(rawNorm % 1 === 0 ? rawNorm : rawNorm.toFixed(2)).replace('.', ',')
+            : '';
+          fillMergedCell_(sheet, rowNum, tNameCol + 1, wName, mergeMap);
+          if (tNormCol >= 0) fillMergedCell_(sheet, rowNum, tNormCol + 1, wNorm, mergeMap);
+        }
+      } else {
+        const secToMin = v => {
+          const s = parseFloat(String(v || '').replace(',', '.'));
+          if (!s) return '';
+          const m = s / 60;
+          return String(m % 1 === 0 ? m : m.toFixed(2)).replace('.', ',');
+        };
+        const tVals = timeDataRows.length <= 1 ? [secToMin(op.tOp)]
+                    : timeDataRows.length === 2 ? [secToMin(op.tPrep), secToMin(op.tOp)]
+                    : [secToMin(op.tPrep), secToMin(op.tOp), secToMin(op.tMachine)];
+
+        for (let i = 0; i < timeDataRows.length && i < tVals.length; i++) {
+          const r = timeDataRows[i];
+          setCell(r, tNormCol, tVals[i]);
+          if (i === 0 && thisResult) fillMergedCell_(sheet, r + 1, tNameCol + 1, thisResult, mergeMap);
+        }
       }
     }
   }
 }
 
+// ── Row insertion ─────────────────────────────────────────────
+
 // Inserts `count` rows after `afterRow` (1-based), handling merged cells gracefully.
-// Unmerges the whole sheet, inserts rows, copies srcRow template, then restores merges.
-// Returns true on success, false if an unrecoverable error occurs.
+// Unmerges everything, inserts, copies srcRow template, then restores merges.
 function insertRowsAfterSafe_(sheet, afterRow, count, srcRow) {
   const lastCol = sheet.getLastColumn();
 
-  // Snapshot all merged ranges before touching anything
   const fullRange = sheet.getRange(1, 1, sheet.getLastRow(), sheet.getLastColumn());
   const merges = fullRange.getMergedRanges().map(r => ({
     r1: r.getRow(), r2: r.getLastRow(),
     c1: r.getColumn(), c2: r.getLastColumn()
   }));
 
-  // Break all merges so insert/copy can proceed cleanly
   merges.forEach(m => {
     try {
       sheet.getRange(m.r1, m.c1, m.r2 - m.r1 + 1, m.c2 - m.c1 + 1).breakApart();
-    } catch (e) { /* already unmerged or out of range */ }
+    } catch (e) {}
   });
 
   try {
     sheet.insertRowsAfter(afterRow, count);
-    // srcRow is 1-based; after insertion it may have shifted
     const adjustedSrc = srcRow > afterRow ? srcRow + count : srcRow;
     const srcRange = sheet.getRange(adjustedSrc, 1, 1, lastCol);
     for (let i = 1; i <= count; i++) {
       srcRange.copyTo(sheet.getRange(afterRow + i, 1, 1, lastCol));
     }
   } catch (e) {
-    Logger.log('  insertRowsAfterSafe_: insert/copy failed (%s)', e.message);
-    // Restore merges before returning failure
     merges.forEach(m => {
       try { sheet.getRange(m.r1, m.c1, m.r2 - m.r1 + 1, m.c2 - m.c1 + 1).merge(); } catch (e2) {}
     });
     return false;
   }
 
-  // Restore merges with row positions adjusted for the insertion.
   merges.forEach(m => {
     let r1 = m.r1, r2 = m.r2;
-    if (r1 > afterRow)      { r1 += count; r2 += count; }  // entirely below → shift
-    else if (r2 > afterRow) { r2 += count; }                // spans insertion → extend
-    // entirely above afterRow → unchanged
+    if (r1 > afterRow)      { r1 += count; r2 += count; }
+    else if (r2 > afterRow) { r2 += count; }
     try { sheet.getRange(r1, m.c1, r2 - r1 + 1, m.c2 - m.c1 + 1).merge(); } catch (e) {}
   });
 
+  // Применяем горизонтальные объединения исходной строки к каждой новой
+  const srcRowMerges = merges.filter(m => m.r1 === srcRow && m.r2 === srcRow && m.c2 > m.c1);
+  for (let i = 1; i <= count; i++) {
+    srcRowMerges.forEach(m => {
+      try { sheet.getRange(afterRow + i, m.c1, 1, m.c2 - m.c1 + 1).merge(); } catch (e) {}
+    });
+  }
+
   return true;
+}
+
+// ── Merge utilities ───────────────────────────────────────────
+
+// Returns mergeMap[row1based][col1based] = {r, c} pointing to top-left of merged range.
+function buildMergeMap_(sheet) {
+  const map = {};
+  try {
+    const lr = sheet.getLastRow();
+    const lc = sheet.getLastColumn();
+    if (lr < 1 || lc < 1) return map;
+    const merges = sheet.getRange(1, 1, lr, lc).getMergedRanges();
+    for (const m of merges) {
+      const r1 = m.getRow(), c1 = m.getColumn();
+      const r2 = m.getLastRow(), c2 = m.getLastColumn();
+      for (let r = r1; r <= r2; r++) {
+        for (let c = c1; c <= c2; c++) {
+          if (r !== r1 || c !== c1) {
+            if (!map[r]) map[r] = {};
+            map[r][c] = { r: r1, c: c1 };
+          }
+        }
+      }
+    }
+  } catch (e) {}
+  return map;
+}
+
+// Writes value to a merged cell — resolves to the top-left cell using pre-computed mergeMap.
+function fillMergedCell_(sheet, row1, col1, value, mergeMap) {
+  const v = value == null ? '' : String(value);
+  if (!v) return;
+  try {
+    let wr = row1, wc = col1;
+    if (mergeMap && mergeMap[wr] && mergeMap[wr][wc]) {
+      const p = mergeMap[wr][wc];
+      wr = p.r;
+      wc = p.c;
+    }
+    sheet.getRange(wr, wc).setValue(v);
+  } catch (e) {}
 }
 
 // Looks backward from dataRow to find a header row with Артикул/ГРН/Норма columns.
