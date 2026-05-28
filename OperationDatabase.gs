@@ -5,6 +5,46 @@
 
 // ── Public API ───────────────────────────────────────────────
 
+/**
+ * Диагностика: показывает все заголовки столбцов в БД.ТЕР и значения L+/L-
+ * для конкретного артикула. Запустить вручную из редактора скриптов.
+ * Пример вызова: diagnoseTerSheet('sshl-002t-p0.2')
+ */
+function diagnoseTerSheet(searchArticle) {
+  const srcSS  = SpreadsheetApp.openById(TECHOPS_DB_APP.sourceSpreadsheetId);
+  const tab    = TECHOPS_DB_APP.tabs.ter;
+  const sheet  = srcSS.getSheetByName(tab.sourceSheetName);
+  if (!sheet) { Logger.log('Sheet not found: ' + tab.sourceSheetName); return; }
+
+  const lastCol    = sheet.getLastColumn();
+  const headerRow  = sheet.getRange(tab.headerRowNumber, 1, 1, lastCol).getValues()[0];
+
+  Logger.log('=== БД.ТЕР HEADERS ===');
+  headerRow.forEach((h, i) => {
+    if (String(h).trim()) Logger.log(`col ${i + 1} (${columnLetter_(i)}): "${h}"  →  normalized: "${String(h).toLowerCase().trim()}"`);
+  });
+
+  if (searchArticle) {
+    Logger.log('\n=== ПОИСК АРТИКУЛА: ' + searchArticle + ' ===');
+    const data    = sheet.getRange(tab.headerRowNumber + 1, 1, sheet.getLastRow() - tab.headerRowNumber, lastCol).getValues();
+    const artCol  = headerRow.findIndex(h => /артикул.*reel|артикул контакта/i.test(String(h)));
+    Logger.log('Колонка артикула (REEL): ' + (artCol >= 0 ? `${artCol + 1} (${columnLetter_(artCol)})` : 'не найдена'));
+    const row = data.find(r => String(r[artCol] || '').trim().toLowerCase() === searchArticle.toLowerCase());
+    if (row) {
+      Logger.log('Строка найдена!');
+      headerRow.forEach((h, i) => { if (String(h).trim()) Logger.log(`  ${h}: "${row[i]}"`); });
+    } else {
+      Logger.log('Строка с артикулом не найдена');
+    }
+  }
+}
+
+function columnLetter_(idx) {
+  let s = ''; let n = idx;
+  do { s = String.fromCharCode(65 + (n % 26)) + s; n = Math.floor(n / 26) - 1; } while (n >= 0);
+  return s;
+}
+
 function syncTechOperationsDatabaseMenu() {
   const summary = syncTechOperationsDatabase();
   SpreadsheetApp.getUi().alert(
