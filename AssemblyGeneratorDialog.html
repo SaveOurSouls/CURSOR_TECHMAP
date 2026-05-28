@@ -551,39 +551,51 @@
     const terB = findTer(termB);
     const mode = getMeasureMode_();
 
+    const hasTermSelected = !!(termA || termB);
+
     if (mode === 'inner') {
-      // Между разъёмами: прибавляем L+ с каждой стороны
       const lpA = terA ? parseLengthVal_(terA.lPlus) : 0;
       const lpB = terB ? parseLengthVal_(terB.lPlus) : 0;
-      return { total: lpA + lpB, parts: [
-        lpA ? `+${lpA} L+(А)` : null,
-        lpB ? `+${lpB} L+(В)` : null,
+      const noData = hasTermSelected && !terA && !terB;
+      return { total: lpA + lpB, noData, parts: [
+        lpA ? `L+ ст.А: ${lpA}` : null,
+        lpB ? `L+ ст.В: ${lpB}` : null,
       ].filter(Boolean) };
     } else {
-      // От краёв разъёмов: вычитаем L− с каждой стороны
       const lmA = terA ? parseLengthVal_(terA.lMinus) : 0;
       const lmB = terB ? parseLengthVal_(terB.lMinus) : 0;
-      return { total: -(lmA + lmB), parts: [
-        lmA ? `−${lmA} L−(А)` : null,
-        lmB ? `−${lmB} L−(В)` : null,
+      const noData = hasTermSelected && !terA && !terB;
+      return { total: -(lmA + lmB), noData, parts: [
+        lmA ? `L− ст.А: ${lmA}` : null,
+        lmB ? `L− ст.В: ${lmB}` : null,
       ].filter(Boolean) };
     }
   }
 
   function updateCutLength_() {
     const adj = getLengthAdjustment_();
-    const hasAdj = adj.parts.length > 0 && adj.total !== 0;
+    const infoEl    = document.getElementById('cutLengthInfo');
+    const formulaEl = document.getElementById('cutLengthFormula');
+    const valueEl   = document.getElementById('cutLengthValue');
 
-    if (drawingLength > 0 && hasAdj) {
+    if (drawingLength > 0 && adj.parts.length > 0 && adj.total !== 0) {
       const cut = Math.round((drawingLength + adj.total) * 100) / 100;
       sharedLength = cut;
-      document.getElementById('cutLengthFormula').textContent =
-        `${drawingLength} мм ${adj.parts.join(' ')} =`;
-      document.getElementById('cutLengthValue').textContent = cut;
-      document.getElementById('cutLengthInfo').style.display = '';
+      // Формат: "150 + 5 (L+ ст.А) + 5 (L+ ст.В) = 160 мм"
+      const sign  = adj.total >= 0 ? '+' : '−';
+      const delta = Math.abs(adj.total);
+      formulaEl.textContent = `${drawingLength} ${sign} ${delta} мм [${adj.parts.join(', ')}]`;
+      valueEl.textContent   = `${cut} мм`;
+      infoEl.style.cssText  = 'display:block;margin-top:5px;padding:6px 8px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;font-size:12px';
+    } else if (drawingLength > 0 && adj.noData) {
+      // Терминал выбран, но L+/L- не найдены — подсказка о ресинке
+      sharedLength = drawingLength;
+      formulaEl.textContent = '⚠ Нет данных L+/L− для выбранного терминала. Обновите БД.';
+      valueEl.textContent   = '';
+      infoEl.style.cssText  = 'display:block;margin-top:5px;padding:6px 8px;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;font-size:12px';
     } else {
       sharedLength = drawingLength;
-      document.getElementById('cutLengthInfo').style.display = 'none';
+      infoEl.style.display = 'none';
     }
   }
 

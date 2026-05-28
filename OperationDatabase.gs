@@ -495,8 +495,8 @@ function buildTechOperationsTerRecord_(row, headerMap, sourceSheet, namedColumns
   const artISL       = getTechOperationsCellByAliases_(row, headerMap, ['артикул (контакта isl)', 'артикул контакта isl']);
   const artSAG       = getTechOperationsCellByAliases_(row, headerMap, ['артикул (контакт sag)', 'артикул контакт sag']);
   const terArticle   = getTechOperationsCellByAliases_(row, headerMap, ['артикул контакта (reel)', 'артикул контакта', 'артикул']);
-  const lPlus        = getTechOperationsCellByAliases_(row, headerMap, ['l+']);
-  const lMinus       = getTechOperationsCellByAliases_(row, headerMap, ['l-']);
+  const lPlus        = getTechOperationsCellByAliases_(row, headerMap, ['l+', 'l+ в мм', 'l+(мм)', 'l +']);
+  const lMinus       = getTechOperationsCellByAliases_(row, headerMap, ['l-', 'l−', 'l–', 'l—', 'l- в мм', 'l-(мм)', 'l −', 'l -']);
 
   const displayText = joinTechOperationsParts_([manufacturer, series, productName], ' | ');
   if (!displayText) return null;
