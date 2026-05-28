@@ -108,13 +108,6 @@ const ASSEMBLY_GEN = {
     tolerance:    '{{ДОПУСК}}',
     lengthKd:     '[L КД]',
   },
-  // Progressive cut-length tolerance table (mm → ±mm)
-  toleranceTable: [
-    { maxMm: 50,       tol: 1   },
-    { maxMm: 120,      tol: 3   },
-    { maxMm: 315,      tol: 5   },
-    { maxMm: 630,      tol: 8   },
-    { maxMm: 1000,     tol: 10  },
-    { maxMm: Infinity, tol: 15  },
-  ],
+  // Linear tolerance: at 1000mm → ±toleranceMmPerM mm; scales proportionally
+  toleranceMmPerM: 8,
 };

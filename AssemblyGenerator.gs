@@ -262,15 +262,16 @@ function buildPlaceholderMap_(op, config, prevResult, thisResult, wireData) {
   };
 }
 
-// Returns "(+/-)Xмм" tolerance for the given wire data using the progressive table.
+// Returns "(+/-)Xмм" — linear tolerance scaled from toleranceMmPerM at 1000mm.
+// Rounds to nearest 0.5mm; minimum 0.5mm.
 function buildCutTolerance_(wireData) {
   const wd  = wireData || {};
   const len = parseFloat(String(wd.length || '').split('\n')[0].replace(',', '.')) || 0;
   if (!len) return '';
-  for (const { maxMm, tol } of ASSEMBLY_GEN.toleranceTable) {
-    if (len <= maxMm) return `(+/-)${String(tol).replace('.', ',')}мм`;
-  }
-  return '(+/-)10мм';
+  const raw = len / 1000 * (ASSEMBLY_GEN.toleranceMmPerM || 8);
+  const tol = Math.max(0.5, Math.round(raw * 2) / 2);
+  const tolStr = tol % 1 === 0 ? String(tol) : String(tol).replace('.', ',');
+  return `(+/-)${tolStr}мм`;
 }
 
 // Returns "Xмм" — the actual cut length for the [L КД] placeholder.
