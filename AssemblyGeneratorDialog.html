@@ -224,9 +224,13 @@
 <div class="card">
   <div id="sharedLengthRow">
     <div class="field-group">
-      <label class="field-label">Длина, мм (все кабели)</label>
+      <label class="field-label">Длина по чертежу, мм</label>
       <input type="number" id="sharedLengthEl" value="" min="1" placeholder="—"
              onchange="onSharedLengthChange()" oninput="onSharedLengthChange()" />
+    </div>
+    <div id="cutLengthInfo" style="display:none;margin-top:5px;padding:6px 8px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;font-size:12px">
+      <div id="cutLengthFormula" style="color:#64748b;margin-bottom:2px"></div>
+      <div>Длина реза: <strong id="cutLengthValue" style="color:#0369a1"></strong> мм</div>
     </div>
     <div class="sep" style="margin:8px 0 6px"></div>
   </div>
@@ -314,7 +318,8 @@
   let wireEntries = [];   // [{idx, compId, length, qty}]
   let nextWireIdx = 0;
   let advancedLengthMode = false;
-  let sharedLength = 0;
+  let sharedLength = 0;   // actual cut length used in buildConfig
+  let drawingLength = 0;  // raw "по чертежу" input
 
   // ── Init ─────────────────────────────────────────────────────
   function init(raw) {
@@ -337,6 +342,7 @@
   }
 
   function refresh() {
+    updateCutLength_();
     renderQtyHints();
     renderOpsCard();
     renderChain();
@@ -502,8 +508,57 @@
   }
 
   function onSharedLengthChange() {
-    sharedLength = parseDecimal_(document.getElementById('sharedLengthEl').value) || 0;
+    drawingLength = parseDecimal_(document.getElementById('sharedLengthEl').value) || 0;
+    updateCutLength_();
     refresh();
+  }
+
+  // Parse a length value that may be a range like "2,50 - 3,00" — takes the first number.
+  function parseLengthVal_(s) {
+    if (!s) return 0;
+    const m = String(s).replace(',', '.').match(/[\d.]+/);
+    return m ? parseFloat(m[0]) : 0;
+  }
+
+  function getLengthAdjustment_() {
+    const termA = getCompById(document.getElementById('termSelectA').value);
+    const sideB = document.getElementById('sideBEnabled').checked;
+    const termB = sideB ? getCompById(document.getElementById('termSelectB').value) : null;
+    const terRecs = D.terRecords || [];
+    const findTer = comp => {
+      if (!comp) return null;
+      const art = (comp.art || '').toLowerCase().trim();
+      return terRecs.find(r => (r.article || '').toLowerCase().trim() === art) || null;
+    };
+    const terA = findTer(termA);
+    const terB = findTer(termB);
+    const lpA = terA ? parseLengthVal_(terA.lPlus)  : 0;
+    const lmA = terA ? parseLengthVal_(terA.lMinus) : 0;
+    const lpB = terB ? parseLengthVal_(terB.lPlus)  : 0;
+    const lmB = terB ? parseLengthVal_(terB.lMinus) : 0;
+    return { lpA, lmA, lpB, lmB, total: lpA + lpB - lmA - lmB };
+  }
+
+  function updateCutLength_() {
+    const adj = getLengthAdjustment_();
+    const hasAdj = adj.lpA || adj.lmA || adj.lpB || adj.lmB;
+
+    if (drawingLength > 0 && hasAdj) {
+      const cut = Math.round((drawingLength + adj.total) * 100) / 100;
+      sharedLength = cut;
+      const parts = [];
+      if (adj.lpA) parts.push(`+${adj.lpA} L+(А)`);
+      if (adj.lpB) parts.push(`+${adj.lpB} L+(В)`);
+      if (adj.lmA) parts.push(`−${adj.lmA} L−(А)`);
+      if (adj.lmB) parts.push(`−${adj.lmB} L−(В)`);
+      document.getElementById('cutLengthFormula').textContent =
+        `${drawingLength} мм ${parts.join(' ')} =`;
+      document.getElementById('cutLengthValue').textContent = cut;
+      document.getElementById('cutLengthInfo').style.display = '';
+    } else {
+      sharedLength = drawingLength;
+      document.getElementById('cutLengthInfo').style.display = 'none';
+    }
   }
 
   function parseDecimal_(s) {
@@ -531,7 +586,8 @@
     const asmLen   = asmMatch ? parseDecimal_(asmMatch[1]) : 0;
 
     if (asmLen > 0 && !advancedLengthMode) {
-      sharedLength = asmLen;
+      drawingLength = asmLen;
+      sharedLength  = asmLen;
       const el = document.getElementById('sharedLengthEl');
       if (el) el.value = asmLen;
     }

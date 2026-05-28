@@ -29,8 +29,9 @@ function getAssemblyGeneratorData_() {
   const components   = scanForSpyTable_(sheetData);
   const templates    = readCatalog_().map(t => ({ id: t.id, title: t.title, category: t.category || '' }));
   const ops          = readOpRecordsForGenerator_();
+  const terRecords   = readTerRecordsForGenerator_();
 
-  return { assemblyInfo, components, templates, ops };
+  return { assemblyInfo, components, templates, ops, terRecords };
 }
 
 // Find Таблица1: header row with BOTH "индекс" AND "наименование"
@@ -98,6 +99,19 @@ function scanForSpyTable_(data) {
     return components;
   }
   return [];
+}
+
+function readTerRecordsForGenerator_() {
+  try {
+    const snapshot = getTechOperationsSnapshot_();
+    return (snapshot.records || [])
+      .filter(r => r.tabKey === 'ter' && r.terArticle)
+      .map(r => ({
+        article: r.terArticle || '',
+        lPlus:   r.terLPlus   || '',
+        lMinus:  r.terLMinus  || '',
+      }));
+  } catch (e) { return []; }
 }
 
 function readOpRecordsForGenerator_() {

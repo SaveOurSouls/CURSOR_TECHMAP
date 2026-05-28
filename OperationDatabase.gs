@@ -495,6 +495,8 @@ function buildTechOperationsTerRecord_(row, headerMap, sourceSheet, namedColumns
   const artISL       = getTechOperationsCellByAliases_(row, headerMap, ['артикул (контакта isl)', 'артикул контакта isl']);
   const artSAG       = getTechOperationsCellByAliases_(row, headerMap, ['артикул (контакт sag)', 'артикул контакт sag']);
   const terArticle   = getTechOperationsCellByAliases_(row, headerMap, ['артикул контакта (reel)', 'артикул контакта', 'артикул']);
+  const lPlus        = getTechOperationsCellByAliases_(row, headerMap, ['l+']);
+  const lMinus       = getTechOperationsCellByAliases_(row, headerMap, ['l-']);
 
   const displayText = joinTechOperationsParts_([manufacturer, series, productName], ' | ');
   if (!displayText) return null;
@@ -507,6 +509,8 @@ function buildTechOperationsTerRecord_(row, headerMap, sourceSheet, namedColumns
     terComponent:    productName,
     terType,
     terArticle,
+    terLPlus:  lPlus  || '',
+    terLMinus: lMinus || '',
     normalizedSearch: normalizeSearch_(
       [manufacturer, series, productName, connType, terType, artISL, artSAG].join(' ')
     ),
@@ -574,7 +578,7 @@ function parseTechOpsRow_(row) {
     sortKey:          row[5] || '',
   };
   if (tabKey === 'op')   return { ...base, opNumber: row[6] || '', opName: row[7] || '', tOp: row[8] || '', tPrep: row[9] || '', tMachine: row[10] || '' };
-  if (tabKey === 'ter')  return { ...base, terManufacturer: row[6] || '', terSeries: row[7] || '', terComponent: row[8] || '', terType: row[9] || '', terArticle: row[10] || '' };
+  if (tabKey === 'ter')  return { ...base, terManufacturer: row[6] || '', terSeries: row[7] || '', terComponent: row[8] || '', terType: row[9] || '', terArticle: row[10] || '', terLPlus: row[11] || '', terLMinus: row[12] || '' };
   if (tabKey === 'coax') return { ...base, coaxWire: row[9] || '', coaxType: row[10] || '', coaxMfr: row[11] || '', coaxArticle: row[12] || '' };
   if (tabKey === 'ob')   return { ...base, obType: row[6] || '' };
   return base;
@@ -610,8 +614,8 @@ function writeTechOperationsSnapshotToSheets_(snapshot) {
       record.terComponent    || record.tOp      || '',
       record.terType    || record.coaxWire  || record.tPrep    || '',
       record.terArticle || record.coaxType  || record.tMachine || '',
-      record.coaxMfr         || '',
-      record.coaxArticle     || '',
+      record.coaxMfr     || record.terLPlus  || '',
+      record.coaxArticle || record.terLMinus || '',
     ]);
     dataSheet.getRange(2, 1, rows.length, TECHOPS_DB_APP.dataHeaders.length).setValues(rows);
   }
