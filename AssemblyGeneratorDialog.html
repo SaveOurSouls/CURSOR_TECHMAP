@@ -183,6 +183,22 @@
       font-size: 11px; color: #4a9d6f; font-weight: 600;
       margin-top: 3px; min-height: 14px;
     }
+
+    .wire-entry-simple {
+      grid-template-columns: 1fr 60px 28px;
+    }
+    .btn-link {
+      background: none; border: none; padding: 0;
+      color: #3b82f6; font-size: 11px; font-weight: 600;
+      cursor: pointer; text-decoration: none;
+      font-family: inherit; letter-spacing: .04em;
+    }
+    .btn-link:hover { color: #1d4ed8; text-decoration: underline; }
+    .section-hdr {
+      display: flex; justify-content: space-between; align-items: baseline;
+      margin: 14px 0 5px;
+    }
+    .section-hdr h3 { margin: 0; }
   </style>
 </head>
 <body>
@@ -201,8 +217,19 @@
 </div>
 
 <!-- ═══ КАБЕЛИ ═══════════════════════════════════════════════ -->
-<h3>Кабели</h3>
+<div class="section-hdr">
+  <h3>Кабели</h3>
+  <button type="button" id="modeToggleBtn" class="btn-link" onclick="toggleLengthMode()">раздельная длина ▸</button>
+</div>
 <div class="card">
+  <div id="sharedLengthRow">
+    <div class="field-group">
+      <label class="field-label">Длина, мм (все кабели)</label>
+      <input type="number" id="sharedLengthEl" value="" min="1" placeholder="—"
+             onchange="onSharedLengthChange()" oninput="onSharedLengthChange()" />
+    </div>
+    <div class="sep" style="margin:8px 0 6px"></div>
+  </div>
   <div id="wireList"></div>
   <button class="btn-add" onclick="addWire()">+ Добавить кабель</button>
 </div>
@@ -286,6 +313,8 @@
   // Wire entries state
   let wireEntries = [];   // [{idx, compId, length, qty}]
   let nextWireIdx = 0;
+  let advancedLengthMode = false;
+  let sharedLength = 0;
 
   // ── Init ─────────────────────────────────────────────────────
   function init(raw) {
@@ -418,31 +447,63 @@
     const wireOpts = '<option value="">— выберите —</option>' +
       wires.map(c => `<option value="${c.id}">${esc(c.name || c.art)} [${esc(c.art)}]</option>`).join('');
 
-    container.innerHTML = wireEntries.map((w, n) => `
-      <div class="wire-entry" id="wireEntry_${w.idx}">
-        <div class="field-group">
-          <div class="wire-entry-num">Кабель ${n + 1}</div>
-          <select id="wireComp_${w.idx}" onchange="onWireChange(${w.idx})">${wireOpts}</select>
-        </div>
+    container.innerHTML = wireEntries.map((w, n) => {
+      const lenField = advancedLengthMode ? `
         <div class="field-group">
           <label class="field-label">Длина, мм</label>
           <input type="number" id="wireLen_${w.idx}" value="${w.length || ''}" min="1"
                  onchange="onWireChange(${w.idx})" oninput="onWireChange(${w.idx})" />
-        </div>
-        <div class="field-group">
-          <label class="field-label">Кол-во</label>
-          <input type="number" id="wireQty_${w.idx}" value="${w.qty || 1}" min="1"
-                 onchange="onWireChange(${w.idx})" oninput="onWireChange(${w.idx})" />
-        </div>
-        <button class="btn-remove" onclick="removeWire(${w.idx})" title="Удалить">×</button>
-      </div>
-    `).join('');
+        </div>` : '';
+      return `
+        <div class="wire-entry${advancedLengthMode ? '' : ' wire-entry-simple'}" id="wireEntry_${w.idx}">
+          <div class="field-group">
+            <div class="wire-entry-num">Кабель ${n + 1}</div>
+            <select id="wireComp_${w.idx}" onchange="onWireChange(${w.idx})">${wireOpts}</select>
+          </div>
+          ${lenField}
+          <div class="field-group">
+            <label class="field-label">Кол-во</label>
+            <input type="number" id="wireQty_${w.idx}" value="${w.qty || 1}" min="1"
+                   onchange="onWireChange(${w.idx})" oninput="onWireChange(${w.idx})" />
+          </div>
+          <button class="btn-remove" onclick="removeWire(${w.idx})" title="Удалить">×</button>
+        </div>`;
+    }).join('');
 
     // Restore selected values
     wireEntries.forEach(w => {
       const sel = document.getElementById(`wireComp_${w.idx}`);
       if (sel && w.compId) sel.value = w.compId;
     });
+  }
+
+  function toggleLengthMode() {
+    advancedLengthMode = !advancedLengthMode;
+    const btn       = document.getElementById('modeToggleBtn');
+    const sharedRow = document.getElementById('sharedLengthRow');
+    if (advancedLengthMode) {
+      // Seed per-wire lengths from shared length where not set
+      if (sharedLength > 0) wireEntries.forEach(w => { if (!w.length) w.length = sharedLength; });
+      sharedRow.style.display = 'none';
+      btn.textContent = '← общая длина';
+    } else {
+      // Pull shared length from first wire that has one
+      const first = wireEntries.find(w => w.length > 0);
+      if (first) {
+        sharedLength = first.length;
+        const el = document.getElementById('sharedLengthEl');
+        if (el) el.value = sharedLength;
+      }
+      sharedRow.style.display = '';
+      btn.textContent = 'раздельная длина ▸';
+    }
+    renderWireList();
+    refresh();
+  }
+
+  function onSharedLengthChange() {
+    sharedLength = parseDecimal_(document.getElementById('sharedLengthEl').value) || 0;
+    refresh();
   }
 
   function parseDecimal_(s) {
@@ -463,14 +524,17 @@
 
   function autoFillAllWires() {
     const wires = getByTypes(['провод', 'wire', 'кабель', 'cable']);
-    if (!wires.length) {
-      addWire();
-      return;
-    }
+    if (!wires.length) { addWire(); return; }
 
     const asmName  = Object.values(D.assemblyInfo || {}).map(v => String(v)).join(' ');
-    const asmMatch = asmName.match(/(\d+)\s*мм/i);
+    const asmMatch = asmName.match(/(\d+)\s*(?:мм|mm)/i);
     const asmLen   = asmMatch ? parseDecimal_(asmMatch[1]) : 0;
+
+    if (asmLen > 0 && !advancedLengthMode) {
+      sharedLength = asmLen;
+      const el = document.getElementById('sharedLengthEl');
+      if (el) el.value = asmLen;
+    }
 
     wireEntries = [];
     nextWireIdx = 0;
@@ -747,11 +811,12 @@
     } : null;
     const wires = activeWires.map(w => {
       const comp = getCompById(w.compId);
+      const len  = advancedLengthMode ? (w.length || 0) : sharedLength;
       return {
         name:   comp ? comp.name : '',
         art:    comp ? comp.art  : '',
-        qty:    w.qty    || 1,
-        length: w.length || 0,
+        qty:    w.qty || 1,
+        length: len,
       };
     });
 
@@ -788,8 +853,13 @@
       setStatus('Выберите шаблон хотя бы для одной операции.', true); return;
     }
     const hasCutWireTemplate = cfg.ops.some(o => o.type === 'cutWire' && o.templateId);
-    if (hasCutWireTemplate && cfg.wires.some(w => !w.length)) {
-      setStatus('Укажите длину для каждого кабеля.', true); return;
+    if (hasCutWireTemplate) {
+      if (!advancedLengthMode && !sharedLength) {
+        setStatus('Укажите длину кабелей (поле "Длина, мм" вверху секции).', true); return;
+      }
+      if (advancedLengthMode && cfg.wires.some(w => !w.length)) {
+        setStatus('Укажите длину для каждого кабеля.', true); return;
+      }
     }
 
     setStatus('Создаю техкарты…', false);
