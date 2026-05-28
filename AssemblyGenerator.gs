@@ -532,8 +532,6 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
         const tPrepSec = parseFloat(String(op.tPrep || '').replace(',', '.')) || 0;
         const tOpMin   = tOpSec   / 60;
         const tPrepMin = tPrepSec / 60;
-        const hasTPrep = tPrepSec > 0;
-        const slotsNeeded = wires.length + (hasTPrep ? 1 : 0);
 
         const timeSlots = [...timeDataRows];
         for (let r = timeDataRows[timeDataRows.length - 1] + 1; r < values.length; r++) {
@@ -545,8 +543,8 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
           else break;
         }
 
-        if (slotsNeeded > timeSlots.length) {
-          const insertCount = slotsNeeded - timeSlots.length;
+        if (wires.length > timeSlots.length) {
+          const insertCount = wires.length - timeSlots.length;
           const lastSlot    = timeSlots[timeSlots.length - 1];
           const ok = insertRowsAfterSafe_(sheet, lastSlot + 1, insertCount, timeDataRows[0] + 1);
           if (ok) {
@@ -557,20 +555,11 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
           }
         }
 
-        let wireOffset = 0;
-        if (hasTPrep && timeSlots.length > 0) {
-          const prepNorm = isFinite(tPrepMin)
-            ? String(tPrepMin % 1 === 0 ? tPrepMin : tPrepMin.toFixed(2)).replace('.', ',')
-            : '';
-          if (tNormCol >= 0) fillMergedCell_(sheet, timeSlots[0] + 1, tNormCol + 1, prepNorm, mergeMap);
-          wireOffset = 1;
-        }
-
-        for (let i = 0; i < Math.min(wires.length, timeSlots.length - wireOffset); i++) {
+        for (let i = 0; i < Math.min(wires.length, timeSlots.length); i++) {
           const w      = wires[i];
-          const rowNum = timeSlots[i + wireOffset] + 1;
+          const rowNum = timeSlots[i] + 1;
           const wName  = [w.art || w.name, w.length ? w.length + 'мм' : ''].filter(Boolean).join(' ');
-          const rawNorm = tOpMin > 0 ? tOpMin * w.qty * partQty : w.qty * partQty;
+          const rawNorm = (tOpMin > 0 ? tOpMin * w.qty * partQty : w.qty * partQty) + tPrepMin;
           const wNorm = isFinite(rawNorm)
             ? String(rawNorm % 1 === 0 ? rawNorm : rawNorm.toFixed(2)).replace('.', ',')
             : '';
