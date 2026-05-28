@@ -747,9 +747,10 @@
     if (matched) {
       infoEl.textContent = `✓ БД.ОП: ${matched.opName}${matched.opNumber ? ' | ' + matched.opNumber : ''}`;
       infoEl.className   = 'op-match found';
-      setVal(`tPrep_${opKey}`,    matched.tPrep    || '');
-      setVal(`tOp_${opKey}`,      matched.tOp      || '');
-      setVal(`tMachine_${opKey}`, matched.tMachine || '');
+      const nt = v => v ? String(v).replace(',', '.') : '';
+      setVal(`tPrep_${opKey}`,    nt(matched.tPrep));
+      setVal(`tOp_${opKey}`,      nt(matched.tOp));
+      setVal(`tMachine_${opKey}`, nt(matched.tMachine));
     } else if (title.trim()) {
       infoEl.textContent = '— операция в БД.ОП не найдена, введите времена вручную';
       infoEl.className   = 'op-match not-found';
