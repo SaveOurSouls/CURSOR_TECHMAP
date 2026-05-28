@@ -257,7 +257,27 @@ function buildPlaceholderMap_(op, config, prevResult, thisResult, wireData) {
     [p.tPrep]:        op.tPrep     || '',
     [p.tOp]:          op.tOp       || '',
     [p.tMachine]:     op.tMachine  || '',
+    [p.tolerance]:    buildCutTolerance_(wireData),
+    [p.lengthKd]:     buildCutLengthKd_(wireData),
   };
+}
+
+// Returns "(+/-)Xмм" tolerance for the given wire data using the progressive table.
+function buildCutTolerance_(wireData) {
+  const wd  = wireData || {};
+  const len = parseFloat(String(wd.length || '').split('\n')[0].replace(',', '.')) || 0;
+  if (!len) return '';
+  for (const { maxMm, tol } of ASSEMBLY_GEN.toleranceTable) {
+    if (len <= maxMm) return `(+/-)${String(tol).replace('.', ',')}мм`;
+  }
+  return '(+/-)10мм';
+}
+
+// Returns "Xмм" — the actual cut length for the [L КД] placeholder.
+function buildCutLengthKd_(wireData) {
+  const wd  = wireData || {};
+  const len = parseFloat(String(wd.length || '').split('\n')[0].replace(',', '.')) || 0;
+  return len ? String(len).replace('.', ',') + 'мм' : '';
 }
 
 function replacePlaceholders_(sheet, phMap) {
@@ -610,6 +630,30 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
           const r = timeDataRows[i];
           setCell(r, tNormCol, tVals[i]);
           if (i === 0 && thisResult) fillMergedCell_(sheet, r + 1, tNameCol + 1, thisResult, mergeMap);
+        }
+      }
+    }
+  }
+
+  // ── Fill Допуск column ────────────────────────────────────────
+  if (isCutWire && wires && wires.length > 0) {
+    let dopuskCol = -1;
+    outer: for (let r = 0; r < values.length; r++) {
+      for (let c = 0; c < values[r].length; c++) {
+        if (/^допуск$/i.test(String(values[r][c] || '').trim())) { dopuskCol = c; break outer; }
+      }
+    }
+    if (dopuskCol >= 0) {
+      const tolStr = buildCutTolerance_(wd);
+      const lenStr = buildCutLengthKd_(wd);
+      for (let r = 0; r < values.length; r++) {
+        const rowText = values[r].map(c => String(c || '').toLowerCase()).join(' ');
+        const cur     = String(values[r][dopuskCol] || '').trim().toLowerCase();
+        if (/тестовый\s*рез/.test(rowText) && (!cur || cur === '-' || cur === '—')) {
+          fillMergedCell_(sheet, r + 1, dopuskCol + 1, tolStr, mergeMap);
+        }
+        if (lenStr && (cur === '[l кд]' || /измерить\s*длину|длина\s*должна/.test(rowText) && (!cur || cur === '[l кд]'))) {
+          fillMergedCell_(sheet, r + 1, dopuskCol + 1, lenStr, mergeMap);
         }
       }
     }
