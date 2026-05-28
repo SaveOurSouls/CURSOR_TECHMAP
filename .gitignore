@@ -1,2 +1,5 @@
 .claude/
 .vscode/
+.clasp.json
+deploy.ps1
+WorkspaceSidebar.html
