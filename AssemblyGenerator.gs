@@ -502,6 +502,11 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
           const rowNum = resSlots[i] + 1;
           const wName  = [w.art || w.name, w.length ? w.length + 'мм' : ''].filter(Boolean).join(' ');
           const wNorm  = String(w.qty * partQty).replace('.', ',');
+          if (seqCol >= 0) {
+            let sr = rowNum, sc = seqCol + 1;
+            if (mergeMap[sr] && mergeMap[sr][sc]) { const p = mergeMap[sr][sc]; sr = p.r; sc = p.c; }
+            try { sheet.getRange(sr, sc).setValue(i + 1); } catch (e) {}
+          }
           fillMergedCell_(sheet, rowNum, nameC + 1, wName, mergeMap);
           if (normC >= 0) fillMergedCell_(sheet, rowNum, normC + 1, wNorm, mergeMap);
         }
@@ -563,6 +568,11 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
           const wNorm = isFinite(rawNorm)
             ? String(rawNorm % 1 === 0 ? rawNorm : rawNorm.toFixed(2)).replace('.', ',')
             : '';
+          if (seqCol >= 0) {
+            let sr = rowNum, sc = seqCol + 1;
+            if (mergeMap[sr] && mergeMap[sr][sc]) { const p = mergeMap[sr][sc]; sr = p.r; sc = p.c; }
+            try { sheet.getRange(sr, sc).setValue(i + 1); } catch (e) {}
+          }
           fillMergedCell_(sheet, rowNum, tNameCol + 1, wName, mergeMap);
           if (tNormCol >= 0) fillMergedCell_(sheet, rowNum, tNormCol + 1, wNorm, mergeMap);
         }
