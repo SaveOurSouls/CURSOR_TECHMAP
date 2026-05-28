@@ -1,3 +1,3 @@
-$env:PATH += ";C:\Program Files\nodejs;C:\Users\Артемий Васильев\AppData\Roaming\npm"
+$env:PATH += ";C:\Program Files\nodejs;$env:APPDATA\npm"
 Set-Location $PSScriptRoot
-& "C:\Users\Артемий Васильев\AppData\Roaming\npm\clasp.cmd" push --force
+clasp push --force
