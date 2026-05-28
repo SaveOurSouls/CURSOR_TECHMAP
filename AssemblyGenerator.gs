@@ -481,8 +481,55 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
 
   // ── Fill input Полуфабрикат ───────────────────────────────────
   if (sfInRow >= 0 && prevResult) {
-    const cols = resolveCols(sfInRow);
-    setCell(sfInRow, cols.name >= 0 ? cols.name : cols.art, prevResult);
+    const cols  = resolveCols(sfInRow);
+    const nameC = cols.name >= 0 ? cols.name : cols.art;
+
+    const isTermOp0 = ['prsTermA','insTermA','prsTermB','insTermB'].includes(opType);
+    if (isTermOp0 && Array.isArray(config.wires) && config.wires.length > 0 && nameC >= 0) {
+      // Expand input semi-finished per wire
+      const inWires   = config.wires;
+      const partQty0  = (config.partQty > 0) ? config.partQty : 1;
+      const inSlots   = [sfInRow];
+      let   inBound   = values.length;
+      for (let r = sfInRow + 1; r < values.length; r++) {
+        if (values[r].some(c => /результат|расс?ч[её]?тное\s*врем/i.test(String(c || '')))) { inBound = r; break; }
+      }
+      for (let r = sfInRow + 1; r < inBound; r++) {
+        const fc = String(values[r][0] || '').toLowerCase().trim();
+        if (fc && !/полуфабрикат|^п\/ф/.test(fc) && !/^\d+$/.test(fc)) break;
+        if (!String(values[r][nameC] || '').trim()) inSlots.push(r);
+        else break;
+      }
+      if (inWires.length > inSlots.length) {
+        const insertCount = inWires.length - inSlots.length;
+        const lastSlot    = inSlots[inSlots.length - 1];
+        const ok = insertRowsAfterSafe_(sheet, lastSlot + 1, insertCount, sfInRow + 1);
+        if (ok) {
+          for (let i = 0; i < insertCount; i++) inSlots.push(lastSlot + 1 + i);
+          values   = sheet.getRange(1, 1, sheet.getLastRow(), lastCol).getValues();
+          formulas = sheet.getRange(1, 1, values.length, lastCol).getFormulas();
+          mergeMap = buildMergeMap_(sheet);
+          const secIn = detectSections(values);
+          sfInRow = secIn.sfInRow; resultRow = secIn.resultRow;
+          sfOutRow = secIn.sfOutRow; timeRow = secIn.timeRow;
+        }
+      }
+      for (let i = 0; i < Math.min(inWires.length, inSlots.length); i++) {
+        const w      = inWires[i];
+        const rowNum = inSlots[i] + 1;
+        const wName  = [w.art || w.name, w.length ? w.length + 'мм' : ''].filter(Boolean).join(' ');
+        if (seqCol >= 0) {
+          let sr = rowNum, sc = seqCol + 1;
+          if (mergeMap[sr] && mergeMap[sr][sc]) { const p = mergeMap[sr][sc]; sr = p.r; sc = p.c; }
+          try { sheet.getRange(sr, sc).setValue(i + 1); } catch (e) {}
+        }
+        fillMergedCell_(sheet, rowNum, nameC + 1, wName, mergeMap);
+        if (cols.norm >= 0) fillMergedCell_(sheet, rowNum, cols.norm + 1,
+          String(w.qty * partQty0).replace('.', ','), mergeMap);
+      }
+    } else {
+      setCell(sfInRow, nameC, prevResult);
+    }
   }
 
   // ── Fill Результат → Полуфабрикат ────────────────────────────
@@ -700,10 +747,19 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
             mergeMap = buildMergeMap_(sheet);
           }
         }
+        const tSide      = (opType === 'prsTermA' || opType === 'insTermA') ? sA : sB;
+        const tTermArt   = tSide.termArt || tSide.termName || '';
+        const tConnArt   = (opType === 'insTermA' || opType === 'insTermB') ? (tSide.connArt || tSide.connName || '') : '';
+        const tSideLbl   = (opType === 'prsTermA' || opType === 'insTermA') ? 'А' : 'В';
+        const buildTimeWireName_ = w => {
+          const base     = [w.art || w.name, w.length ? w.length + 'мм' : ''].filter(Boolean).join(' ');
+          const withTerm = tTermArt ? base + ' + ' + tTermArt : base;
+          return tConnArt ? withTerm + ' → ' + tConnArt + ' ст.' + tSideLbl : withTerm;
+        };
         for (let i = 0; i < Math.min(termWires2.length, timeSlots2.length); i++) {
           const w      = termWires2[i];
           const rowNum = timeSlots2[i] + 1;
-          const wName  = [w.art || w.name, w.length ? w.length + 'мм' : ''].filter(Boolean).join(' ');
+          const wName  = buildTimeWireName_(w);
           const rawNorm = (tOpMin2 > 0 ? tOpMin2 * w.qty * pQtyT : w.qty * pQtyT) + tPrepMin2;
           const wNorm  = isFinite(rawNorm)
             ? String(rawNorm % 1 === 0 ? rawNorm : rawNorm.toFixed(2)).replace('.', ',')
