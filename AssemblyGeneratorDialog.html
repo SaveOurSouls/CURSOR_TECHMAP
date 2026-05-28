@@ -223,6 +223,18 @@
 </div>
 <div class="card">
   <div id="sharedLengthRow">
+    <div style="display:flex;gap:16px;margin-bottom:7px;font-size:12px">
+      <label style="cursor:pointer;display:flex;align-items:center;gap:4px">
+        <input type="radio" name="measureMode" value="inner" checked
+               onchange="updateCutLength_();refresh()" />
+        Между разъёмами (+L+)
+      </label>
+      <label style="cursor:pointer;display:flex;align-items:center;gap:4px">
+        <input type="radio" name="measureMode" value="outer"
+               onchange="updateCutLength_();refresh()" />
+        От краёв разъёмов (−L−)
+      </label>
+    </div>
     <div class="field-group">
       <label class="field-label">Длина по чертежу, мм</label>
       <input type="number" id="sharedLengthEl" value="" min="1" placeholder="—"
@@ -520,10 +532,15 @@
     return m ? parseFloat(m[0]) : 0;
   }
 
+  function getMeasureMode_() {
+    const el = document.querySelector('input[name="measureMode"]:checked');
+    return el ? el.value : 'inner';
+  }
+
   function getLengthAdjustment_() {
-    const termA = getCompById(document.getElementById('termSelectA').value);
-    const sideB = document.getElementById('sideBEnabled').checked;
-    const termB = sideB ? getCompById(document.getElementById('termSelectB').value) : null;
+    const termA   = getCompById(document.getElementById('termSelectA').value);
+    const sideB   = document.getElementById('sideBEnabled').checked;
+    const termB   = sideB ? getCompById(document.getElementById('termSelectB').value) : null;
     const terRecs = D.terRecords || [];
     const findTer = comp => {
       if (!comp) return null;
@@ -532,27 +549,36 @@
     };
     const terA = findTer(termA);
     const terB = findTer(termB);
-    const lpA = terA ? parseLengthVal_(terA.lPlus)  : 0;
-    const lmA = terA ? parseLengthVal_(terA.lMinus) : 0;
-    const lpB = terB ? parseLengthVal_(terB.lPlus)  : 0;
-    const lmB = terB ? parseLengthVal_(terB.lMinus) : 0;
-    return { lpA, lmA, lpB, lmB, total: lpA + lpB - lmA - lmB };
+    const mode = getMeasureMode_();
+
+    if (mode === 'inner') {
+      // Между разъёмами: прибавляем L+ с каждой стороны
+      const lpA = terA ? parseLengthVal_(terA.lPlus) : 0;
+      const lpB = terB ? parseLengthVal_(terB.lPlus) : 0;
+      return { total: lpA + lpB, parts: [
+        lpA ? `+${lpA} L+(А)` : null,
+        lpB ? `+${lpB} L+(В)` : null,
+      ].filter(Boolean) };
+    } else {
+      // От краёв разъёмов: вычитаем L− с каждой стороны
+      const lmA = terA ? parseLengthVal_(terA.lMinus) : 0;
+      const lmB = terB ? parseLengthVal_(terB.lMinus) : 0;
+      return { total: -(lmA + lmB), parts: [
+        lmA ? `−${lmA} L−(А)` : null,
+        lmB ? `−${lmB} L−(В)` : null,
+      ].filter(Boolean) };
+    }
   }
 
   function updateCutLength_() {
     const adj = getLengthAdjustment_();
-    const hasAdj = adj.lpA || adj.lmA || adj.lpB || adj.lmB;
+    const hasAdj = adj.parts.length > 0 && adj.total !== 0;
 
     if (drawingLength > 0 && hasAdj) {
       const cut = Math.round((drawingLength + adj.total) * 100) / 100;
       sharedLength = cut;
-      const parts = [];
-      if (adj.lpA) parts.push(`+${adj.lpA} L+(А)`);
-      if (adj.lpB) parts.push(`+${adj.lpB} L+(В)`);
-      if (adj.lmA) parts.push(`−${adj.lmA} L−(А)`);
-      if (adj.lmB) parts.push(`−${adj.lmB} L−(В)`);
       document.getElementById('cutLengthFormula').textContent =
-        `${drawingLength} мм ${parts.join(' ')} =`;
+        `${drawingLength} мм ${adj.parts.join(' ')} =`;
       document.getElementById('cutLengthValue').textContent = cut;
       document.getElementById('cutLengthInfo').style.display = '';
     } else {
