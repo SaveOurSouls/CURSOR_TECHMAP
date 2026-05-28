@@ -196,6 +196,10 @@ function insertTemplate(templateId) {
   const ss = SpreadsheetApp.getActive();
   const template = getTemplateById_(templateId);
 
+  // Remove existing sheet with the same name so re-generation doesn't produce "-2" suffix.
+  const existingSheet = ss.getSheetByName(template.title);
+  if (existingSheet) ss.deleteSheet(existingSheet);
+
   // Create a new sheet named after the template; insert content starting at B2.
   const targetSheet = createUniqueSheet_(ss, template.title);
   const targetRow = 2;
