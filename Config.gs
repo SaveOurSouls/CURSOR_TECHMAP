@@ -111,10 +111,10 @@ const ASSEMBLY_GEN = {
   // Progressive cut-length tolerance table (mm → ±mm)
   toleranceTable: [
     { maxMm: 50,       tol: 1   },
-    { maxMm: 120,      tol: 2   },
-    { maxMm: 315,      tol: 3   },
-    { maxMm: 630,      tol: 5   },
-    { maxMm: 1000,     tol: 7   },
-    { maxMm: Infinity, tol: 10  },
+    { maxMm: 120,      tol: 3   },
+    { maxMm: 315,      tol: 5   },
+    { maxMm: 630,      tol: 8   },
+    { maxMm: 1000,     tol: 10  },
+    { maxMm: Infinity, tol: 15  },
   ],
 };
