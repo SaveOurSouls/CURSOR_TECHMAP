@@ -591,6 +591,19 @@ function buildTechOperationsTerRecord_(row, headerMap, sourceSheet, namedColumns
               || getTechOperationsCellByHeaderRegex_(row, headerMap, /^l\s*\+/);
   const lMinus = getTechOperationsCellByAliases_(row, headerMap, ['l-', 'l−', 'l–', 'l—', 'l- в мм', 'l-(мм)', 'l −', 'l -'])
               || getTechOperationsCellByHeaderRegex_(row, headerMap, /^l\s*[-−–—]/);
+  const applicator   = getTechOperationsCellByAliases_(row, headerMap, ['аппликатор', 'applicator', 'applikator']);
+  const crimpHeight  = getTechOperationsCellByAliases_(row, headerMap, [
+    'высота обжима проводника , мм', 'высота обжима проводника, мм',
+    'высота обжима проводника', 'crimp height conductor', 'crimp height',
+  ]);
+  const pullForceMin = getTechOperationsCellByAliases_(row, headerMap, [
+    'усилие обрыва контакта от, n', 'усилие обрыва контакта от n',
+    'усилие обрыва от, n', 'усилие обрыва от', 'pull force min', 'pull test min', 'pull-off force min',
+  ]);
+  const pullForceMax = getTechOperationsCellByAliases_(row, headerMap, [
+    'усилие обрыва контакта до, n', 'усилие обрыва контакта до n',
+    'усилие обрыва до, n', 'усилие обрыва до', 'pull force max', 'pull test max', 'pull-off force max',
+  ]);
 
   const displayText = joinTechOperationsParts_([manufacturer, series, productName], ' | ');
   if (!displayText) return null;
@@ -598,13 +611,17 @@ function buildTechOperationsTerRecord_(row, headerMap, sourceSheet, namedColumns
   return {
     tabKey: 'ter',
     displayText,
-    terManufacturer: manufacturer,
-    terSeries:       series,
-    terComponent:    productName,
+    terManufacturer:  manufacturer,
+    terSeries:        series,
+    terComponent:     productName,
     terType,
     terArticle,
-    terLPlus:  lPlus  || '',
-    terLMinus: lMinus || '',
+    terLPlus:         lPlus        || '',
+    terLMinus:        lMinus       || '',
+    terApplicator:    applicator   || '',
+    terCrimpHeight:   crimpHeight  || '',
+    terPullForceMin:  pullForceMin || '',
+    terPullForceMax:  pullForceMax || '',
     normalizedSearch: normalizeSearch_(
       [manufacturer, series, productName, connType, terType, artISL, artSAG].join(' ')
     ),
@@ -678,11 +695,25 @@ function parseTechOpsRow_(row) {
     sourceSheet:      row[4],
     sortKey:          row[5] || '',
   };
+  // Extra columns [6..16] are written by toSnapshotRow_() — positions match exactly.
   if (tabKey === 'op')   return { ...base, opNumber: row[6] || '', opName: row[7] || '', tOp: row[8] || '', tPrep: row[9] || '', tMachine: row[10] || '' };
-  if (tabKey === 'ter')  return { ...base, terManufacturer: row[6] || '', terSeries: row[7] || '', terComponent: row[8] || '', terType: row[9] || '', terArticle: row[10] || '', terLPlus: row[11] || '', terLMinus: row[12] || '' };
+  if (tabKey === 'ter')  return { ...base, terManufacturer: row[6] || '', terSeries: row[7] || '', terComponent: row[8] || '', terType: row[9] || '', terArticle: row[10] || '', terLPlus: row[11] || '', terLMinus: row[12] || '', terApplicator: row[13] || '', terCrimpHeight: row[14] || '', terPullForceMin: row[15] || '', terPullForceMax: row[16] || '' };
   if (tabKey === 'coax') return { ...base, coaxWire: row[9] || '', coaxType: row[10] || '', coaxMfr: row[11] || '', coaxArticle: row[12] || '' };
   if (tabKey === 'ob')   return { ...base, obType: row[6] || '' };
   return base;
+}
+
+// Returns an array of 11 extra-column values for a snapshot record (col indices 6-16).
+// Keeps each tabKey's fields at fixed positions and makes parseTechOpsRow_ the single
+// source of truth for the layout — changing one here changes both read and write paths.
+function toSnapshotRow_(record) {
+  switch (record.tabKey) {
+    case 'op':   return [record.opNumber || '', record.opName || '', record.tOp || '', record.tPrep || '', record.tMachine || '', '', '', '', '', '', ''];
+    case 'ter':  return [record.terManufacturer || '', record.terSeries || '', record.terComponent || '', record.terType || '', record.terArticle || '', record.terLPlus || '', record.terLMinus || '', record.terApplicator || '', record.terCrimpHeight || '', record.terPullForceMin || '', record.terPullForceMax || ''];
+    case 'coax': return ['', '', '', record.coaxWire || '', record.coaxType || '', record.coaxMfr || '', record.coaxArticle || '', '', '', '', ''];
+    case 'ob':   return [record.obType || '', '', '', '', '', '', '', '', '', '', ''];
+    default:     return ['', '', '', '', '', '', '', '', '', '', ''];
+  }
 }
 
 function writeTechOperationsSnapshotToSheets_(snapshot) {
@@ -710,13 +741,7 @@ function writeTechOperationsSnapshotToSheets_(snapshot) {
       JSON.stringify(record.exportValues || []),
       record.sourceSheet,
       record.sortKey || '',
-      record.terManufacturer || record.opNumber || record.obType || '',
-      record.terSeries       || record.opName   || '',
-      record.terComponent    || record.tOp      || '',
-      record.terType    || record.coaxWire  || record.tPrep    || '',
-      record.terArticle || record.coaxType  || record.tMachine || '',
-      record.coaxMfr     || record.terLPlus  || '',
-      record.coaxArticle || record.terLMinus || '',
+      ...toSnapshotRow_(record),
     ]);
     dataSheet.getRange(2, 1, rows.length, TECHOPS_DB_APP.dataHeaders.length).setValues(rows);
   }
@@ -832,6 +857,12 @@ function buildTechOperationsPayload_(snapshot) {
           item.terManufacturer = record.terManufacturer || exp[3] || '';
           item.terType         = record.terType         || '';
           item.terArticle      = record.terArticle      || '';
+          item.terLPlus        = record.terLPlus        || '';
+          item.terLMinus       = record.terLMinus       || '';
+          item.terApplicator   = record.terApplicator   || '';
+          item.terCrimpHeight  = record.terCrimpHeight  || '';
+          item.terPullForceMin = record.terPullForceMin || '';
+          item.terPullForceMax = record.terPullForceMax || '';
         }
         if (tabKey === 'coax') {
           item.coaxWire    = record.coaxWire    || '';

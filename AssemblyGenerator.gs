@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 //  AssemblyGenerator.gs — генератор техкарт межплатных сборок
 //  Зависимости: Config.gs, Utils.gs, TemplateStore.gs, OperationDatabase.gs
 // ============================================================
@@ -112,9 +112,13 @@ function readTerRecordsForGenerator_() {
     return (snapshot.records || [])
       .filter(r => r.tabKey === 'ter' && r.terArticle)
       .map(r => ({
-        article: r.terArticle || '',
-        lPlus:   r.terLPlus   || '',
-        lMinus:  r.terLMinus  || '',
+        article:      r.terArticle    || '',
+        lPlus:        r.terLPlus      || '',
+        lMinus:       r.terLMinus     || '',
+        applicator:   r.terApplicator || '',
+        crimpHeight:  r.terCrimpHeight  || '',
+        pullForceMin: r.terPullForceMin || '',
+        pullForceMax: r.terPullForceMax || '',
       }));
   } catch (e) { return []; }
 }
@@ -150,6 +154,7 @@ function generateAssemblyTechCards(config) {
   const ss = SpreadsheetApp.getActive();
   const createdSheets = [];
   let prevResult = '';
+  const terRecords = readTerRecordsForGenerator_();
 
   try {
     for (const op of config.ops) {
@@ -165,10 +170,11 @@ function generateAssemblyTechCards(config) {
 
       const thisResult = computeOperationResult_(op.type, config, prevResult, wireData);
 
-      const phMap = buildPlaceholderMap_(op, config, prevResult, thisResult, wireData);
+      const terData = buildTerData_(op.type, config, terRecords);
+      const phMap = buildPlaceholderMap_(op, config, prevResult, thisResult, wireData, terData);
       replacePlaceholders_(sheet, phMap);
 
-      fillTechCardStructurally_(sheet, op, op.type, config, prevResult, thisResult, wireData);
+      fillTechCardStructurally_(sheet, op, op.type, config, prevResult, thisResult, wireData, terData);
 
       prevResult = thisResult;
       createdSheets.push(insertResult.sheetName);
@@ -219,19 +225,37 @@ function computeOperationResult_(opType, config, prevResult, wireData) {
       }).filter(Boolean);
       return parts.join('; ') || (wd.art || wd.name || '');
     }
-    case 'prsTermA': return [prevResult, sA.termName].filter(Boolean).join(' + ');
+    case 'prsTermA': return prevResult ? prevResult + ', обж. терм. ' + (sA.termName || '') : (sA.termName || '');
     case 'insTermA': return [prevResult, sA.connName].filter(Boolean).join(' → ') + ' ст.А';
-    case 'prsTermB': return [prevResult, sB.termName].filter(Boolean).join(' + ');
+    case 'prsTermB': return prevResult ? prevResult + ', обж. терм. ' + (sB.termName || '') : (sB.termName || '');
     case 'insTermB': return [prevResult, sB.connName].filter(Boolean).join(' → ') + ' ст.В';
     default:         return prevResult;
   }
 }
 
-function buildPlaceholderMap_(op, config, prevResult, thisResult, wireData) {
+// Resolves ter record for terminal operations and builds terData object.
+function buildTerData_(opType, config, terRecords) {
+  const isTermA  = ['prsTermA', 'insTermA'].includes(opType);
+  const isTermB  = ['prsTermB', 'insTermB'].includes(opType);
+  if (!isTermA && !isTermB) return null;
+  const side     = isTermA ? (config.sideA || {}) : (config.sideB || {});
+  const termArtL = (side.termArt || '').toLowerCase();
+  if (!termArtL) return null;
+  const rec = (terRecords || []).find(r => r.article.toLowerCase() === termArtL) || null;
+  return {
+    applicator:  rec && rec.applicator  ? rec.applicator  : 'не найдено',
+    crimpHeight: rec ? (rec.crimpHeight  || '') : '',
+    pullForce:   rec ? [rec.pullForceMin, rec.pullForceMax].filter(Boolean).join(' - ') : '',
+  };
+}
+
+function buildPlaceholderMap_(op, config, prevResult, thisResult, wireData, terData) {
   const p  = ASSEMBLY_GEN.placeholders;
   const sA = config.sideA || {};
   const sB = config.sideB || {};
   const wd = wireData || {};
+  const td = terData || {};
+
   return {
     [p.index]:        config.assemblyIndex || '',
     [p.name]:         config.assemblyName  || '',
@@ -268,7 +292,9 @@ function buildCutTolerance_(wireData) {
   const wd  = wireData || {};
   const len = parseFloat(String(wd.length || '').split('\n')[0].replace(',', '.')) || 0;
   if (!len) return '';
-  const raw = len / 1000 * (ASSEMBLY_GEN.toleranceMmPerM || 8);
+  const rate = ASSEMBLY_GEN.toleranceMmPerM;
+  if (!rate) return '';
+  const raw = len / 1000 * rate;
   const tol = Math.max(1, Math.ceil(raw));
   const tolStr = String(tol);
   return `(+/-)${tolStr}мм`;
@@ -331,34 +357,45 @@ function replacePlaceholders_(sheet, phMap) {
   }
 }
 
-// ── Structural fill ───────────────────────────────────────────
+// ── Structural fill helpers ───────────────────────────────────
 
-function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisResult, wireData) {
-  let lastRow = sheet.getLastRow();
-  const lastCol = sheet.getLastColumn();
-  if (lastRow < 1 || lastCol < 1) return;
+// Scans values for section anchor rows.
+function detectSections_(values) {
+  let kp = -1, sfI = -1, res = -1, sfO = -1, tm = -1;
+  for (let r = 0; r < values.length; r++) {
+    for (let c = 0; c < values[r].length; c++) {
+      const cell = String(values[r][c] || '').toLowerCase().trim();
+      if (!cell) continue;
+      if (tm  < 0 && /расс?ч[её]?тное\s*врем/i.test(cell))       { tm  = r; break; }
+      if (res < 0 && tm < 0 && /результат/.test(cell))            { res = r; break; }
+      if (kp  < 0 && cell.includes('комплектующ'))                { kp  = r; break; }
+      if (/полуфабрикат|^п\/ф/.test(cell)) {
+        if (res >= 0 || tm >= 0) { if (sfO < 0) { sfO = r; break; } }
+        else                     { if (sfI < 0) { sfI = r; break; } }
+      }
+    }
+  }
+  return { kompRow: kp, sfInRow: sfI, resultRow: res, sfOutRow: sfO, timeRow: tm };
+}
 
-  let values   = sheet.getRange(1, 1, lastRow, lastCol).getValues();
-  let formulas = sheet.getRange(1, 1, lastRow, lastCol).getFormulas();
-  let mergeMap = buildMergeMap_(sheet);
+// Creates a mutable sheet context object; ctx.refresh() re-reads all sheet data.
+function makeSheetCtx_(sheet) {
+  const ctx = { sheet };
+  ctx.refresh = function() {
+    ctx.lastRow = sheet.getLastRow();
+    ctx.lastCol = sheet.getLastColumn();
+    if (ctx.lastRow < 1 || ctx.lastCol < 1) { ctx.values = []; ctx.formulas = []; ctx.mergeMap = {}; ctx.sections = {}; return; }
+    ctx.values   = sheet.getRange(1, 1, ctx.lastRow, ctx.lastCol).getValues();
+    ctx.formulas = sheet.getRange(1, 1, ctx.lastRow, ctx.lastCol).getFormulas();
+    ctx.mergeMap = buildMergeMap_(sheet);
+    ctx.sections = detectSections_(ctx.values);
+  };
+  ctx.refresh();
+  return ctx;
+}
 
-  const sA = config.sideA || {};
-  const sB = config.sideB || {};
-  const wd = wireData || {};
-
-  const pQty = (config.partQty > 0) ? config.partQty : 1;
-  const comp =
-      opType === 'prsTermA' ? { art: sA.termArt || sA.termName || '', name: sA.termName || '', norm: String((sA.termQty || 0) * pQty) }
-    : opType === 'insTermA' ? { art: sA.connArt || sA.connName || '', name: sA.connName || '', norm: String((sA.connQty || 0) * pQty) }
-    : opType === 'prsTermB' ? { art: sB.termArt || sB.termName || '', name: sB.termName || '', norm: String((sB.termQty || 0) * pQty) }
-    : opType === 'insTermB' ? { art: sB.connArt || sB.connName || '', name: sB.connName || '', norm: String((sB.connQty || 0) * pQty) }
-    : null;
-
-  const isCutWire = opType === 'cutWire';
-  const wires = isCutWire && Array.isArray(config.wires) && config.wires.length > 0
-      ? config.wires : null;
-
-  // ── Global column indices ─────────────────────────────────────
+// Scans ctx.values for global column header positions.
+function detectGlobalColumns_(values) {
   let artCol = -1, grnCol = -1, normCol = -1, seqCol = -1;
   for (let r = 0; r < values.length; r++) {
     for (let c = 0; c < values[r].length; c++) {
@@ -368,458 +405,370 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
                           || (cell.includes('грн') && cell.length < 6)))                             grnCol  = c;
       if (normCol < 0 && (cell === 'норма'     || cell === 'кол-во' || cell === 'qty'
                           || (cell.includes('норма') && cell.length < 10)))                          normCol = c;
-      if (seqCol  < 0 && cell === '№')                                                              seqCol  = c;
+      if (seqCol  < 0 && cell === '№')                                                               seqCol  = c;
     }
     if (artCol >= 0 && grnCol >= 0 && normCol >= 0) break;
   }
+  return { artCol, grnCol, normCol, seqCol };
+}
 
-  // ── Section detection ─────────────────────────────────────────
-  function detectSections(v) {
-    let kp = -1, sfI = -1, res = -1, sfO = -1, tm = -1;
-    for (let r = 0; r < v.length; r++) {
-      for (let c = 0; c < v[r].length; c++) {
-        const cell = String(v[r][c] || '').toLowerCase().trim();
-        if (!cell) continue;
-        if (tm  < 0 && /расс?ч[её]?тное\s*врем/i.test(cell))       { tm  = r; break; }
-        if (res < 0 && tm < 0 && /результат/.test(cell))            { res = r; break; }
-        if (kp  < 0 && cell.includes('комплектующ'))                { kp  = r; break; }
-        if (/полуфабрикат|^п\/ф/.test(cell)) {
-          if (res >= 0 || tm >= 0) { if (sfO < 0) { sfO = r; break; } }
-          else                     { if (sfI < 0) { sfI = r; break; } }
-        }
-      }
-    }
-    return { kompRow: kp, sfInRow: sfI, resultRow: res, sfOutRow: sfO, timeRow: tm };
+// Writes a value to a cell, skipping real formulas and resolving merges.
+function setCell_(ctx, r, col, val) {
+  if (col < 0 || col >= ctx.lastCol) return;
+  const v = val == null ? '' : String(val);
+  if (!v) return;
+  const fml = ctx.formulas[r] && ctx.formulas[r][col];
+  if (fml && !/^=""$|^=''$/.test(fml.trim())) return;
+  let wr = r + 1, wc = col + 1;
+  if (ctx.mergeMap[wr] && ctx.mergeMap[wr][wc]) { const p = ctx.mergeMap[wr][wc]; wr = p.r; wc = p.c; }
+  try { ctx.sheet.getRange(wr, wc).setValue(v); } catch (e) {}
+}
+
+// Resolves art/name/norm column indices for a data row (looks for header above, falls back to globals).
+function resolveCols_(ctx, colMap, dataRow) {
+  const loc = findColHeadersAbove_(ctx.values, dataRow);
+  return {
+    art:  loc.art  >= 0 ? loc.art  : colMap.artCol,
+    name: loc.name >= 0 ? loc.name : colMap.grnCol,
+    norm: loc.norm >= 0 ? loc.norm : colMap.normCol,
+  };
+}
+
+// Builds the wire result name for terminal operations (used in Результат and Время sections).
+function buildWireResultName_(w, termArt, connArt, sideLabel) {
+  const base = [w.art || w.name, w.length ? w.length + 'мм' : ''].filter(Boolean).join(' ');
+  const withTerm = termArt ? base + ', обж. терм. ' + termArt : base;
+  return connArt ? withTerm + ' → ' + connArt + ' ст.' + sideLabel : withTerm;
+}
+
+// Finds empty slots starting at anchorRow up to bound; expands by inserting rows if needed.
+// nameCol — 0-based column used to test emptiness. srcRow — 1-based source row for copy.
+// Returns array of 0-based row indices for the slots.
+function findAndExpandSlots_(sheet, ctx, anchorRow, bound, nameCol, neededCount, srcRow) {
+  const slots = [anchorRow];
+  for (let r = anchorRow + 1; r < bound; r++) {
+    const fc = String((ctx.values[r] || [])[0] || '').toLowerCase().trim();
+    if (fc && !/полуфабрикат|^п\/ф/.test(fc) && !/^\d+$/.test(fc)) break;
+    const nameV = nameCol >= 0 ? String((ctx.values[r] || [])[nameCol] || '').trim() : '';
+    if (!nameV) slots.push(r);
+    else break;
   }
-
-  let { kompRow, sfInRow, resultRow, sfOutRow, timeRow } = detectSections(values);
-
-  // ── Helpers ──────────────────────────────────────────────────
-  function setCell(r, col, val) {
-    if (col < 0 || col >= lastCol) return;
-    const v = val == null ? '' : String(val);
-    if (!v) return;
-    const fml = formulas[r] && formulas[r][col];
-    if (fml && !/^=""$|^=''$/.test(fml.trim())) return;
-    let wr = r + 1, wc = col + 1;
-    if (mergeMap[wr] && mergeMap[wr][wc]) { const p = mergeMap[wr][wc]; wr = p.r; wc = p.c; }
-    try { sheet.getRange(wr, wc).setValue(v); } catch (e) {}
-  }
-
-  function resolveCols(dataRow) {
-    const loc = findColHeadersAbove_(values, dataRow);
-    return {
-      art:  loc.art  >= 0 ? loc.art  : artCol,
-      name: loc.name >= 0 ? loc.name : grnCol,
-      norm: loc.norm >= 0 ? loc.norm : normCol,
-    };
-  }
-
-  // ── Fill Комплектующие ────────────────────────────────────────
-  if (kompRow >= 0) {
-    const cols = resolveCols(kompRow);
-
-    if (wires) {
-      const bound = Math.min(
-        ...[sfInRow, resultRow, timeRow].filter(x => x > kompRow).concat([values.length])
-      );
-      const slots = [kompRow];
-      for (let r = kompRow + 1; r < bound; r++) {
-        const lbl = String(values[r][0] || '').trim();
-        if (lbl && !/^\d+$/.test(lbl)) break;
-        const artV  = cols.art  >= 0 ? String(values[r][cols.art]  || '').trim() : '';
-        const grnV  = cols.name >= 0 ? String(values[r][cols.name] || '').trim() : '';
-        if (!artV && !grnV) slots.push(r);
-        else break;
-      }
-
-      if (wires.length > slots.length) {
-        const insertCount = wires.length - slots.length;
-        const lastSlot    = slots[slots.length - 1];
-        const ok = insertRowsAfterSafe_(sheet, lastSlot + 1, insertCount, kompRow + 1);
-        if (ok) {
-          for (let i = 0; i < insertCount; i++) slots.push(lastSlot + 1 + i);
-          lastRow  = sheet.getLastRow();
-          values   = sheet.getRange(1, 1, lastRow, lastCol).getValues();
-          formulas = sheet.getRange(1, 1, lastRow, lastCol).getFormulas();
-          mergeMap = buildMergeMap_(sheet);
-          const sec = detectSections(values);
-          sfInRow   = sec.sfInRow;
-          resultRow = sec.resultRow;
-          sfOutRow  = sec.sfOutRow;
-          timeRow   = sec.timeRow;
-        }
-      }
-
-      const partQty = (config.partQty > 0) ? config.partQty : 1;
-      for (let i = 0; i < Math.min(wires.length, slots.length); i++) {
-        const w = wires[i];
-        const r = slots[i];
-        let normVal = '';
-        if (w.qty > 0 && w.length > 0) {
-          const n = w.qty * w.length * partQty / 1000;
-          if (isFinite(n)) normVal = String(n).replace('.', ',');
-        } else if (w.length > 0) {
-          const n = w.length * partQty / 1000;
-          if (isFinite(n)) normVal = String(n).replace('.', ',');
-        }
-        if (seqCol >= 0) {
-          let sr = r + 1, sc = seqCol + 1;
-          if (mergeMap[sr] && mergeMap[sr][sc]) { const p = mergeMap[sr][sc]; sr = p.r; sc = p.c; }
-          try { sheet.getRange(sr, sc).setValue(i + 1); } catch (e) {}
-        }
-        setCell(r, cols.art,  w.art  || w.name || '');
-        setCell(r, cols.name, w.name || '');
-        setCell(r, cols.norm, normVal);
-      }
-    } else if (comp) {
-      setCell(kompRow, cols.art,  comp.art);
-      setCell(kompRow, cols.name, comp.name);
-      setCell(kompRow, cols.norm, comp.norm);
+  if (neededCount > slots.length) {
+    const insertCount = neededCount - slots.length;
+    const lastSlot = slots[slots.length - 1];
+    if (insertRowsAfterSafe_(sheet, lastSlot + 1, insertCount, srcRow)) {
+      for (let i = 0; i < insertCount; i++) slots.push(lastSlot + 1 + i);
+      ctx.refresh();
     }
   }
+  return slots;
+}
 
-  // ── Fill input Полуфабрикат ───────────────────────────────────
-  if (sfInRow >= 0 && prevResult) {
-    const cols  = resolveCols(sfInRow);
-    const nameC = cols.name >= 0 ? cols.name : cols.art;
+// Writes sequence number to seqCol, respecting merges.
+function writeSeqNum_(sheet, rowNum, seqCol, idx, mergeMap) {
+  if (seqCol < 0) return;
+  let sr = rowNum, sc = seqCol + 1;
+  if (mergeMap[sr] && mergeMap[sr][sc]) { const p = mergeMap[sr][sc]; sr = p.r; sc = p.c; }
+  try { sheet.getRange(sr, sc).setValue(idx + 1); } catch (e) {}
+}
 
-    const isTermOp0 = ['prsTermA','insTermA','prsTermB','insTermB'].includes(opType);
-    if (isTermOp0 && Array.isArray(config.wires) && config.wires.length > 0 && nameC >= 0) {
-      // Expand input semi-finished per wire
-      const inWires   = config.wires;
-      const partQty0  = (config.partQty > 0) ? config.partQty : 1;
-      const inSlots   = [sfInRow];
-      let   inBound   = values.length;
-      for (let r = sfInRow + 1; r < values.length; r++) {
-        if (values[r].some(c => /результат|расс?ч[её]?тное\s*врем/i.test(String(c || '')))) { inBound = r; break; }
+// ── Section fill functions ────────────────────────────────────
+
+function fillKompl_(sheet, ctx, colMap, op, config, wireData) {
+  const { kompRow, sfInRow, resultRow, timeRow } = ctx.sections;
+  const cols  = resolveCols_(ctx, colMap, kompRow);
+  const pQty  = (config.partQty > 0) ? config.partQty : 1;
+  const opType = op.type;
+  const sA = config.sideA || {};
+  const sB = config.sideB || {};
+  const wires = (opType === 'cutWire') && Array.isArray(config.wires) && config.wires.length > 0
+    ? config.wires : null;
+  const comp =
+      opType === 'prsTermA' ? { art: sA.termArt || sA.termName || '', name: sA.termName || '', norm: String((sA.termQty || 0) * pQty) }
+    : opType === 'insTermA' ? { art: sA.connArt  || sA.connName  || '', name: sA.connName  || '', norm: String((sA.connQty || 0) * pQty) }
+    : opType === 'prsTermB' ? { art: sB.termArt || sB.termName || '', name: sB.termName || '', norm: String((sB.termQty || 0) * pQty) }
+    : opType === 'insTermB' ? { art: sB.connArt  || sB.connName  || '', name: sB.connName  || '', norm: String((sB.connQty || 0) * pQty) }
+    : null;
+
+  if (wires) {
+    const bound = Math.min(...[sfInRow, resultRow, timeRow].filter(x => x > kompRow).concat([ctx.values.length]));
+    const slots = [kompRow];
+    for (let r = kompRow + 1; r < bound; r++) {
+      const lbl = String((ctx.values[r] || [])[0] || '').trim();
+      if (lbl && !/^\d+$/.test(lbl)) break;
+      const artV  = cols.art  >= 0 ? String((ctx.values[r] || [])[cols.art]  || '').trim() : '';
+      const grnV  = cols.name >= 0 ? String((ctx.values[r] || [])[cols.name] || '').trim() : '';
+      if (!artV && !grnV) slots.push(r);
+      else break;
+    }
+    if (wires.length > slots.length) {
+      const insertCount = wires.length - slots.length;
+      const lastSlot = slots[slots.length - 1];
+      if (insertRowsAfterSafe_(sheet, lastSlot + 1, insertCount, kompRow + 1)) {
+        for (let i = 0; i < insertCount; i++) slots.push(lastSlot + 1 + i);
+        ctx.refresh();
       }
-      for (let r = sfInRow + 1; r < inBound; r++) {
-        const fc = String(values[r][0] || '').toLowerCase().trim();
-        if (fc && !/полуфабрикат|^п\/ф/.test(fc) && !/^\d+$/.test(fc)) break;
-        if (!String(values[r][nameC] || '').trim()) inSlots.push(r);
-        else break;
+    }
+    for (let i = 0; i < Math.min(wires.length, slots.length); i++) {
+      const w = wires[i];
+      const r = slots[i];
+      let normVal = '';
+      if (w.qty > 0 && w.length > 0) {
+        const n = w.qty * w.length * pQty / 1000;
+        if (isFinite(n)) normVal = String(n).replace('.', ',');
+      } else if (w.length > 0) {
+        const n = w.length * pQty / 1000;
+        if (isFinite(n)) normVal = String(n).replace('.', ',');
       }
-      if (inWires.length > inSlots.length) {
-        const insertCount = inWires.length - inSlots.length;
-        const lastSlot    = inSlots[inSlots.length - 1];
-        const ok = insertRowsAfterSafe_(sheet, lastSlot + 1, insertCount, sfInRow + 1);
-        if (ok) {
-          for (let i = 0; i < insertCount; i++) inSlots.push(lastSlot + 1 + i);
-          values   = sheet.getRange(1, 1, sheet.getLastRow(), lastCol).getValues();
-          formulas = sheet.getRange(1, 1, values.length, lastCol).getFormulas();
-          mergeMap = buildMergeMap_(sheet);
-          const secIn = detectSections(values);
-          sfInRow = secIn.sfInRow; resultRow = secIn.resultRow;
-          sfOutRow = secIn.sfOutRow; timeRow = secIn.timeRow;
-        }
-      }
-      for (let i = 0; i < Math.min(inWires.length, inSlots.length); i++) {
-        const w      = inWires[i];
-        const rowNum = inSlots[i] + 1;
-        const wName  = [w.art || w.name, w.length ? w.length + 'мм' : ''].filter(Boolean).join(' ');
-        if (seqCol >= 0) {
-          let sr = rowNum, sc = seqCol + 1;
-          if (mergeMap[sr] && mergeMap[sr][sc]) { const p = mergeMap[sr][sc]; sr = p.r; sc = p.c; }
-          try { sheet.getRange(sr, sc).setValue(i + 1); } catch (e) {}
-        }
-        fillMergedCell_(sheet, rowNum, nameC + 1, wName, mergeMap);
-        if (cols.norm >= 0) fillMergedCell_(sheet, rowNum, cols.norm + 1,
-          String(w.qty * partQty0).replace('.', ','), mergeMap);
-      }
-    } else {
-      setCell(sfInRow, nameC, prevResult);
+      writeSeqNum_(sheet, r + 1, colMap.seqCol, i, ctx.mergeMap);
+      setCell_(ctx, r, cols.art,  w.art  || w.name || '');
+      setCell_(ctx, r, cols.name, w.name || '');
+      setCell_(ctx, r, cols.norm, normVal);
+    }
+  } else if (comp) {
+    setCell_(ctx, kompRow, cols.art,  comp.art);
+    setCell_(ctx, kompRow, cols.name, comp.name);
+    setCell_(ctx, kompRow, cols.norm, comp.norm);
+  }
+}
+
+function fillSfIn_(sheet, ctx, colMap, config, prevResult, opType) {
+  const { sfInRow } = ctx.sections;
+  const cols  = resolveCols_(ctx, colMap, sfInRow);
+  const nameC = cols.name >= 0 ? cols.name : cols.art;
+  const isTermOp = ['prsTermA','insTermA','prsTermB','insTermB'].includes(opType);
+
+  if (isTermOp && Array.isArray(config.wires) && config.wires.length > 0 && nameC >= 0) {
+    const inWires = config.wires;
+    const pQty    = (config.partQty > 0) ? config.partQty : 1;
+    let   inBound = ctx.values.length;
+    for (let r = sfInRow + 1; r < ctx.values.length; r++) {
+      if ((ctx.values[r] || []).some(c => /результат|расс?ч[её]?тное\s*врем/i.test(String(c || '')))) { inBound = r; break; }
+    }
+    const slots = findAndExpandSlots_(sheet, ctx, sfInRow, inBound, nameC, inWires.length, sfInRow + 1);
+    for (let i = 0; i < Math.min(inWires.length, slots.length); i++) {
+      const w      = inWires[i];
+      const rowNum = slots[i] + 1;
+      const wName  = [w.art || w.name, w.length ? w.length + 'мм' : ''].filter(Boolean).join(' ');
+      writeSeqNum_(sheet, rowNum, colMap.seqCol, i, ctx.mergeMap);
+      fillMergedCell_(sheet, rowNum, nameC + 1, wName, ctx.mergeMap);
+      if (cols.norm >= 0) fillMergedCell_(sheet, rowNum, cols.norm + 1, String(w.qty * pQty).replace('.', ','), ctx.mergeMap);
+    }
+  } else {
+    setCell_(ctx, sfInRow, nameC, prevResult);
+  }
+}
+
+function fillSfOut_(sheet, ctx, colMap, config, thisResult, opType) {
+  const wires    = Array.isArray(config.wires) ? config.wires : [];
+  const sA       = config.sideA || {};
+  const sB       = config.sideB || {};
+  const pQty     = (config.partQty > 0) ? config.partQty : 1;
+  const isCutWire = opType === 'cutWire';
+  const isTermOp  = ['prsTermA','insTermA','prsTermB','insTermB'].includes(opType);
+
+  let fRes = -1, fSfOut = -1;
+  for (let r = 0; r < ctx.values.length; r++) {
+    for (let c = 0; c < (ctx.values[r] || []).length; c++) {
+      const cell = String((ctx.values[r] || [])[c] || '').toLowerCase().trim();
+      if (!cell) continue;
+      if (fRes < 0 && /результат/.test(cell))                          { fRes   = r; break; }
+      if (fRes >= 0 && fSfOut < 0 && /полуфабрикат|^п\/ф/.test(cell)) { fSfOut = r; break; }
     }
   }
+  if (fSfOut < 0) return;
 
-  // ── Fill Результат → Полуфабрикат ────────────────────────────
-  if (thisResult && (sfOutRow >= 0 || resultRow >= 0)) {
-    let fRes = -1, fSfOut = -1;
-    for (let r = 0; r < values.length; r++) {
-      for (let c = 0; c < values[r].length; c++) {
-        const cell = String(values[r][c] || '').toLowerCase().trim();
-        if (!cell) continue;
-        if (fRes < 0 && /результат/.test(cell))                         { fRes   = r; break; }
-        if (fRes >= 0 && fSfOut < 0 && /полуфабрикат|^п\/ф/.test(cell)) { fSfOut = r; break; }
+  const hdr   = findColHeadersAbove_(ctx.values, fSfOut);
+  const nameC = hdr.name >= 0 ? hdr.name : (hdr.art >= 0 ? hdr.art : colMap.grnCol);
+  const normC = hdr.norm >= 0 ? hdr.norm : colMap.normCol;
+
+  if ((isCutWire || isTermOp) && wires.length > 0 && nameC >= 0) {
+    let resTimeBound = ctx.values.length;
+    for (let r = fSfOut + 1; r < ctx.values.length; r++) {
+      if ((ctx.values[r] || []).some(c => /расс?ч[её]?тное\s*врем/i.test(String(c || '')))) { resTimeBound = r; break; }
+    }
+    const slots    = findAndExpandSlots_(sheet, ctx, fSfOut, resTimeBound, nameC, wires.length, fSfOut + 1);
+    const side     = (opType === 'prsTermA' || opType === 'insTermA') ? sA : sB;
+    const termArt  = isTermOp ? (side.termArt || side.termName || '') : '';
+    const connArt  = (opType === 'insTermA' || opType === 'insTermB') ? (side.connArt || side.connName || '') : '';
+    const sideLbl  = (opType === 'prsTermA' || opType === 'insTermA') ? 'А' : 'В';
+    for (let i = 0; i < Math.min(wires.length, slots.length); i++) {
+      const w      = wires[i];
+      const rowNum = slots[i] + 1;
+      const wName  = isTermOp
+        ? buildWireResultName_(w, termArt, connArt, sideLbl)
+        : [w.art || w.name, w.length ? w.length + 'мм' : ''].filter(Boolean).join(' ');
+      writeSeqNum_(sheet, rowNum, colMap.seqCol, i, ctx.mergeMap);
+      fillMergedCell_(sheet, rowNum, nameC + 1, wName, ctx.mergeMap);
+      if (normC >= 0) fillMergedCell_(sheet, rowNum, normC + 1, String(w.qty * pQty).replace('.', ','), ctx.mergeMap);
+    }
+  } else if (nameC >= 0) {
+    fillMergedCell_(sheet, fSfOut + 1, nameC + 1, thisResult, ctx.mergeMap);
+  }
+}
+
+function fillTime_(sheet, ctx, colMap, op, config, thisResult, opType) {
+  const { timeRow } = ctx.sections;
+  const isCutWire  = opType === 'cutWire';
+  const isTermOp   = ['prsTermA','insTermA','prsTermB','insTermB'].includes(opType);
+  const wires      = Array.isArray(config.wires) ? config.wires : [];
+  const sA         = config.sideA || {};
+  const sB         = config.sideB || {};
+  const pQty       = (config.partQty > 0) ? config.partQty : 1;
+
+  const timeDataRows = [];
+  for (let r = timeRow + 1; r < ctx.values.length; r++) {
+    const rc = (ctx.values[r] || []).map(c => String(c || '').toLowerCase().trim());
+    if (!rc.some(v => v)) { if (timeDataRows.length > 0) break; continue; }
+    if (rc.some(v => v === 'наименование' || v === 'норма' || v === 'обозначение' || v === 'факт')) continue;
+    timeDataRows.push(r);
+  }
+  if (!timeDataRows.length) return;
+
+  const cols      = resolveCols_(ctx, colMap, timeDataRows[0]);
+  const tNormCol  = cols.norm >= 0 ? cols.norm : colMap.normCol;
+  const tNameCol  = cols.name >= 0 ? cols.name : colMap.grnCol;
+
+  if ((isCutWire || isTermOp) && wires.length > 0 && tNameCol >= 0) {
+    const tOpSec   = parseFloat(String(op.tOp   || '').replace(',', '.')) || 0;
+    const tPrepSec = parseFloat(String(op.tPrep || '').replace(',', '.')) || 0;
+    const tOpMin   = tOpSec  / 60;
+    const tPrepMin = tPrepSec / 60;
+
+    const timeSlots = [...timeDataRows];
+    for (let r = timeDataRows[timeDataRows.length - 1] + 1; r < ctx.values.length; r++) {
+      const rc = (ctx.values[r] || []).map(c => String(c || '').toLowerCase().trim());
+      if (!rc.some(v => v)) break;
+      if (rc.some(v => v === 'наименование' || v === 'норма' || v === 'обозначение' || v === 'факт')) continue;
+      if (!String((ctx.values[r] || [])[tNameCol] || '').trim()) timeSlots.push(r);
+      else break;
+    }
+    if (wires.length > timeSlots.length) {
+      const insertCount = wires.length - timeSlots.length;
+      const lastSlot    = timeSlots[timeSlots.length - 1];
+      if (insertRowsAfterSafe_(sheet, lastSlot + 1, insertCount, timeDataRows[0] + 1)) {
+        for (let i = 0; i < insertCount; i++) timeSlots.push(lastSlot + 1 + i);
+        ctx.refresh();
       }
     }
-
-    if (fSfOut >= 0) {
-      const hdr   = findColHeadersAbove_(values, fSfOut);
-      const nameC = hdr.name >= 0 ? hdr.name : (hdr.art >= 0 ? hdr.art : grnCol);
-      const normC = hdr.norm >= 0 ? hdr.norm : normCol;
-
-      if (isCutWire && wires && wires.length > 0 && nameC >= 0) {
-        const partQty = (config.partQty > 0) ? config.partQty : 1;
-
-        let resTimeBound = values.length;
-        for (let r = fSfOut + 1; r < values.length; r++) {
-          for (let c = 0; c < values[r].length; c++) {
-            if (/расс?ч[её]?тное\s*врем/i.test(String(values[r][c] || ''))) {
-              resTimeBound = r; break;
-            }
-          }
-          if (resTimeBound < values.length) break;
-        }
-
-        const resSlots = [fSfOut];
-        for (let r = fSfOut + 1; r < resTimeBound; r++) {
-          const firstCell = String(values[r][0] || '').toLowerCase().trim();
-          if (firstCell && !/полуфабрикат|^п\/ф/.test(firstCell) && !/^\d+$/.test(firstCell)) break;
-          const nameV = String(values[r][nameC] || '').trim();
-          if (!nameV) resSlots.push(r);
-          else break;
-        }
-
-        if (wires.length > resSlots.length) {
-          const insertCount = wires.length - resSlots.length;
-          const lastSlot    = resSlots[resSlots.length - 1];
-          const ok = insertRowsAfterSafe_(sheet, lastSlot + 1, insertCount, fSfOut + 1);
-          if (ok) {
-            for (let i = 0; i < insertCount; i++) resSlots.push(lastSlot + 1 + i);
-            values   = sheet.getRange(1, 1, sheet.getLastRow(), lastCol).getValues();
-            formulas = sheet.getRange(1, 1, values.length, lastCol).getFormulas();
-            mergeMap = buildMergeMap_(sheet);
-            const sec2 = detectSections(values);
-            timeRow    = sec2.timeRow;
-          }
-        }
-
-        for (let i = 0; i < Math.min(wires.length, resSlots.length); i++) {
-          const w      = wires[i];
-          const rowNum = resSlots[i] + 1;
-          const wName  = [w.art || w.name, w.length ? w.length + 'мм' : ''].filter(Boolean).join(' ');
-          const wNorm  = String(w.qty * partQty).replace('.', ',');
-          if (seqCol >= 0) {
-            let sr = rowNum, sc = seqCol + 1;
-            if (mergeMap[sr] && mergeMap[sr][sc]) { const p = mergeMap[sr][sc]; sr = p.r; sc = p.c; }
-            try { sheet.getRange(sr, sc).setValue(i + 1); } catch (e) {}
-          }
-          fillMergedCell_(sheet, rowNum, nameC + 1, wName, mergeMap);
-          if (normC >= 0) fillMergedCell_(sheet, rowNum, normC + 1, wNorm, mergeMap);
-        }
-      } else if (['prsTermA','insTermA','prsTermB','insTermB'].includes(opType)
-                 && Array.isArray(config.wires) && config.wires.length > 0 && nameC >= 0) {
-        // Per-wire rows for terminal ops: "{wire art} {len}мм + {termArt}" etc.
-        const termWires = config.wires;
-        const partQty   = (config.partQty > 0) ? config.partQty : 1;
-        const side      = (opType === 'prsTermA' || opType === 'insTermA') ? sA : sB;
-        const termArt   = side.termArt || side.termName || '';
-        const connArt   = (opType === 'insTermA' || opType === 'insTermB')
-                          ? (side.connArt || side.connName || '') : '';
-        const sideLabel = (opType === 'prsTermA' || opType === 'insTermA') ? 'А' : 'В';
-
-        const buildTermWireName = w => {
-          const base = [w.art || w.name, w.length ? w.length + 'мм' : ''].filter(Boolean).join(' ');
-          const withTerm = termArt ? base + ' + ' + termArt : base;
-          return connArt ? withTerm + ' → ' + connArt + ' ст.' + sideLabel : withTerm;
-        };
-
-        let resTimeBound2 = values.length;
-        for (let r = fSfOut + 1; r < values.length; r++) {
-          if (values[r].some(c => /расс?ч[её]?тное\s*врем/i.test(String(c || '')))) {
-            resTimeBound2 = r; break;
-          }
-        }
-        const resSlots2 = [fSfOut];
-        for (let r = fSfOut + 1; r < resTimeBound2; r++) {
-          const fc = String(values[r][0] || '').toLowerCase().trim();
-          if (fc && !/полуфабрикат|^п\/ф/.test(fc) && !/^\d+$/.test(fc)) break;
-          if (!String(values[r][nameC] || '').trim()) resSlots2.push(r);
-          else break;
-        }
-        if (termWires.length > resSlots2.length) {
-          const insertCount = termWires.length - resSlots2.length;
-          const lastSlot    = resSlots2[resSlots2.length - 1];
-          const ok = insertRowsAfterSafe_(sheet, lastSlot + 1, insertCount, fSfOut + 1);
-          if (ok) {
-            for (let i = 0; i < insertCount; i++) resSlots2.push(lastSlot + 1 + i);
-            values   = sheet.getRange(1, 1, sheet.getLastRow(), lastCol).getValues();
-            formulas = sheet.getRange(1, 1, values.length, lastCol).getFormulas();
-            mergeMap = buildMergeMap_(sheet);
-            const sec3 = detectSections(values);
-            timeRow    = sec3.timeRow;
-          }
-        }
-        for (let i = 0; i < Math.min(termWires.length, resSlots2.length); i++) {
-          const w      = termWires[i];
-          const rowNum = resSlots2[i] + 1;
-          if (seqCol >= 0) {
-            let sr = rowNum, sc = seqCol + 1;
-            if (mergeMap[sr] && mergeMap[sr][sc]) { const p = mergeMap[sr][sc]; sr = p.r; sc = p.c; }
-            try { sheet.getRange(sr, sc).setValue(i + 1); } catch (e) {}
-          }
-          fillMergedCell_(sheet, rowNum, nameC + 1, buildTermWireName(w), mergeMap);
-          if (normC >= 0) fillMergedCell_(sheet, rowNum, normC + 1, String(w.qty * partQty).replace('.', ','), mergeMap);
-        }
-      } else if (nameC >= 0) {
-        fillMergedCell_(sheet, fSfOut + 1, nameC + 1, thisResult, mergeMap);
-      }
+    const side     = (opType === 'prsTermA' || opType === 'insTermA') ? sA : sB;
+    const termArt  = isTermOp ? (side.termArt || side.termName || '') : '';
+    const connArt  = (opType === 'insTermA' || opType === 'insTermB') ? (side.connArt || side.connName || '') : '';
+    const sideLbl  = (opType === 'prsTermA' || opType === 'insTermA') ? 'А' : 'В';
+    for (let i = 0; i < Math.min(wires.length, timeSlots.length); i++) {
+      const w       = wires[i];
+      const rowNum  = timeSlots[i] + 1;
+      const wName   = isTermOp
+        ? buildWireResultName_(w, termArt, connArt, sideLbl)
+        : [w.art || w.name, w.length ? w.length + 'мм' : ''].filter(Boolean).join(' ');
+      const rawNorm = (tOpMin > 0 ? tOpMin * w.qty * pQty : w.qty * pQty) + tPrepMin;
+      const wNorm   = isFinite(rawNorm)
+        ? String(rawNorm % 1 === 0 ? rawNorm : rawNorm.toFixed(2)).replace('.', ',')
+        : '';
+      writeSeqNum_(sheet, rowNum, colMap.seqCol, i, ctx.mergeMap);
+      fillMergedCell_(sheet, rowNum, tNameCol + 1, wName, ctx.mergeMap);
+      if (tNormCol >= 0) fillMergedCell_(sheet, rowNum, tNormCol + 1, wNorm, ctx.mergeMap);
+    }
+  } else {
+    const tVals = timeDataRows.length <= 1
+      ? [secToMin_(op.tOp)]
+      : timeDataRows.length === 2
+        ? [secToMin_(op.tPrep), secToMin_(op.tOp)]
+        : [secToMin_(op.tPrep), secToMin_(op.tOp), secToMin_(op.tMachine)];
+    for (let i = 0; i < timeDataRows.length && i < tVals.length; i++) {
+      const r = timeDataRows[i];
+      setCell_(ctx, r, tNormCol, tVals[i]);
+      if (i === 0 && thisResult) fillMergedCell_(sheet, r + 1, tNameCol + 1, thisResult, ctx.mergeMap);
     }
   }
+}
 
-  // ── Fill Расчетное время ──────────────────────────────────────
-  if (timeRow >= 0) {
-    const timeDataRows = [];
-    for (let r = timeRow + 1; r < values.length; r++) {
-      const rowCells = values[r].map(c => String(c || '').toLowerCase().trim());
-      if (!rowCells.some(v => v)) { if (timeDataRows.length > 0) break; continue; }
-      if (rowCells.some(v => v === 'наименование' || v === 'норма' || v === 'обозначение' || v === 'факт')) continue;
-      timeDataRows.push(r);
+function fillDopusk_(sheet, ctx, wireData) {
+  const wd = wireData || {};
+  let dopuskCol = -1;
+  outer: for (let r = 0; r < ctx.values.length; r++) {
+    for (let c = 0; c < (ctx.values[r] || []).length; c++) {
+      if (/^допуск$/i.test(String((ctx.values[r] || [])[c] || '').trim())) { dopuskCol = c; break outer; }
     }
+  }
+  if (dopuskCol < 0) return;
+  const tolStr = buildCutTolerance_(wd);
+  const lenStr = buildCutLengthKd_(wd);
+  for (let r = 0; r < ctx.values.length; r++) {
+    const rowText = (ctx.values[r] || []).map(c => String(c || '').toLowerCase()).join(' ');
+    const cur     = String((ctx.values[r] || [])[dopuskCol] || '').trim().toLowerCase();
+    if (/тестовый\s*рез/.test(rowText) && (!cur || cur === '-' || cur === '—')) {
+      fillMergedCell_(sheet, r + 1, dopuskCol + 1, tolStr, ctx.mergeMap);
+    }
+    if (lenStr && (cur === '[l кд]' || /измерить\s*длину|длина\s*должна/.test(rowText) && (!cur || cur === '[l кд]'))) {
+      fillMergedCell_(sheet, r + 1, dopuskCol + 1, lenStr, ctx.mergeMap);
+    }
+  }
+}
 
-    if (timeDataRows.length > 0) {
-      const cols     = resolveCols(timeDataRows[0]);
-      const tNormCol = cols.norm >= 0 ? cols.norm : normCol;
-      const tNameCol = cols.name >= 0 ? cols.name : grnCol;
-
-      if (isCutWire && wires && wires.length > 0 && tNameCol >= 0) {
-        const partQty  = (config.partQty > 0) ? config.partQty : 1;
-        const tOpSec   = parseFloat(String(op.tOp   || '').replace(',', '.')) || 0;
-        const tPrepSec = parseFloat(String(op.tPrep || '').replace(',', '.')) || 0;
-        const tOpMin   = tOpSec   / 60;
-        const tPrepMin = tPrepSec / 60;
-
-        const timeSlots = [...timeDataRows];
-        for (let r = timeDataRows[timeDataRows.length - 1] + 1; r < values.length; r++) {
-          const rowCells = values[r].map(c => String(c || '').toLowerCase().trim());
-          if (!rowCells.some(v => v)) break;
-          if (rowCells.some(v => v === 'наименование' || v === 'норма' || v === 'обозначение' || v === 'факт')) continue;
-          const nameV = tNameCol >= 0 ? String(values[r][tNameCol] || '').trim() : '';
-          if (!nameV) timeSlots.push(r);
-          else break;
+function fillTerminalFields_(sheet, ctx, terData) {
+  let dopCol = -1;
+  outerDop: for (let r = 0; r < ctx.values.length; r++) {
+    for (let c = 0; c < (ctx.values[r] || []).length; c++) {
+      if (/^допуск$/i.test(String((ctx.values[r] || [])[c] || '').trim())) { dopCol = c; break outerDop; }
+    }
+  }
+  if (dopCol >= 0) {
+    for (let r = 0; r < ctx.values.length; r++) {
+      const rowText     = (ctx.values[r] || []).map(c => String(c || '').toLowerCase()).join(' ');
+      const cur         = String((ctx.values[r] || [])[dopCol] || '').trim();
+      const isControlRow = (ctx.values[r] || []).slice(0, 4).some(c => /^контроль$/i.test(String(c || '').trim()));
+      if (!isControlRow) continue;
+      if (!cur || cur === '-' || cur === '—') {
+        if (terData.crimpHeight && /datasheet|высота обжима|геометр/i.test(rowText)) {
+          fillMergedCell_(sheet, r + 1, dopCol + 1, terData.crimpHeight, ctx.mergeMap);
         }
-
-        if (wires.length > timeSlots.length) {
-          const insertCount = wires.length - timeSlots.length;
-          const lastSlot    = timeSlots[timeSlots.length - 1];
-          const ok = insertRowsAfterSafe_(sheet, lastSlot + 1, insertCount, timeDataRows[0] + 1);
-          if (ok) {
-            for (let i = 0; i < insertCount; i++) timeSlots.push(lastSlot + 1 + i);
-            values   = sheet.getRange(1, 1, sheet.getLastRow(), lastCol).getValues();
-            formulas = sheet.getRange(1, 1, sheet.getLastRow(), lastCol).getFormulas();
-            mergeMap = buildMergeMap_(sheet);
-          }
-        }
-
-        for (let i = 0; i < Math.min(wires.length, timeSlots.length); i++) {
-          const w      = wires[i];
-          const rowNum = timeSlots[i] + 1;
-          const wName  = [w.art || w.name, w.length ? w.length + 'мм' : ''].filter(Boolean).join(' ');
-          const rawNorm = (tOpMin > 0 ? tOpMin * w.qty * partQty : w.qty * partQty) + tPrepMin;
-          const wNorm = isFinite(rawNorm)
-            ? String(rawNorm % 1 === 0 ? rawNorm : rawNorm.toFixed(2)).replace('.', ',')
-            : '';
-          if (seqCol >= 0) {
-            let sr = rowNum, sc = seqCol + 1;
-            if (mergeMap[sr] && mergeMap[sr][sc]) { const p = mergeMap[sr][sc]; sr = p.r; sc = p.c; }
-            try { sheet.getRange(sr, sc).setValue(i + 1); } catch (e) {}
-          }
-          fillMergedCell_(sheet, rowNum, tNameCol + 1, wName, mergeMap);
-          if (tNormCol >= 0) fillMergedCell_(sheet, rowNum, tNormCol + 1, wNorm, mergeMap);
-        }
-      } else if (['prsTermA','insTermA','prsTermB','insTermB'].includes(opType)
-                 && Array.isArray(config.wires) && config.wires.length > 0 && tNameCol >= 0) {
-        // Per-wire time rows for terminal ops (same pattern as isCutWire)
-        const termWires2 = config.wires;
-        const pQtyT      = (config.partQty > 0) ? config.partQty : 1;
-        const tOpSec2    = parseFloat(String(op.tOp   || '').replace(',', '.')) || 0;
-        const tPrepSec2  = parseFloat(String(op.tPrep || '').replace(',', '.')) || 0;
-        const tOpMin2    = tOpSec2  / 60;
-        const tPrepMin2  = tPrepSec2 / 60;
-
-        const timeSlots2 = [...timeDataRows];
-        for (let r = timeDataRows[timeDataRows.length - 1] + 1; r < values.length; r++) {
-          const rc = values[r].map(c => String(c || '').toLowerCase().trim());
-          if (!rc.some(v => v)) break;
-          if (rc.some(v => v === 'наименование' || v === 'норма' || v === 'обозначение' || v === 'факт')) continue;
-          if (!String(values[r][tNameCol] || '').trim()) timeSlots2.push(r);
-          else break;
-        }
-        if (termWires2.length > timeSlots2.length) {
-          const insertCount = termWires2.length - timeSlots2.length;
-          const lastSlot    = timeSlots2[timeSlots2.length - 1];
-          const ok = insertRowsAfterSafe_(sheet, lastSlot + 1, insertCount, timeDataRows[0] + 1);
-          if (ok) {
-            for (let i = 0; i < insertCount; i++) timeSlots2.push(lastSlot + 1 + i);
-            values   = sheet.getRange(1, 1, sheet.getLastRow(), lastCol).getValues();
-            formulas = sheet.getRange(1, 1, sheet.getLastRow(), lastCol).getFormulas();
-            mergeMap = buildMergeMap_(sheet);
-          }
-        }
-        const tSide      = (opType === 'prsTermA' || opType === 'insTermA') ? sA : sB;
-        const tTermArt   = tSide.termArt || tSide.termName || '';
-        const tConnArt   = (opType === 'insTermA' || opType === 'insTermB') ? (tSide.connArt || tSide.connName || '') : '';
-        const tSideLbl   = (opType === 'prsTermA' || opType === 'insTermA') ? 'А' : 'В';
-        const buildTimeWireName_ = w => {
-          const base     = [w.art || w.name, w.length ? w.length + 'мм' : ''].filter(Boolean).join(' ');
-          const withTerm = tTermArt ? base + ' + ' + tTermArt : base;
-          return tConnArt ? withTerm + ' → ' + tConnArt + ' ст.' + tSideLbl : withTerm;
-        };
-        for (let i = 0; i < Math.min(termWires2.length, timeSlots2.length); i++) {
-          const w      = termWires2[i];
-          const rowNum = timeSlots2[i] + 1;
-          const wName  = buildTimeWireName_(w);
-          const rawNorm = (tOpMin2 > 0 ? tOpMin2 * w.qty * pQtyT : w.qty * pQtyT) + tPrepMin2;
-          const wNorm  = isFinite(rawNorm)
-            ? String(rawNorm % 1 === 0 ? rawNorm : rawNorm.toFixed(2)).replace('.', ',')
-            : '';
-          if (seqCol >= 0) {
-            let sr = rowNum, sc = seqCol + 1;
-            if (mergeMap[sr] && mergeMap[sr][sc]) { const p = mergeMap[sr][sc]; sr = p.r; sc = p.c; }
-            try { sheet.getRange(sr, sc).setValue(i + 1); } catch (e) {}
-          }
-          fillMergedCell_(sheet, rowNum, tNameCol + 1, wName, mergeMap);
-          if (tNormCol >= 0) fillMergedCell_(sheet, rowNum, tNormCol + 1, wNorm, mergeMap);
-        }
-      } else {
-        const secPrepToMin = v => {
-          const s = parseFloat(String(v || '').replace(',', '.'));
-          if (!s) return '';
-          const m = s / 60;
-          return String(m % 1 === 0 ? m : m.toFixed(2)).replace('.', ',');
-        };
-        const secOpToMin = v => {
-          const s = parseFloat(String(v || '').replace(',', '.'));
-          if (!s) return '';
-          const m = s / 60;
-          return String(m % 1 === 0 ? m : m.toFixed(2)).replace('.', ',');
-        };
-        const tVals = timeDataRows.length <= 1 ? [secOpToMin(op.tOp)]
-                    : timeDataRows.length === 2 ? [secPrepToMin(op.tPrep), secOpToMin(op.tOp)]
-                    : [secPrepToMin(op.tPrep), secOpToMin(op.tOp), secOpToMin(op.tMachine)];
-        for (let i = 0; i < timeDataRows.length && i < tVals.length; i++) {
-          const r = timeDataRows[i];
-          setCell(r, tNormCol, tVals[i]);
-          if (i === 0 && thisResult) fillMergedCell_(sheet, r + 1, tNameCol + 1, thisResult, mergeMap);
+        if (terData.pullForce && /pull[\s\-]?test|разрыв|усилие обрыва/i.test(rowText)) {
+          fillMergedCell_(sheet, r + 1, dopCol + 1, terData.pullForce, ctx.mergeMap);
         }
       }
     }
   }
-
-  // ── Fill Допуск column ────────────────────────────────────────
-  if (isCutWire && wires && wires.length > 0) {
-    let dopuskCol = -1;
-    outer: for (let r = 0; r < values.length; r++) {
-      for (let c = 0; c < values[r].length; c++) {
-        if (/^допуск$/i.test(String(values[r][c] || '').trim())) { dopuskCol = c; break outer; }
-      }
-    }
-    if (dopuskCol >= 0) {
-      const tolStr = buildCutTolerance_(wd);
-      const lenStr = buildCutLengthKd_(wd);
-      for (let r = 0; r < values.length; r++) {
-        const rowText = values[r].map(c => String(c || '').toLowerCase()).join(' ');
-        const cur     = String(values[r][dopuskCol] || '').trim().toLowerCase();
-        if (/тестовый\s*рез/.test(rowText) && (!cur || cur === '-' || cur === '—')) {
-          fillMergedCell_(sheet, r + 1, dopuskCol + 1, tolStr, mergeMap);
-        }
-        if (lenStr && (cur === '[l кд]' || /измерить\s*длину|длина\s*должна/.test(rowText) && (!cur || cur === '[l кд]'))) {
-          fillMergedCell_(sheet, r + 1, dopuskCol + 1, lenStr, mergeMap);
-        }
+  if (!terData.applicator) return;
+  let progRow = -1, progCol = -1;
+  outerProg: for (let r = 0; r < ctx.values.length; r++) {
+    for (let c = 0; c < (ctx.values[r] || []).length; c++) {
+      if (/№\s*прог/i.test(String((ctx.values[r] || [])[c] || '').trim())) {
+        progRow = r; progCol = c; break outerProg;
       }
     }
   }
+  if (progRow >= 0 && progCol >= 0) {
+    for (let dr = progRow + 1; dr < Math.min(progRow + 8, ctx.values.length); dr++) {
+      if (!String((ctx.values[dr] || [])[progCol] || '').trim()) {
+        fillMergedCell_(sheet, dr + 1, progCol + 1, terData.applicator, ctx.mergeMap);
+        break;
+      }
+    }
+  }
+}
+
+// ── Structural fill orchestrator ──────────────────────────────
+
+function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisResult, wireData, terData) {
+  const ctx    = makeSheetCtx_(sheet);
+  if (ctx.lastRow < 1) return;
+  const colMap = detectGlobalColumns_(ctx.values);
+  const isCutWire = opType === 'cutWire';
+  const wires = isCutWire && Array.isArray(config.wires) && config.wires.length > 0 ? config.wires : null;
+
+  if (ctx.sections.kompRow >= 0)
+    fillKompl_(sheet, ctx, colMap, op, config, wireData);
+  if (ctx.sections.sfInRow >= 0 && prevResult)
+    fillSfIn_(sheet, ctx, colMap, config, prevResult, opType);
+  if (thisResult && (ctx.sections.sfOutRow >= 0 || ctx.sections.resultRow >= 0))
+    fillSfOut_(sheet, ctx, colMap, config, thisResult, opType);
+  if (ctx.sections.timeRow >= 0)
+    fillTime_(sheet, ctx, colMap, op, config, thisResult, opType);
+  if (isCutWire && wires)
+    fillDopusk_(sheet, ctx, wireData);
+  if (['prsTermA','insTermA','prsTermB','insTermB'].includes(opType) && terData)
+    fillTerminalFields_(sheet, ctx, terData);
 }
 
 // ── Row insertion ─────────────────────────────────────────────

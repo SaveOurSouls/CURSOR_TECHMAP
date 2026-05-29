@@ -558,11 +558,6 @@
     const termB   = sideB ? getCompById(document.getElementById('termSelectB').value) : null;
     const terRecs = D.terRecords || [];
 
-    // Debug: open browser DevTools (F12) → Console to see these
-    console.log('[TER] records loaded:', terRecs.length);
-    if (termA) console.log('[TER] looking for art:', termA.art,
-      '→', terRecs.find(r => (r.article||'').toLowerCase().trim() === (termA.art||'').toLowerCase().trim()) || 'NOT FOUND');
-
     const findTer = comp => {
       if (!comp) return null;
       const art = (comp.art || '').toLowerCase().trim();
@@ -816,13 +811,27 @@
     const norm = s => (s || '').toLowerCase().replace(/[_\-|.+]/g, ' ').replace(/\s+/g, ' ').trim();
     const tl   = norm(title);
 
-    // Pass 1: exact substring
+    // Pass 0: match by opNumber — template title format is "CODE | OpName", extract CODE
+    const pipeSep = title.indexOf(' | ');
+    if (pipeSep > 0) {
+      const code = title.substring(0, pipeSep).trim().toLowerCase();
+      for (const op of ops) {
+        if ((op.opNumber || '').trim().toLowerCase() === code) return op;
+      }
+    }
+
+    // Pass 1: best substring match on opName — prefer longer (more specific) name
+    let best = null, bestLen = 0;
     for (const op of ops) {
       const on = norm(op.opName);
-      if (on && (tl.includes(on) || on.includes(tl))) return op;
+      if (on && (tl.includes(on) || on.includes(tl)) && on.length > bestLen) {
+        bestLen = on.length; best = op;
+      }
     }
+    if (best) return best;
+
     // Pass 2: ≥2 significant words (len > 3)
-    let best = null, bestScore = 0;
+    let bestScore = 0;
     for (const op of ops) {
       const words = norm(op.opName).split(/\s+/).filter(w => w.length > 3);
       const score = words.filter(w => tl.includes(w)).length;
@@ -878,9 +887,9 @@
         });
         return parts.length === 1 ? parts[0] : parts.join('; ');
       }
-      case 'prsTermA': return [prev, sA.termName].filter(Boolean).join(' + ');
+      case 'prsTermA': return prev ? prev + ', обж. терм. ' + (sA.termName || '') : (sA.termName || '');
       case 'insTermA': return [prev, sA.connName].filter(Boolean).join(' → ') + ' ст.А';
-      case 'prsTermB': return [prev, sB.termName].filter(Boolean).join(' + ');
+      case 'prsTermB': return prev ? prev + ', обж. терм. ' + (sB.termName || '') : (sB.termName || '');
       case 'insTermB': return [prev, sB.connName].filter(Boolean).join(' → ') + ' ст.В';
       default:         return prev;
     }

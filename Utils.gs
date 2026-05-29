@@ -16,7 +16,6 @@ function normalizeString_(value) {
 function normalizeHeader_(value) {
   return String(value || '')
     .toLowerCase()
-    .replace(/ /g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -25,14 +24,21 @@ function normalizeHeader_(value) {
 function normalizeSearch_(value) {
   return String(value || '')
     .toLowerCase()
-    .replace(/ /g, ' ')
     .replace(/\s+/g, '');
 }
 
 /** Преобразует значение в целое число; возвращает 0 при ошибке. */
 function toInt_(value) {
   const n = Number(value);
-  return Number.isFinite(n) ? n : 0;
+  return Number.isFinite(n) ? Math.trunc(n) : 0;
+}
+
+/** Конвертирует секунды в минуты; возвращает '' если значение равно нулю. */
+function secToMin_(value) {
+  const s = parseFloat(String(value || '').replace(',', '.'));
+  if (!s) return '';
+  const m = s / 60;
+  return String(m % 1 === 0 ? m : m.toFixed(2)).replace('.', ',');
 }
 
 /** Парсит JSON-массив; возвращает [] при ошибке или пустом значении. */
