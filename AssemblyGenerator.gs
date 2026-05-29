@@ -18,6 +18,7 @@ function showAssemblyGeneratorDialog() {
 // ── Data loading ─────────────────────────────────────────────
 
 function getAssemblyGeneratorData_() {
+  syncTechOperationsDatabase(); // всегда актуальные данные при открытии диалога
   const ss    = SpreadsheetApp.getActive();
   const sheet = ss.getActiveSheet();
 
@@ -113,6 +114,7 @@ function readTerRecordsForGenerator_() {
       .filter(r => r.tabKey === 'ter' && r.terArticle)
       .map(r => ({
         article:      r.terArticle    || '',
+        step:         r.terStep       || '',
         lPlus:        r.terLPlus      || '',
         lMinus:       r.terLMinus     || '',
         applicator:   r.terApplicator || '',
@@ -225,10 +227,27 @@ function computeOperationResult_(opType, config, prevResult, wireData) {
       }).filter(Boolean);
       return parts.join('; ') || (wd.art || wd.name || '');
     }
-    case 'prsTermA': return prevResult ? prevResult + ', обж. терм. ' + (sA.termName || '') : (sA.termName || '');
-    case 'insTermA': return [prevResult, sA.connName].filter(Boolean).join(' → ') + ' ст.А';
-    case 'prsTermB': return prevResult ? prevResult + ', обж. терм. ' + (sB.termName || '') : (sB.termName || '');
-    case 'insTermB': return [prevResult, sB.connName].filter(Boolean).join(' → ') + ' ст.В';
+    case 'prsTermA': {
+      const tA = sA.termArt || sA.termName || '';
+      return prevResult ? prevResult + ', обжатый терминал ' + tA : tA;
+    }
+    case 'insTermA': {
+      const ws = Array.isArray(config.wires) ? config.wires : [];
+      const tA = sA.termArt || sA.termName || '';
+      const connLabel = sA.connArt || sA.connName || '';
+      return `${connLabel} сторона А в сборе с ${ws.length} проводами обжатыми терминалом ${tA}`.trim();
+    }
+    case 'prsTermB': {
+      const tB = sB.termArt || sB.termName || '';
+      const n  = wires.reduce((s, w) => s + (w.qty || 1), 0);
+      return tB ? `Заготовка с обжатыми терминалами ${tB} сторона В` : 'Заготовка';
+    }
+    case 'insTermB': {
+      const ws = Array.isArray(config.wires) ? config.wires : [];
+      const tB = sB.termArt || sB.termName || '';
+      const connLabel = sB.connArt || sB.connName || '';
+      return `${connLabel} сторона В в сборе с ${ws.length} проводами обжатыми терминалом ${tB}`.trim();
+    }
     default:         return prevResult;
   }
 }
@@ -239,9 +258,22 @@ function buildTerData_(opType, config, terRecords) {
   const isTermB  = ['prsTermB', 'insTermB'].includes(opType);
   if (!isTermA && !isTermB) return null;
   const side     = isTermA ? (config.sideA || {}) : (config.sideB || {});
-  const termArtL = (side.termArt || '').toLowerCase();
-  if (!termArtL) return null;
-  const rec = (terRecords || []).find(r => r.article.toLowerCase() === termArtL) || null;
+  if (!side.termArt) return null;
+  const termArt   = side.termArt || '';
+  const termExact = termArt.toLowerCase().trim();
+  const normStr   = s => s.toLowerCase().replace(/[\s\-\.\/\(\)_]/g, '');
+  const termNorm  = normStr(termArt);
+  const normR     = r => normStr(r.article || '');
+  let rec = (terRecords || []).find(r => (r.article || '').toLowerCase().trim() === termExact)
+         || (termNorm.length >= 3 ? (terRecords || []).find(r => normR(r) === termNorm) : null);
+  // Pass 3: strip leading manufacturer word ("MOLEX 5034290000" → "5034290000")
+  if (!rec) {
+    const words = termArt.trim().split(/\s+/);
+    if (words.length > 1) {
+      const normNoMfr = normStr(words.slice(1).join(' '));
+      if (normNoMfr.length >= 3) rec = (terRecords || []).find(r => normR(r) === normNoMfr);
+    }
+  }
   return {
     applicator:  rec && rec.applicator  ? rec.applicator  : 'не найдено',
     crimpHeight: rec ? (rec.crimpHeight  || '') : '',
@@ -437,8 +469,8 @@ function resolveCols_(ctx, colMap, dataRow) {
 // Builds the wire result name for terminal operations (used in Результат and Время sections).
 function buildWireResultName_(w, termArt, connArt, sideLabel) {
   const base = [w.art || w.name, w.length ? w.length + 'мм' : ''].filter(Boolean).join(' ');
-  const withTerm = termArt ? base + ', обж. терм. ' + termArt : base;
-  return connArt ? withTerm + ' → ' + connArt + ' ст.' + sideLabel : withTerm;
+  const withTerm = termArt ? base + ', обжатый терминал ' + termArt : base;
+  return connArt ? withTerm + ' → ' + connArt + ' сторона ' + sideLabel : withTerm;
 }
 
 // Finds empty slots starting at anchorRow up to bound; expands by inserting rows if needed.
@@ -533,26 +565,32 @@ function fillKompl_(sheet, ctx, colMap, op, config, wireData) {
 }
 
 function fillSfIn_(sheet, ctx, colMap, config, prevResult, opType) {
-  const { sfInRow } = ctx.sections;
+  const { sfInRow, resultRow } = ctx.sections;
   const cols  = resolveCols_(ctx, colMap, sfInRow);
   const nameC = cols.name >= 0 ? cols.name : cols.art;
-  const isTermOp = ['prsTermA','insTermA','prsTermB','insTermB'].includes(opType);
+  const normC = cols.norm >= 0 ? cols.norm : colMap.normCol;
+  if (nameC < 0) return;
 
-  if (isTermOp && Array.isArray(config.wires) && config.wires.length > 0 && nameC >= 0) {
-    const inWires = config.wires;
-    const pQty    = (config.partQty > 0) ? config.partQty : 1;
-    let   inBound = ctx.values.length;
-    for (let r = sfInRow + 1; r < ctx.values.length; r++) {
-      if ((ctx.values[r] || []).some(c => /результат|расс?ч[её]?тное\s*врем/i.test(String(c || '')))) { inBound = r; break; }
-    }
-    const slots = findAndExpandSlots_(sheet, ctx, sfInRow, inBound, nameC, inWires.length, sfInRow + 1);
-    for (let i = 0; i < Math.min(inWires.length, slots.length); i++) {
-      const w      = inWires[i];
+  const wires = Array.isArray(config.wires) ? config.wires : [];
+  const sA    = config.sideA || {};
+  const pQty  = (config.partQty > 0) ? config.partQty : 1;
+
+  let wireNames = null;
+  if (opType === 'prsTermA' && wires.length > 0) {
+    wireNames = wires.map(w => [w.art || w.name, w.length ? w.length + 'мм' : ''].filter(Boolean).join(' '));
+  } else if (opType === 'insTermA' && wires.length > 0) {
+    const tA = sA.termArt || sA.termName || '';
+    wireNames = wires.map(w => buildWireResultName_(w, tA, '', 'А'));
+  }
+
+  if (wireNames && wireNames.length > 0) {
+    const bound = resultRow > sfInRow ? resultRow : ctx.values.length;
+    const slots = findAndExpandSlots_(sheet, ctx, sfInRow, bound, nameC, wireNames.length, sfInRow + 1);
+    for (let i = 0; i < Math.min(wireNames.length, slots.length); i++) {
       const rowNum = slots[i] + 1;
-      const wName  = [w.art || w.name, w.length ? w.length + 'мм' : ''].filter(Boolean).join(' ');
       writeSeqNum_(sheet, rowNum, colMap.seqCol, i, ctx.mergeMap);
-      fillMergedCell_(sheet, rowNum, nameC + 1, wName, ctx.mergeMap);
-      if (cols.norm >= 0) fillMergedCell_(sheet, rowNum, cols.norm + 1, String(w.qty * pQty).replace('.', ','), ctx.mergeMap);
+      fillMergedCell_(sheet, rowNum, nameC + 1, wireNames[i], ctx.mergeMap);
+      if (normC >= 0) fillMergedCell_(sheet, rowNum, normC + 1, String(wires[i].qty * pQty).replace('.', ','), ctx.mergeMap);
     }
   } else {
     setCell_(ctx, sfInRow, nameC, prevResult);
@@ -582,21 +620,27 @@ function fillSfOut_(sheet, ctx, colMap, config, thisResult, opType) {
   const nameC = hdr.name >= 0 ? hdr.name : (hdr.art >= 0 ? hdr.art : colMap.grnCol);
   const normC = hdr.norm >= 0 ? hdr.norm : colMap.normCol;
 
-  if ((isCutWire || isTermOp) && wires.length > 0 && nameC >= 0) {
+  const isIns = opType === 'insTermA' || opType === 'insTermB' || opType === 'prsTermB';
+
+  if (isIns && wires.length > 0 && nameC >= 0) {
+    const insNorm = String((wires[0].qty || 1) * pQty);
+    writeSeqNum_(sheet, fSfOut + 1, colMap.seqCol, 0, ctx.mergeMap);
+    fillMergedCell_(sheet, fSfOut + 1, nameC + 1, thisResult, ctx.mergeMap);
+    if (normC >= 0) fillMergedCell_(sheet, fSfOut + 1, normC + 1, insNorm, ctx.mergeMap);
+  } else if ((isCutWire || opType === 'prsTermA') && wires.length > 0 && nameC >= 0) {
     let resTimeBound = ctx.values.length;
     for (let r = fSfOut + 1; r < ctx.values.length; r++) {
       if ((ctx.values[r] || []).some(c => /расс?ч[её]?тное\s*врем/i.test(String(c || '')))) { resTimeBound = r; break; }
     }
     const slots    = findAndExpandSlots_(sheet, ctx, fSfOut, resTimeBound, nameC, wires.length, fSfOut + 1);
-    const side     = (opType === 'prsTermA' || opType === 'insTermA') ? sA : sB;
-    const termArt  = isTermOp ? (side.termArt || side.termName || '') : '';
-    const connArt  = (opType === 'insTermA' || opType === 'insTermB') ? (side.connArt || side.connName || '') : '';
-    const sideLbl  = (opType === 'prsTermA' || opType === 'insTermA') ? 'А' : 'В';
+    const side     = (opType === 'prsTermA') ? sA : sB;
+    const termArt  = side.termArt || side.termName || '';
+    const sideLbl  = (opType === 'prsTermA') ? 'А' : 'В';
     for (let i = 0; i < Math.min(wires.length, slots.length); i++) {
       const w      = wires[i];
       const rowNum = slots[i] + 1;
       const wName  = isTermOp
-        ? buildWireResultName_(w, termArt, connArt, sideLbl)
+        ? buildWireResultName_(w, termArt, '', sideLbl)
         : [w.art || w.name, w.length ? w.length + 'мм' : ''].filter(Boolean).join(' ');
       writeSeqNum_(sheet, rowNum, colMap.seqCol, i, ctx.mergeMap);
       fillMergedCell_(sheet, rowNum, nameC + 1, wName, ctx.mergeMap);
@@ -634,40 +678,54 @@ function fillTime_(sheet, ctx, colMap, op, config, thisResult, opType) {
     const tPrepSec = parseFloat(String(op.tPrep || '').replace(',', '.')) || 0;
     const tOpMin   = tOpSec  / 60;
     const tPrepMin = tPrepSec / 60;
+    const isIns    = opType === 'insTermA' || opType === 'insTermB' || opType === 'prsTermB';
 
-    const timeSlots = [...timeDataRows];
-    for (let r = timeDataRows[timeDataRows.length - 1] + 1; r < ctx.values.length; r++) {
-      const rc = (ctx.values[r] || []).map(c => String(c || '').toLowerCase().trim());
-      if (!rc.some(v => v)) break;
-      if (rc.some(v => v === 'наименование' || v === 'норма' || v === 'обозначение' || v === 'факт')) continue;
-      if (!String((ctx.values[r] || [])[tNameCol] || '').trim()) timeSlots.push(r);
-      else break;
-    }
-    if (wires.length > timeSlots.length) {
-      const insertCount = wires.length - timeSlots.length;
-      const lastSlot    = timeSlots[timeSlots.length - 1];
-      if (insertRowsAfterSafe_(sheet, lastSlot + 1, insertCount, timeDataRows[0] + 1)) {
-        for (let i = 0; i < insertCount; i++) timeSlots.push(lastSlot + 1 + i);
-        ctx.refresh();
-      }
-    }
-    const side     = (opType === 'prsTermA' || opType === 'insTermA') ? sA : sB;
-    const termArt  = isTermOp ? (side.termArt || side.termName || '') : '';
-    const connArt  = (opType === 'insTermA' || opType === 'insTermB') ? (side.connArt || side.connName || '') : '';
-    const sideLbl  = (opType === 'prsTermA' || opType === 'insTermA') ? 'А' : 'В';
-    for (let i = 0; i < Math.min(wires.length, timeSlots.length); i++) {
-      const w       = wires[i];
-      const rowNum  = timeSlots[i] + 1;
-      const wName   = isTermOp
-        ? buildWireResultName_(w, termArt, connArt, sideLbl)
-        : [w.art || w.name, w.length ? w.length + 'мм' : ''].filter(Boolean).join(' ');
-      const rawNorm = (tOpMin > 0 ? tOpMin * w.qty * pQty : w.qty * pQty) + tPrepMin;
-      const wNorm   = isFinite(rawNorm)
+    if (isIns) {
+      // INS: одна строка — суммарное время на все провода
+      const totalQty = wires.reduce((s, w) => s + (w.qty || 1), 0);
+      const rawNorm  = tOpMin * totalQty * pQty + tPrepMin;
+      const wNorm    = isFinite(rawNorm)
         ? String(rawNorm % 1 === 0 ? rawNorm : rawNorm.toFixed(2)).replace('.', ',')
         : '';
-      writeSeqNum_(sheet, rowNum, colMap.seqCol, i, ctx.mergeMap);
-      fillMergedCell_(sheet, rowNum, tNameCol + 1, wName, ctx.mergeMap);
-      if (tNormCol >= 0) fillMergedCell_(sheet, rowNum, tNormCol + 1, wNorm, ctx.mergeMap);
+      writeSeqNum_(sheet, timeDataRows[0] + 1, colMap.seqCol, 0, ctx.mergeMap);
+      fillMergedCell_(sheet, timeDataRows[0] + 1, tNameCol + 1, thisResult, ctx.mergeMap);
+      if (tNormCol >= 0) fillMergedCell_(sheet, timeDataRows[0] + 1, tNormCol + 1, wNorm, ctx.mergeMap);
+    } else {
+      // CUT / PRS: по строке на каждый провод
+      const timeSlots = [...timeDataRows];
+      for (let r = timeDataRows[timeDataRows.length - 1] + 1; r < ctx.values.length; r++) {
+        const rc = (ctx.values[r] || []).map(c => String(c || '').toLowerCase().trim());
+        if (!rc.some(v => v)) break;
+        if (rc.some(v => v === 'наименование' || v === 'норма' || v === 'обозначение' || v === 'факт')) continue;
+        if (!String((ctx.values[r] || [])[tNameCol] || '').trim()) timeSlots.push(r);
+        else break;
+      }
+      if (wires.length > timeSlots.length) {
+        const insertCount = wires.length - timeSlots.length;
+        const lastSlot    = timeSlots[timeSlots.length - 1];
+        if (insertRowsAfterSafe_(sheet, lastSlot + 1, insertCount, timeDataRows[0] + 1)) {
+          for (let i = 0; i < insertCount; i++) timeSlots.push(lastSlot + 1 + i);
+          ctx.refresh();
+        }
+      }
+      const side     = (opType === 'prsTermA') ? sA : sB;
+      const termArt  = isTermOp ? (side.termArt || side.termName || '') : '';
+      const sideLbl  = (opType === 'prsTermA') ? 'А' : 'В';
+      const tPrepPerWire = wires.length > 1 ? tPrepMin / wires.length : tPrepMin;
+      for (let i = 0; i < Math.min(wires.length, timeSlots.length); i++) {
+        const w       = wires[i];
+        const rowNum  = timeSlots[i] + 1;
+        const wName   = isTermOp
+          ? buildWireResultName_(w, termArt, '', sideLbl)
+          : [w.art || w.name, w.length ? w.length + 'мм' : ''].filter(Boolean).join(' ');
+        const rawNorm = (tOpMin > 0 ? tOpMin * w.qty * pQty : w.qty * pQty) + tPrepPerWire;
+        const wNorm   = isFinite(rawNorm)
+          ? String(rawNorm % 1 === 0 ? rawNorm : rawNorm.toFixed(2)).replace('.', ',')
+          : '';
+        writeSeqNum_(sheet, rowNum, colMap.seqCol, i, ctx.mergeMap);
+        fillMergedCell_(sheet, rowNum, tNameCol + 1, wName, ctx.mergeMap);
+        if (tNormCol >= 0) fillMergedCell_(sheet, rowNum, tNormCol + 1, wNorm, ctx.mergeMap);
+      }
     }
   } else {
     const tVals = timeDataRows.length <= 1
@@ -759,7 +817,8 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
 
   if (ctx.sections.kompRow >= 0)
     fillKompl_(sheet, ctx, colMap, op, config, wireData);
-  if (ctx.sections.sfInRow >= 0 && prevResult)
+  const isTermOp_ = ['prsTermA','insTermA','prsTermB','insTermB'].includes(opType);
+  if (ctx.sections.sfInRow >= 0 && (prevResult || isTermOp_))
     fillSfIn_(sheet, ctx, colMap, config, prevResult, opType);
   if (thisResult && (ctx.sections.sfOutRow >= 0 || ctx.sections.resultRow >= 0))
     fillSfOut_(sheet, ctx, colMap, config, thisResult, opType);

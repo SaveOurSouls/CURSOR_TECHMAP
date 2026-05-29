@@ -97,6 +97,73 @@ function columnLetter_(idx) {
   return s;
 }
 
+/**
+ * Записывает данные терминала (L+, L−, шаг, аппликатор) в исходную БД.ТЕР
+ * по артикулу и затем пересинхронизирует снимок.
+ * fieldsJson = JSON.stringify({lPlus, lMinus, step, applicator})
+ */
+function saveTerDataToSourceDb(article, fieldsJson) {
+  const fields  = JSON.parse(fieldsJson || '{}');
+  const srcSS   = SpreadsheetApp.openById(TECHOPS_DB_APP.sourceSpreadsheetId);
+  const tab     = TECHOPS_DB_APP.tabs.ter;
+  const sheet   = srcSS.getSheetByName(tab.sourceSheetName);
+  if (!sheet) throw new Error('Лист ' + tab.sourceSheetName + ' не найден');
+
+  const data    = sheet.getDataRange().getValues();
+  const headers = data[tab.headerRowNumber - 1].map(h => normalizeHeader_(h));
+
+  const colIdx = aliases => {
+    for (const a of aliases) {
+      const i = headers.indexOf(normalizeHeader_(a));
+      if (i >= 0) return i;
+    }
+    return headers.findIndex(h => aliases.some(a => h.startsWith(normalizeHeader_(a).split(' ')[0]) && h.includes(normalizeHeader_(a).split(' ').pop())));
+  };
+
+  const artCol  = colIdx(['артикул контакта (reel)', 'артикул контакта', 'артикул']);
+  const lpCol   = colIdx(['l+', 'l+ в мм', 'l+(мм)']);
+  const lmCol   = colIdx(['l-', 'l−', 'l– в мм', 'l-(мм)']);
+  const stepCol = headers.findIndex(h => /^шаг/.test(h));
+  const applCol = colIdx(['аппликатор', 'applicator']);
+
+  if (artCol < 0) throw new Error('Колонка артикула не найдена в ' + tab.sourceSheetName);
+
+  // 3-pass fuzzy match: exact → normalized → strip manufacturer prefix word
+  const normArt = s => String(s).toLowerCase().replace(/[\s\-\.\/\(\)_]/g, '');
+  const artNormExact = String(article).toLowerCase().trim();
+  const artNorm      = normArt(article);
+  const words        = String(article).trim().split(/\s+/);
+  const artNormNoMfr = words.length > 1 ? normArt(words.slice(1).join(' ')) : '';
+  let rowIdx = -1;
+  for (let i = tab.headerRowNumber; i < data.length; i++) {
+    const cell = String(data[i][artCol] || '');
+    if (cell.toLowerCase().trim() === artNormExact) { rowIdx = i; break; }
+    if (normArt(cell) === artNorm) { rowIdx = i; break; }
+    if (artNormNoMfr.length >= 3 && normArt(cell) === artNormNoMfr) { rowIdx = i; break; }
+  }
+  if (rowIdx < 0) {
+    if (!fields._forceAdd) return { ok: false, notFound: true };
+    const newRow = new Array(headers.length).fill('');
+    newRow[artCol] = article;
+    if (fields.lPlus      !== undefined && lpCol   >= 0) newRow[lpCol]   = fields.lPlus;
+    if (fields.lMinus     !== undefined && lmCol   >= 0) newRow[lmCol]   = fields.lMinus;
+    if (fields.step       !== undefined && stepCol >= 0) newRow[stepCol] = fields.step;
+    if (fields.applicator !== undefined && applCol >= 0) newRow[applCol] = fields.applicator;
+    sheet.appendRow(newRow);
+    syncTechOperationsDatabase();
+    return { ok: true, added: true };
+  }
+
+  const sheetRow = rowIdx + 1;
+  if (fields.lPlus      !== undefined && lpCol   >= 0) sheet.getRange(sheetRow, lpCol   + 1).setValue(fields.lPlus);
+  if (fields.lMinus     !== undefined && lmCol   >= 0) sheet.getRange(sheetRow, lmCol   + 1).setValue(fields.lMinus);
+  if (fields.step       !== undefined && stepCol >= 0) sheet.getRange(sheetRow, stepCol + 1).setValue(fields.step);
+  if (fields.applicator !== undefined && applCol >= 0) sheet.getRange(sheetRow, applCol + 1).setValue(fields.applicator);
+
+  syncTechOperationsDatabase();
+  return { ok: true, added: false };
+}
+
 function syncTechOperationsDatabaseMenu() {
   const summary = syncTechOperationsDatabase();
   SpreadsheetApp.getUi().alert(
@@ -591,6 +658,8 @@ function buildTechOperationsTerRecord_(row, headerMap, sourceSheet, namedColumns
               || getTechOperationsCellByHeaderRegex_(row, headerMap, /^l\s*\+/);
   const lMinus = getTechOperationsCellByAliases_(row, headerMap, ['l-', 'l−', 'l–', 'l—', 'l- в мм', 'l-(мм)', 'l −', 'l -'])
               || getTechOperationsCellByHeaderRegex_(row, headerMap, /^l\s*[-−–—]/);
+  const step         = getTechOperationsCellByAliases_(row, headerMap, ['шаг разъема', 'шаг разъёма', 'шаг', 'pitch', 'step', 'шаг ленты', 'шаг контакта'])
+                    || getTechOperationsCellByHeaderRegex_(row, headerMap, /^шаг/);
   const applicator   = getTechOperationsCellByAliases_(row, headerMap, ['аппликатор', 'applicator', 'applikator']);
   const crimpHeight  = getTechOperationsCellByAliases_(row, headerMap, [
     'высота обжима проводника , мм', 'высота обжима проводника, мм',
@@ -618,6 +687,7 @@ function buildTechOperationsTerRecord_(row, headerMap, sourceSheet, namedColumns
     terArticle,
     terLPlus:         lPlus        || '',
     terLMinus:        lMinus       || '',
+    terStep:          step         || '',
     terApplicator:    applicator   || '',
     terCrimpHeight:   crimpHeight  || '',
     terPullForceMin:  pullForceMin || '',
@@ -697,7 +767,7 @@ function parseTechOpsRow_(row) {
   };
   // Extra columns [6..16] are written by toSnapshotRow_() — positions match exactly.
   if (tabKey === 'op')   return { ...base, opNumber: row[6] || '', opName: row[7] || '', tOp: row[8] || '', tPrep: row[9] || '', tMachine: row[10] || '' };
-  if (tabKey === 'ter')  return { ...base, terManufacturer: row[6] || '', terSeries: row[7] || '', terComponent: row[8] || '', terType: row[9] || '', terArticle: row[10] || '', terLPlus: row[11] || '', terLMinus: row[12] || '', terApplicator: row[13] || '', terCrimpHeight: row[14] || '', terPullForceMin: row[15] || '', terPullForceMax: row[16] || '' };
+  if (tabKey === 'ter')  return { ...base, terManufacturer: row[6] || '', terSeries: row[7] || '', terComponent: row[8] || '', terType: row[9] || '', terArticle: row[10] || '', terLPlus: row[11] || '', terLMinus: row[12] || '', terApplicator: row[13] || '', terCrimpHeight: row[14] || '', terPullForceMin: row[15] || '', terPullForceMax: row[16] || '', terStep: row[17] || '' };
   if (tabKey === 'coax') return { ...base, coaxWire: row[9] || '', coaxType: row[10] || '', coaxMfr: row[11] || '', coaxArticle: row[12] || '' };
   if (tabKey === 'ob')   return { ...base, obType: row[6] || '' };
   return base;
@@ -708,11 +778,11 @@ function parseTechOpsRow_(row) {
 // source of truth for the layout — changing one here changes both read and write paths.
 function toSnapshotRow_(record) {
   switch (record.tabKey) {
-    case 'op':   return [record.opNumber || '', record.opName || '', record.tOp || '', record.tPrep || '', record.tMachine || '', '', '', '', '', '', ''];
-    case 'ter':  return [record.terManufacturer || '', record.terSeries || '', record.terComponent || '', record.terType || '', record.terArticle || '', record.terLPlus || '', record.terLMinus || '', record.terApplicator || '', record.terCrimpHeight || '', record.terPullForceMin || '', record.terPullForceMax || ''];
-    case 'coax': return ['', '', '', record.coaxWire || '', record.coaxType || '', record.coaxMfr || '', record.coaxArticle || '', '', '', '', ''];
-    case 'ob':   return [record.obType || '', '', '', '', '', '', '', '', '', '', ''];
-    default:     return ['', '', '', '', '', '', '', '', '', '', ''];
+    case 'op':   return [record.opNumber || '', record.opName || '', record.tOp || '', record.tPrep || '', record.tMachine || '', '', '', '', '', '', '', ''];
+    case 'ter':  return [record.terManufacturer || '', record.terSeries || '', record.terComponent || '', record.terType || '', record.terArticle || '', record.terLPlus || '', record.terLMinus || '', record.terApplicator || '', record.terCrimpHeight || '', record.terPullForceMin || '', record.terPullForceMax || '', record.terStep || ''];
+    case 'coax': return ['', '', '', record.coaxWire || '', record.coaxType || '', record.coaxMfr || '', record.coaxArticle || '', '', '', '', '', ''];
+    case 'ob':   return [record.obType || '', '', '', '', '', '', '', '', '', '', '', ''];
+    default:     return ['', '', '', '', '', '', '', '', '', '', '', ''];
   }
 }
 
@@ -863,6 +933,7 @@ function buildTechOperationsPayload_(snapshot) {
           item.terCrimpHeight  = record.terCrimpHeight  || '';
           item.terPullForceMin = record.terPullForceMin || '';
           item.terPullForceMax = record.terPullForceMax || '';
+          item.terStep         = record.terStep         || '';
         }
         if (tabKey === 'coax') {
           item.coaxWire    = record.coaxWire    || '';

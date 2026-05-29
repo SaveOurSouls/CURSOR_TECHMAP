@@ -58,6 +58,24 @@
     .badge-conn  { background: #eff6ff; color: #1d4ed8; }
     .badge-other { background: #f3f4f6; color: #374151; }
 
+    /* ── TER panel ── */
+    .ter-panel { margin-top: 6px; }
+    .ter-row   { display: flex; gap: 5px; align-items: flex-end; flex-wrap: wrap; }
+    .ter-f     { display: flex; flex-direction: column; gap: 2px; }
+    .ter-f label { font-size: 10px; font-weight: 600; color: #718096;
+                   text-transform: uppercase; letter-spacing: .04em; }
+    .ter-f input { width: 68px; padding: 4px 6px; border: 1px solid #cbd5e0;
+                   border-radius: 5px; font-size: 12px; font-family: inherit; }
+    .ter-f.wide input { width: 120px; }
+    .ter-inp-found   { border-color: #68d391 !important; background: #f0fff4 !important; }
+    .ter-inp-missing { border-color: #f6ad55 !important; background: #fffbeb !important; }
+    .ter-inp-dirty   { border-color: #3b82f6 !important; background: #eff6ff !important; }
+    .btn-ter-save { padding: 4px 10px; background: #2563eb; color: #fff; border: none;
+                    border-radius: 5px; font-size: 11px; font-weight: 600; cursor: pointer;
+                    align-self: flex-end; white-space: nowrap; }
+    .btn-ter-save:hover    { background: #1d4ed8; }
+    .btn-ter-save:disabled { background: #93c5fd; cursor: not-allowed; }
+
     /* ── Form ── */
     .field-label {
       display: block; font-size: 11px; font-weight: 600;
@@ -141,19 +159,6 @@
     .op-match.found     { color: #065f46; }
     .op-match.not-found { color: #9ca3af; }
 
-    /* ── Chain ── */
-    .chain-list { display: flex; flex-direction: column; gap: 3px; font-size: 12px; }
-    .chain-row  { display: flex; align-items: center; gap: 6px; }
-    .chain-num  {
-      width: 18px; height: 18px; border-radius: 50%;
-      background: #e0e7ff; color: #3730a3;
-      font-size: 10px; font-weight: 700;
-      display: flex; align-items: center; justify-content: center;
-      flex-shrink: 0;
-    }
-    .chain-op     { color: #718096; min-width: 160px; }
-    .chain-arrow  { color: #93c5fd; }
-    .chain-result { color: #1e40af; font-weight: 500; }
 
     /* ── Actions ── */
     .actions { display: flex; gap: 8px; margin-top: 12px; }
@@ -181,12 +186,14 @@
 
     .qty-hint {
       font-size: 11px; color: #4a9d6f; font-weight: 600;
-      margin-top: 3px; min-height: 14px;
+      margin-top: 3px;
     }
+    .qty-hint:empty { display: none; }
 
     .wire-entry-simple {
       grid-template-columns: 1fr 60px 28px;
     }
+    .wire-entry .field-group { margin-bottom: 0; }
     .btn-link {
       background: none; border: none; padding: 0;
       color: #3b82f6; font-size: 11px; font-weight: 600;
@@ -242,9 +249,8 @@
     </div>
     <div id="cutLengthInfo" style="display:none;margin-top:5px;padding:6px 8px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;font-size:12px">
       <div id="cutLengthFormula" style="color:#64748b;margin-bottom:2px"></div>
-      <div>Длина реза: <strong id="cutLengthValue" style="color:#0369a1"></strong> мм</div>
+      <div>Длина реза: <strong id="cutLengthValue" style="color:#0369a1"></strong></div>
     </div>
-    <div class="sep" style="margin:8px 0 6px"></div>
   </div>
   <div id="wireList"></div>
   <button class="btn-add" onclick="addWire()">+ Добавить кабель</button>
@@ -257,12 +263,21 @@
     <div class="field-group">
       <label class="field-label">Терминал</label>
       <select id="termSelectA"></select>
-      <div id="termQtyHintA" class="qty-hint">—</div>
+      <div id="termQtyHintA" class="qty-hint"></div>
     </div>
     <div class="field-group">
       <label class="field-label">Разъём / Корпус</label>
       <select id="connSelectA"></select>
-      <div id="connQtyHintA" class="qty-hint">—</div>
+      <div id="connQtyHintA" class="qty-hint"></div>
+    </div>
+  </div>
+  <div id="terPanelA" class="ter-panel" style="display:none">
+    <div class="ter-row">
+      <div class="ter-f"><label>L+, мм</label><input id="terLPlusA"  class="ter-inp" type="text" placeholder="—" oninput="onTerInput('A')" /></div>
+      <div class="ter-f"><label>L−, мм</label><input id="terLMinusA" class="ter-inp" type="text" placeholder="—" oninput="onTerInput('A')" /></div>
+      <div class="ter-f"><label>Шаг</label>   <input id="terStepA"   class="ter-inp" type="text" placeholder="—" oninput="onTerInput('A')" /></div>
+      <div class="ter-f wide"><label>Аппликатор</label><input id="terApplA" class="ter-inp" type="text" placeholder="—" oninput="onTerInput('A')" /></div>
+      <button id="terSaveA" class="btn-ter-save" style="display:none" onclick="saveTerPanel('A')">Записать в БД</button>
     </div>
   </div>
 </div>
@@ -279,12 +294,21 @@
       <div class="field-group">
         <label class="field-label">Терминал</label>
         <select id="termSelectB"></select>
-        <div id="termQtyHintB" class="qty-hint">—</div>
+        <div id="termQtyHintB" class="qty-hint"></div>
       </div>
       <div class="field-group">
         <label class="field-label">Разъём / Корпус</label>
         <select id="connSelectB"></select>
-        <div id="connQtyHintB" class="qty-hint">—</div>
+        <div id="connQtyHintB" class="qty-hint"></div>
+      </div>
+    </div>
+    <div id="terPanelB" class="ter-panel" style="display:none">
+      <div class="ter-row">
+        <div class="ter-f"><label>L+, мм</label><input id="terLPlusB"  class="ter-inp" type="text" placeholder="—" oninput="onTerInput('B')" /></div>
+        <div class="ter-f"><label>L−, мм</label><input id="terLMinusB" class="ter-inp" type="text" placeholder="—" oninput="onTerInput('B')" /></div>
+        <div class="ter-f"><label>Шаг</label>   <input id="terStepB"   class="ter-inp" type="text" placeholder="—" oninput="onTerInput('B')" /></div>
+        <div class="ter-f wide"><label>Аппликатор</label><input id="terApplB" class="ter-inp" type="text" placeholder="—" oninput="onTerInput('B')" /></div>
+        <button id="terSaveB" class="btn-ter-save" style="display:none" onclick="saveTerPanel('B')">Записать в БД</button>
       </div>
     </div>
   </div>
@@ -296,14 +320,6 @@
   <div class="op-empty">Добавьте кабель — появятся операции</div>
 </div>
 
-<!-- ═══ ЦЕПОЧКА ══════════════════════════════════════════════ -->
-<h3>Цепочка результатов</h3>
-<div class="card">
-  <div class="chain-list" id="chainList">
-    <span style="color:#a0aec0;font-size:12px">—</span>
-  </div>
-</div>
-
 <!-- ═══ ДЕЙСТВИЯ ═════════════════════════════════════════════ -->
 <div class="actions">
   <button class="btn-secondary" onclick="google.script.host.close()">Отмена</button>
@@ -313,8 +329,42 @@
 
 <script>
   let D = null;
-  const matchedOps       = {};  // opKey → matched op record
+  const matchedOps        = {};  // opKey → matched op record
   const selectedTemplates = {}; // opKey → templateId (persists across re-renders)
+  const manualTemplates   = new Set(); // opKeys where user manually picked a template
+
+  // ── TER panel state ──────────────────────────────────────────
+  const _terOrig       = { A: {}, B: {} }; // values from DB
+  const _terDirty      = { A: false, B: false };
+  const _terCurrentArt = { A: '', B: '' };  // article currently shown
+
+  // ── Article normalization ─────────────────────────────────────
+  // Strips separators so "SSHL-002T-P0.2", "SSHL 002T P0.2", "SSHL002TP02" all match.
+  function normalizeArt_(art) {
+    return String(art || '').toLowerCase().replace(/[\s\-\.\/\(\)_]/g, '');
+  }
+
+  // Finds a TER record: exact → normalized → strip manufacturer prefix word.
+  function findTerRecord_(art) {
+    if (!art) return null;
+    const records = D.terRecords || [];
+    const exact = String(art).toLowerCase().trim();
+    const norm  = normalizeArt_(art);
+    let found = records.find(r => (r.article || '').toLowerCase().trim() === exact);
+    if (!found && norm.length >= 3)
+      found = records.find(r => normalizeArt_(r.article) === norm);
+    // Pass 3: strip leading manufacturer word ("MOLEX 5034290000" → "5034290000")
+    if (!found) {
+      const words = String(art).trim().split(/\s+/);
+      if (words.length > 1) {
+        const withoutMfr = words.slice(1).join(' ');
+        const normNoMfr  = normalizeArt_(withoutMfr);
+        if (normNoMfr.length >= 3)
+          found = records.find(r => normalizeArt_(r.article) === normNoMfr);
+      }
+    }
+    return found || null;
+  }
 
   // Mapping: operation type → template category for auto-selection.
   // Side-specific so prsTermA picks "Опрессовка терминалов (А)" not "Опрессовка" (coax sleeve).
@@ -347,7 +397,17 @@
     });
 
     ['termSelectA','connSelectA','termSelectB','connSelectB'].forEach(id => {
-      document.getElementById(id).addEventListener('change', refresh);
+      document.getElementById(id).addEventListener('change', () => {
+        // При смене терминала сбрасываем только авто-выбранные шаблоны (не ручные),
+        // чтобы autoPickTemplate пересчитал шаг для нового терминала.
+        if (id === 'termSelectA') {
+          ['prsTermA','insTermA'].forEach(k => { if (!manualTemplates.has(k)) delete selectedTemplates[k]; });
+        }
+        if (id === 'termSelectB') {
+          ['prsTermB','insTermB'].forEach(k => { if (!manualTemplates.has(k)) delete selectedTemplates[k]; });
+        }
+        refresh();
+      });
     });
 
     autoFillAllWires();
@@ -357,50 +417,142 @@
     updateCutLength_();
     renderQtyHints();
     renderOpsCard();
-    renderChain();
   }
 
   function renderQtyHints() {
     const numWires = wireEntries.filter(w => w.compId).length;
-    const connTxt  = '1 шт (на сторону)';
     ['A','B'].forEach(side => {
       const th      = document.getElementById(`termQtyHint${side}`);
       const ch      = document.getElementById(`connQtyHint${side}`);
       const termSel = document.getElementById(`termSelect${side}`);
       const connSel = document.getElementById(`connSelect${side}`);
-      if (ch) ch.textContent = (connSel && connSel.value) ? connTxt : '—';
-      if (!th) return;
-      if (!termSel || !termSel.value) { th.textContent = '—'; th.style.color = ''; return; }
-      const qtyPart = numWires > 0 ? `${numWires} шт` : '—';
-      const comp    = getCompById(termSel.value);
-      const terRec  = comp ? (D.terRecords || []).find(r =>
-        (r.article || '').toLowerCase().trim() === (comp.art || '').toLowerCase().trim()
-      ) : null;
-      if (!terRec) {
-        th.textContent = `${qtyPart} | L+/L−: нет в БД.ТЕР`;
-        th.style.color = '#b45309';
-      } else if (!terRec.lPlus && !terRec.lMinus) {
-        th.textContent = `${qtyPart} | L+: пусто, L−: пусто`;
-        th.style.color = '#b45309';
-      } else {
-        th.textContent = `${qtyPart} | L+: ${terRec.lPlus || '—'}  L−: ${terRec.lMinus || '—'}`;
-        th.style.color = '#065f46';
+      if (ch) { ch.textContent = (connSel && connSel.value) ? '1 шт (на сторону)' : ''; }
+      if (th) {
+        if (!termSel || !termSel.value) { th.textContent = ''; }
+        else {
+          const comp = getCompById(termSel.value);
+          const found = comp ? !!findTerRecord_(comp.art) : false;
+          th.textContent  = numWires > 0 ? `${numWires} шт` : '—';
+          th.style.color  = found ? '#065f46' : '#b45309';
+        }
       }
+      updateTerPanel(side);
     });
+  }
+
+  // ── TER panel ────────────────────────────────────────────────
+  const _TER_FIELDS = [
+    { key: 'lPlus',      sfx: 'LPlus'  },
+    { key: 'lMinus',     sfx: 'LMinus' },
+    { key: 'step',       sfx: 'Step'   },
+    { key: 'applicator', sfx: 'Appl'   },
+  ];
+
+  function updateTerPanel(side) {
+    const panel   = document.getElementById(`terPanel${side}`);
+    const termSel = document.getElementById(`termSelect${side}`);
+    if (!panel) return;
+    const comp = termSel ? getCompById(termSel.value) : null;
+    if (!comp) { panel.style.display = 'none'; _terCurrentArt[side] = ''; return; }
+
+    const artChanged = _terCurrentArt[side] !== (comp.art || '');
+    if (!artChanged && _terDirty[side]) return; // user is editing — don't reset
+
+    _terCurrentArt[side] = comp.art || '';
+    _terDirty[side] = false;
+
+    const terRec = findTerRecord_(comp.art);
+    const vals = {
+      lPlus:      terRec ? (terRec.lPlus      || '') : '',
+      lMinus:     terRec ? (terRec.lMinus     || '') : '',
+      step:       terRec ? (terRec.step       || '') : '',
+      applicator: terRec ? (terRec.applicator || '') : '',
+    };
+    _terOrig[side] = { ...vals };
+
+    _TER_FIELDS.forEach(({ key, sfx }) => {
+      const inp = document.getElementById(`ter${sfx}${side}`);
+      if (!inp) return;
+      inp.value = vals[key];
+      inp.className = 'ter-inp ' + (vals[key] ? 'ter-inp-found' : 'ter-inp-missing');
+    });
+
+    panel.style.display = '';
+    document.getElementById(`terSave${side}`).style.display = 'none';
+  }
+
+  function onTerInput(side) {
+    _terDirty[side] = true;
+    let hasChange = false;
+    _TER_FIELDS.forEach(({ key, sfx }) => {
+      const inp = document.getElementById(`ter${sfx}${side}`);
+      if (!inp) return;
+      const cur  = inp.value.trim();
+      const orig = _terOrig[side][key] || '';
+      if (cur !== orig) hasChange = true;
+      inp.className = 'ter-inp ' + (cur !== orig ? 'ter-inp-dirty' : cur ? 'ter-inp-found' : 'ter-inp-missing');
+    });
+    const btn = document.getElementById(`terSave${side}`);
+    if (btn) btn.style.display = hasChange ? '' : 'none';
+  }
+
+  function saveTerPanel(side) {
+    const termSel = document.getElementById(`termSelect${side}`);
+    const comp = termSel ? getCompById(termSel.value) : null;
+    if (!comp) return;
+    const data = {};
+    _TER_FIELDS.forEach(({ key, sfx }) => {
+      const inp = document.getElementById(`ter${sfx}${side}`);
+      if (inp) data[key] = inp.value.trim();
+    });
+    const btn = document.getElementById(`terSave${side}`);
+    btn.textContent = 'Сохраняю…'; btn.disabled = true;
+    const doSave = (forceAdd) => {
+      const payload = forceAdd ? { ...data, _forceAdd: true } : data;
+      google.script.run
+        .withSuccessHandler(result => {
+          if (result && result.notFound) {
+            btn.textContent = 'Записать в БД'; btn.disabled = false;
+            if (window.confirm('Артикул «' + comp.art + '» не найден в БД.ТЕР.\nДобавить новую запись?')) {
+              btn.textContent = 'Добавляю…'; btn.disabled = true;
+              doSave(true);
+            }
+            return;
+          }
+          btn.textContent = result && result.added ? '✓ Добавлено в БД' : '✓ Готово';
+          setTimeout(() => { btn.style.display = 'none'; btn.textContent = 'Записать в БД'; btn.disabled = false; }, 2500);
+          _terOrig[side] = { ...data }; _terDirty[side] = false;
+          _terCurrentArt[side] = ''; // force re-render from fresh DB
+          updateTerPanel(side);
+        })
+        .withFailureHandler(err => {
+          btn.textContent = '⚠ ' + (err.message || 'Ошибка'); btn.disabled = false;
+        })
+        .saveTerDataToSourceDb(comp.art, JSON.stringify(payload));
+    };
+    doSave(false);
   }
 
   // ── Assembly info ─────────────────────────────────────────────
   function renderAssemblyInfo() {
     const block   = document.getElementById('assemblyInfoBlock');
-    const entries = Object.entries(D.assemblyInfo || {}).filter(([,v]) => v !== '' && v != null);
+    // Ключи-артикулы (напр. "SSHL-002T-P0.2") — не являются полями сборки, фильтруем
+    const isArticleKey = k => /^[A-Za-z0-9][A-Za-z0-9\-\.\/]+[A-Za-z0-9]$/.test(String(k).trim()) &&
+                              !/[а-яёА-ЯЁ\s]/.test(String(k));
+    const entries = Object.entries(D.assemblyInfo || {})
+      .filter(([k, v]) => v !== '' && v != null && !isArticleKey(k));
     if (!entries.length) {
       block.innerHTML = '<div class="warn">Таблица1 не найдена на активном листе</div>';
       return;
     }
     block.innerHTML = '<div class="info-kv">' +
-      entries.map(([k, v]) =>
-        `<div class="info-pair"><span>${esc(k)}: </span><strong>${esc(String(v))}</strong></div>`
-      ).join('') + '</div>';
+      entries.map(([k, v]) => {
+        const vs = String(v);
+        const valHtml = vs.startsWith('http')
+          ? `<a href="${esc(vs)}" target="_blank" style="color:#2563eb;word-break:break-all">${esc(vs.length > 50 ? vs.slice(0, 50) + '…' : vs)}</a>`
+          : `<strong>${esc(vs)}</strong>`;
+        return `<div class="info-pair"><span>${esc(k)}: </span>${valHtml}</div>`;
+      }).join('') + '</div>';
   }
 
   // ── SPY table ─────────────────────────────────────────────────
@@ -558,11 +710,7 @@
     const termB   = sideB ? getCompById(document.getElementById('termSelectB').value) : null;
     const terRecs = D.terRecords || [];
 
-    const findTer = comp => {
-      if (!comp) return null;
-      const art = (comp.art || '').toLowerCase().trim();
-      return terRecs.find(r => (r.article || '').toLowerCase().trim() === art) || null;
-    };
+    const findTer = comp => comp ? findTerRecord_(comp.art) : null;
     const terA = findTer(termA);
     const terB = findTer(termB);
     const mode = getMeasureMode_();
@@ -604,10 +752,10 @@
       valueEl.textContent   = `${cut} мм`;
       infoEl.style.cssText  = 'display:block;margin-top:5px;padding:6px 8px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;font-size:12px';
     } else if (drawingLength > 0 && adj.noData) {
-      // Терминал выбран, но L+/L- не найдены — подсказка о ресинке
+      // Терминал выбран, но L+/L- не найдены — используем длину по чертежу как есть
       sharedLength = drawingLength;
-      formulaEl.textContent = '⚠ Нет данных L+/L− для выбранного терминала. Обновите БД.';
-      valueEl.textContent   = '';
+      formulaEl.textContent = '⚠ L+/L− не найдены в БД.ТЕР — длина реза = длине по чертежу';
+      valueEl.textContent   = `${drawingLength} мм`;
       infoEl.style.cssText  = 'display:block;margin-top:5px;padding:6px 8px;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;font-size:12px';
     } else {
       sharedLength = drawingLength;
@@ -708,6 +856,7 @@
         onTemplateSelect(opSpec.opKey);
         sel.addEventListener('change', () => {
           selectedTemplates[opSpec.opKey] = sel.value;
+          manualTemplates.add(opSpec.opKey); // пользователь выбрал вручную — не перезатирать
           onTemplateSelect(opSpec.opKey);
         });
       }
@@ -776,123 +925,93 @@
     }
   }
 
-  // Auto-picks a template ID for an operation type by matching OP_CATEGORY_MAP category.
-  // Returns saved selection first, then tries category/title match, then word overlap.
   function autoPickTemplate(opKey) {
     if (selectedTemplates[opKey]) return selectedTemplates[opKey];
     const cat = OP_CATEGORY_MAP[opKey];
     if (!cat) return '';
-    const norm = s => (s || '').toLowerCase().replace(/[_\-|.+()\s]+/g, ' ').trim();
-    const target = norm(cat);
+
+    const n = s => (s || '')
+      .replace(/\(A\)/g, '(А)').replace(/\(B\)/g, '(В)')  // Latin → Cyrillic in brackets
+      .toLowerCase().replace(/[_\-|.+()\s]+/g, ' ').trim();
+    const target = n(cat);
     if (!target) return '';
-    // Skip templates with no meaningful title or category (avoids false match via empty string)
-    const tmpls = (D.templates || []).filter(t => norm(t.category) || norm(t.title));
-    // Pass 1: exact match on category or title
-    let found = tmpls.find(t => norm(t.category) === target || norm(t.title) === target);
-    // Pass 2: template field must CONTAIN the full target (not vice versa — avoids "опрессовка" matching "опрессовка терминалов а")
-    if (!found) found = tmpls.find(t => {
-      const nc = norm(t.category), nt = norm(t.title);
-      return (nc && nc.includes(target)) || (nt && nt.includes(target));
-    });
-    // Pass 3: ALL significant words (>3 chars) must be present
-    if (!found) {
-      const words = target.split(/\s+/).filter(w => w.length > 3);
-      if (words.length) found = tmpls.find(t => {
-        const combined = norm(t.title + ' ' + t.category);
-        return combined && words.every(w => combined.includes(w));
-      });
+
+    // Effective category: stored field, else part after last '|' in title
+    const ec = t => {
+      const stored = (t.category || '').trim();
+      if (stored) return n(stored);
+      const p = (t.title || '').split('|');
+      return p.length > 1 ? n(p[p.length - 1]) : '';
+    };
+
+    // Только точное совпадение effCat с target
+    const score = t => (ec(t) === target ? 1 : 0);
+
+    const scored = (D.templates || []).map(t => ({ t, s: score(t) })).filter(x => x.s > 0);
+    if (!scored.length) return '';
+    const maxScore = Math.max(...scored.map(x => x.s));
+    const best = scored.filter(x => x.s === maxScore).map(x => x.t);
+
+    // Tiebreaker 1: side А/В — pick template whose effCat ends with same letter
+    if (best.length > 1) {
+      const sm = target.match(/ ([ав])$/);
+      if (sm) {
+        const hit = best.find(t => ec(t).endsWith(' ' + sm[1]));
+        if (hit) {
+          // Tiebreaker 2: терStep refinement
+          const sideKey = opKey.endsWith('A') ? 'A' : 'B';
+          const termSel = document.getElementById(`termSelect${sideKey}`);
+          const termComp = termSel ? getCompById(termSel.value) : null;
+          if (termComp) {
+            const terRec = findTerRecord_(termComp.art);
+            const step = terRec ? (terRec.step || '') : '';
+            if (step) {
+              const sd = step.replace(',', '.'), sc = step.replace('.', ',');
+              const sideCands = best.filter(t => ec(t).endsWith(' ' + sm[1]));
+              const stepHit = sideCands.find(t => t.title.includes(sd) || t.title.includes(sc));
+              if (stepHit) return stepHit.id;
+            }
+          }
+          return hit.id;
+        }
+      }
     }
-    return found ? found.id : '';
+
+    // Tiebreaker 2 only (no side): терStep
+    if (best.length > 1) {
+      const isTermOp = ['prsTermA','insTermA','prsTermB','insTermB'].includes(opKey);
+      if (isTermOp) {
+        const sideKey = opKey.endsWith('A') ? 'A' : 'B';
+        const termSel = document.getElementById(`termSelect${sideKey}`);
+        const termComp = termSel ? getCompById(termSel.value) : null;
+        if (termComp) {
+          const terRec = findTerRecord_(termComp.art);
+          const step = terRec ? (terRec.step || '') : '';
+          if (step) {
+            const sd = step.replace(',', '.'), sc = step.replace('.', ',');
+            const hit = best.find(t => t.title.includes(sd) || t.title.includes(sc));
+            if (hit) return hit.id;
+          }
+        }
+      }
+    }
+
+    return best[0].id;
   }
 
   function matchOpByTitle(title) {
     const ops = D.ops || [];
     if (!title || !ops.length) return null;
-    const norm = s => (s || '').toLowerCase().replace(/[_\-|.+]/g, ' ').replace(/\s+/g, ' ').trim();
-    const tl   = norm(title);
-
-    // Pass 0: match by opNumber — template title format is "CODE | OpName", extract CODE
+    // Шаблон всегда в формате "CODE | Название" — берём CODE до первого ' | '
     const pipeSep = title.indexOf(' | ');
-    if (pipeSep > 0) {
-      const code = title.substring(0, pipeSep).trim().toLowerCase();
-      for (const op of ops) {
-        if ((op.opNumber || '').trim().toLowerCase() === code) return op;
-      }
-    }
-
-    // Pass 1: best substring match on opName — prefer longer (more specific) name
-    let best = null, bestLen = 0;
-    for (const op of ops) {
-      const on = norm(op.opName);
-      if (on && (tl.includes(on) || on.includes(tl)) && on.length > bestLen) {
-        bestLen = on.length; best = op;
-      }
-    }
-    if (best) return best;
-
-    // Pass 2: ≥2 significant words (len > 3)
-    let bestScore = 0;
-    for (const op of ops) {
-      const words = norm(op.opName).split(/\s+/).filter(w => w.length > 3);
-      const score = words.filter(w => tl.includes(w)).length;
-      if (score >= 2 && score > bestScore) { bestScore = score; best = op; }
-    }
-    return best;
+    if (pipeSep <= 0) return null;
+    const code = title.substring(0, pipeSep).trim().toLowerCase();
+    return ops.find(op => (op.opNumber || '').trim().toLowerCase() === code) || null;
   }
 
   function setVal(id, v) {
     const el = document.getElementById(id);
     if (el) el.value = v;
-  }
-
-  // ── Chain preview ─────────────────────────────────────────────
-  function renderChain() {
-    const list   = document.getElementById('chainList');
-    const active = getActiveOps();
-    if (!active.length) {
-      list.innerHTML = '<span style="color:#a0aec0;font-size:12px">—</span>';
-      return;
-    }
-    const cfg = buildConfig();
-    let prev  = '';
-
-    const rows = active.map((opSpec, i) => {
-      const result = computeResult(opSpec.type, cfg, prev, null);
-      prev = result;
-
-      return `
-        <div class="chain-row">
-          <div class="chain-num">${i+1}</div>
-          <span class="chain-op">${esc(opSpec.label)}</span>
-          <span class="chain-arrow">→</span>
-          <span class="chain-result">${esc(result || '…')}</span>
-        </div>`;
-    });
-    list.innerHTML = rows.join('');
-  }
-
-  function computeResult(opType, cfg, prev, wd) {
-    const sA = cfg.sideA || {};
-    const sB = cfg.sideB || {};
-    switch (opType) {
-      case 'cutWire': {
-        // Build a summary of all active wires for the chain preview (art + lengthмм)
-        const aw = wireEntries.filter(w => w.compId);
-        if (!aw.length) return '—';
-        const parts = aw.map(w => {
-          const c = getCompById(w.compId);
-          const a = c ? (c.art || c.name) : '?';
-          const l = w.length ? `${w.length}мм` : '';
-          return [a, l].filter(Boolean).join(' ');
-        });
-        return parts.length === 1 ? parts[0] : parts.join('; ');
-      }
-      case 'prsTermA': return prev ? prev + ', обж. терм. ' + (sA.termName || '') : (sA.termName || '');
-      case 'insTermA': return [prev, sA.connName].filter(Boolean).join(' → ') + ' ст.А';
-      case 'prsTermB': return prev ? prev + ', обж. терм. ' + (sB.termName || '') : (sB.termName || '');
-      case 'insTermB': return [prev, sB.connName].filter(Boolean).join(' → ') + ' ст.В';
-      default:         return prev;
-    }
   }
 
   // ── Build config ──────────────────────────────────────────────
