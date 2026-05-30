@@ -100,7 +100,10 @@ function captureTemplateImages_(sourceSheet, range) {
         var row = anchor.getRow();
         var col = anchor.getColumn();
         if (row < startRow || row > endRow || col < startCol || col > endCol) return;
-        var blob = img.getBlob();
+        // Тот же fallback (getBlob → getUrl → XLSX), что и в прод-пути copySourceImagesToStore_:
+        // прямой getBlob() падает на типах изображений GAS 2024+.
+        var blob = getOverGridImageBlob_(img, sourceSheet);
+        if (!blob) return;
         result.push({
           relRow:   row - startRow,
           relCol:   col - startCol,
@@ -228,12 +231,32 @@ function getOrCreateImageCacheFolder_() {
 
 // ── XLSX image extraction (last-resort fallback) ─────────────
 
+// Кеш XLSX-карт изображений на время одного выполнения скрипта (глобалы GAS
+// сбрасываются между вызовами). buildXlsxImageMap_ скачивает и распаковывает
+// всю таблицу — без кеша это повторялось бы на КАЖДОЙ операции генерации.
+var _xlsxImageMapCache_ = {};
+
+/**
+ * Кеширующая обёртка над buildXlsxImageMapUncached_: одно скачивание таблицы
+ * на лист за выполнение. Кешируются и пустые результаты — чтобы не повторять
+ * дорогой неудачный download N раз за один прогон генерации.
+ */
+function buildXlsxImageMap_(sheet) {
+  var sid = sheet.getSheetId();
+  if (Object.prototype.hasOwnProperty.call(_xlsxImageMapCache_, sid)) {
+    return _xlsxImageMapCache_[sid];
+  }
+  var map = buildXlsxImageMapUncached_(sheet);
+  _xlsxImageMapCache_[sid] = map;
+  return map;
+}
+
 /**
  * Скачивает таблицу как XLSX (ZIP), разбирает drawing XML и возвращает
  * map { 'row_col': Blob } для каждого изображения на указанном листе.
  * Используется когда getBlob() и getUrl() недоступны (GAS 2024+ тип изображения).
  */
-function buildXlsxImageMap_(sheet) {
+function buildXlsxImageMapUncached_(sheet) {
   try {
     var ss = SpreadsheetApp.getActive();
     var token = ScriptApp.getOAuthToken();

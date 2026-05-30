@@ -103,7 +103,10 @@ function columnLetter_(idx) {
  * fieldsJson = JSON.stringify({lPlus, lMinus, step, applicator})
  */
 function saveTerDataToSourceDb(article, fieldsJson) {
-  const fields  = JSON.parse(fieldsJson || '{}');
+  const fields = safeJsonParse_(fieldsJson, null);
+  if (!fields || typeof fields !== 'object') {
+    return { ok: false, message: 'Некорректные данные формы (битый JSON).' };
+  }
   const srcSS   = SpreadsheetApp.openById(TECHOPS_DB_APP.sourceSpreadsheetId);
   const tab     = TECHOPS_DB_APP.tabs.ter;
   const sheet   = srcSS.getSheetByName(tab.sourceSheetName);
@@ -145,19 +148,23 @@ function saveTerDataToSourceDb(article, fieldsJson) {
     if (!fields._forceAdd) return { ok: false, notFound: true };
     const newRow = new Array(headers.length).fill('');
     newRow[artCol] = article;
-    if (fields.lPlus      !== undefined && lpCol   >= 0) newRow[lpCol]   = fields.lPlus;
-    if (fields.lMinus     !== undefined && lmCol   >= 0) newRow[lmCol]   = fields.lMinus;
-    if (fields.step       !== undefined && stepCol >= 0) newRow[stepCol] = fields.step;
+    // Технические числа нормализуем к запятой; аппликатор — текст, как есть.
+    if (fields.lPlus      !== undefined && lpCol   >= 0) newRow[lpCol]   = normalizeTechnicalDecimal_(fields.lPlus);
+    if (fields.lMinus     !== undefined && lmCol   >= 0) newRow[lmCol]   = normalizeTechnicalDecimal_(fields.lMinus);
+    if (fields.step       !== undefined && stepCol >= 0) newRow[stepCol] = normalizeTechnicalDecimal_(fields.step);
     if (fields.applicator !== undefined && applCol >= 0) newRow[applCol] = fields.applicator;
     sheet.appendRow(newRow);
     syncTechOperationsDatabase();
     return { ok: true, added: true };
   }
 
+  // Точечная запись по колонкам (не вся строка): источник может содержать
+  // формулы в соседних ячейках — батч-перезапись строки затёрла бы их статикой.
+  // Технические числа нормализуем к запятой; аппликатор — текст, как есть.
   const sheetRow = rowIdx + 1;
-  if (fields.lPlus      !== undefined && lpCol   >= 0) sheet.getRange(sheetRow, lpCol   + 1).setValue(fields.lPlus);
-  if (fields.lMinus     !== undefined && lmCol   >= 0) sheet.getRange(sheetRow, lmCol   + 1).setValue(fields.lMinus);
-  if (fields.step       !== undefined && stepCol >= 0) sheet.getRange(sheetRow, stepCol + 1).setValue(fields.step);
+  if (fields.lPlus      !== undefined && lpCol   >= 0) sheet.getRange(sheetRow, lpCol   + 1).setValue(normalizeTechnicalDecimal_(fields.lPlus));
+  if (fields.lMinus     !== undefined && lmCol   >= 0) sheet.getRange(sheetRow, lmCol   + 1).setValue(normalizeTechnicalDecimal_(fields.lMinus));
+  if (fields.step       !== undefined && stepCol >= 0) sheet.getRange(sheetRow, stepCol + 1).setValue(normalizeTechnicalDecimal_(fields.step));
   if (fields.applicator !== undefined && applCol >= 0) sheet.getRange(sheetRow, applCol + 1).setValue(fields.applicator);
 
   syncTechOperationsDatabase();
@@ -382,11 +389,7 @@ function ensureTechOperationsMetaSheet_(ss) {
   if (!sheet) {
     sheet = ss.insertSheet(TECHOPS_DB_APP.metaSheetName);
     ensureSheetCapacity_(sheet, 2, TECHOPS_DB_APP.metaHeaders.length);
-    sheet
-      .getRange(1, 1, 1, TECHOPS_DB_APP.metaHeaders.length)
-      .setValues([TECHOPS_DB_APP.metaHeaders])
-      .setFontWeight('bold')
-      .setBackground('#f3f6fc');
+    writeSheetHeader_(sheet, TECHOPS_DB_APP.metaHeaders);
     sheet.hideSheet();
   }
   return sheet;
@@ -397,11 +400,7 @@ function ensureTechOperationsDataSheet_(ss) {
   if (!sheet) {
     sheet = ss.insertSheet(TECHOPS_DB_APP.dataSheetName);
     ensureSheetCapacity_(sheet, 2, TECHOPS_DB_APP.dataHeaders.length);
-    sheet
-      .getRange(1, 1, 1, TECHOPS_DB_APP.dataHeaders.length)
-      .setValues([TECHOPS_DB_APP.dataHeaders])
-      .setFontWeight('bold')
-      .setBackground('#f3f6fc');
+    writeSheetHeader_(sheet, TECHOPS_DB_APP.dataHeaders);
     sheet.hideSheet();
     return sheet;
   }
@@ -415,11 +414,7 @@ function ensureTechOperationsDataSheet_(ss) {
       sheet.deleteColumns(TECHOPS_DB_APP.dataHeaders.length + 1, existingCols - TECHOPS_DB_APP.dataHeaders.length);
     }
     ensureSheetCapacity_(sheet, 2, TECHOPS_DB_APP.dataHeaders.length);
-    sheet
-      .getRange(1, 1, 1, TECHOPS_DB_APP.dataHeaders.length)
-      .setValues([TECHOPS_DB_APP.dataHeaders])
-      .setFontWeight('bold')
-      .setBackground('#f3f6fc');
+    writeSheetHeader_(sheet, TECHOPS_DB_APP.dataHeaders);
     sheet.hideSheet();
   }
 
@@ -529,10 +524,7 @@ function detectTechOperationsHeaderRow_(values, tabKey) {
     const headerMap = buildTechOperationsHeaderMap_(values[rowIndex]);
     let score = 0;
     aliases.forEach((aliasGroup) => {
-      if (aliasGroup.some((alias) => {
-        const key = normalizeHeader_(alias);
-        return headerMap[key] === 0 || headerMap[key] > 0;
-      })) score += 1;
+      if (aliasGroup.some((alias) => hasHeader_(headerMap, normalizeHeader_(alias)))) score += 1;
     });
     if (score > bestScore) { bestScore = score; bestIndex = rowIndex; }
   }
@@ -582,10 +574,7 @@ function buildTechOperationsHeaderDiagnostics_(tabKey, headerMap, headersRow) {
   const missingGroups = [];
 
   aliasGroups.forEach((group) => {
-    const matched = group.some((alias) => {
-      const key = normalizeHeader_(alias);
-      return headerMap[key] === 0 || headerMap[key] > 0;
-    });
+    const matched = group.some((alias) => hasHeader_(headerMap, normalizeHeader_(alias)));
     if (matched) matchedGroups.push(group[0]);
     else missingGroups.push(group[0]);
   });
@@ -736,9 +725,9 @@ function getTechOperationsCellByHeaderRegex_(row, headerMap, pattern) {
 
 function getTechOperationsCellByAliases_(row, headerMap, aliases) {
   for (let index = 0; index < aliases.length; index += 1) {
-    const headerIndex = headerMap[normalizeHeader_(aliases[index])];
-    if (headerIndex === 0 || headerIndex > 0) {
-      return normalizeString_(row[headerIndex]);
+    const key = normalizeHeader_(aliases[index]);
+    if (hasHeader_(headerMap, key)) {
+      return normalizeString_(row[headerMap[key]]);
     }
   }
   return '';
@@ -797,11 +786,7 @@ function writeTechOperationsSnapshotToSheets_(snapshot) {
     Math.max(snapshot.records.length + 1, 2),
     TECHOPS_DB_APP.dataHeaders.length
   );
-  dataSheet
-    .getRange(1, 1, 1, TECHOPS_DB_APP.dataHeaders.length)
-    .setValues([TECHOPS_DB_APP.dataHeaders])
-    .setFontWeight('bold')
-    .setBackground('#f3f6fc');
+  writeSheetHeader_(dataSheet, TECHOPS_DB_APP.dataHeaders);
 
   if (snapshot.records.length) {
     const rows = snapshot.records.map((record) => [
@@ -818,11 +803,7 @@ function writeTechOperationsSnapshotToSheets_(snapshot) {
 
   metaSheet.clearContents();
   ensureSheetCapacity_(metaSheet, 9, TECHOPS_DB_APP.metaHeaders.length);
-  metaSheet
-    .getRange(1, 1, 1, TECHOPS_DB_APP.metaHeaders.length)
-    .setValues([TECHOPS_DB_APP.metaHeaders])
-    .setFontWeight('bold')
-    .setBackground('#f3f6fc');
+  writeSheetHeader_(metaSheet, TECHOPS_DB_APP.metaHeaders);
 
   const metaRows = [
     ['sourceSpreadsheetId', snapshot.meta.sourceSpreadsheetId],
@@ -846,9 +827,12 @@ function loadTechOperationsSnapshotFromSheets_() {
   if (dataSheet) {
     const lastRow = dataSheet.getLastRow();
     if (lastRow >= 2) {
+      // getDisplayValues (не getValues): снапшот хранит строки из getDisplayValues
+      // источника. getValues превратил бы числовые поля (шаг, L+, L-) обратно в
+      // числа, и клиентский step.replace(...) падал бы с TypeError.
       dataSheet
         .getRange(2, 1, lastRow - 1, TECHOPS_DB_APP.dataHeaders.length)
-        .getValues()
+        .getDisplayValues()
         .filter((row) => row[0] && row[1])
         .forEach((row) => records.push(parseTechOpsRow_(row)));
     }
@@ -872,11 +856,11 @@ function loadTechOperationsSnapshotFromSheets_() {
         const value = row[1];
         if      (key === 'sourceSpreadsheetId') meta.sourceSpreadsheetId = value || TECHOPS_DB_APP.sourceSpreadsheetId;
         else if (key === 'updatedAt')           meta.updatedAt = value || '';
-        else if (key === 'recordCount')         meta.recordCount = toInt_(value);
-        else if (key === 'schemaVersion')       meta.schemaVersion = toInt_(value);
-        else if (key === 'countsByTabJson')     try { meta.countsByTab = JSON.parse(value) || {}; } catch (e) {}
-        else if (key === 'diagnosticsByTabJson') try { meta.diagnosticsByTab = JSON.parse(value) || {}; } catch (e) {}
-        else if (key === 'columnHeadersByTabJson') try { meta.columnHeadersByTab = JSON.parse(value) || {}; } catch (e) {}
+        else if (key === 'recordCount')            meta.recordCount        = toInt_(value);
+        else if (key === 'schemaVersion')          meta.schemaVersion      = toInt_(value);
+        else if (key === 'countsByTabJson')        meta.countsByTab        = safeJsonParse_(value, {});
+        else if (key === 'diagnosticsByTabJson')   meta.diagnosticsByTab   = safeJsonParse_(value, {});
+        else if (key === 'columnHeadersByTabJson') meta.columnHeadersByTab = safeJsonParse_(value, {});
       });
     }
   }
@@ -978,6 +962,28 @@ function hideTechOperationsSheets_() {
     const sheet = ss.getSheetByName(sheetName);
     if (sheet) sheet.hideSheet();
   });
+}
+
+/**
+ * Гарантирует, что снапшот техопераций готов в кеше, БЕЗ форс-ресинка.
+ * Тяжёлый syncTechOperationsDatabase() (чтение внешней таблицы) вызывается
+ * только если кеша/листов нет или сменилась схема. Быстрый путь открытия
+ * генератора и сайдбара — данные обновляются вручную (кнопка/меню).
+ */
+function ensureTechOperationsSnapshotReady_() {
+  const cached = getTechOpsCache_().load();
+  if (cached && cached.records && cached.records.length &&
+      String(cached.meta && cached.meta.schemaVersion) === String(TECHOPS_DB_APP.schemaVersion)) {
+    return;
+  }
+  ensureTechOperationsInfrastructure_(SpreadsheetApp.getActive());
+  const stored = loadTechOperationsSnapshotFromSheets_();
+  if (stored.records.length &&
+      String(stored.meta.schemaVersion) === String(TECHOPS_DB_APP.schemaVersion)) {
+    getTechOpsCache_().save(stored);
+    return;
+  }
+  syncTechOperationsDatabase(); // пусто или сменилась схема — единственный случай синка
 }
 
 /** Возвращает snapshot из кеша или листов; используется AssemblyGenerator. */

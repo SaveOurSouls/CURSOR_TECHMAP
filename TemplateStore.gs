@@ -90,11 +90,7 @@ function ensureCatalogSheet_(ss) {
   let sheet = ss.getSheetByName(TECHMAP_APP.librarySheetName);
   if (!sheet) {
     sheet = ss.insertSheet(TECHMAP_APP.librarySheetName);
-    sheet
-      .getRange(1, 1, 1, TECHMAP_APP.catalogHeaders.length)
-      .setValues([TECHMAP_APP.catalogHeaders])
-      .setFontWeight('bold')
-      .setBackground('#d9e2f3');
+    writeSheetHeader_(sheet, TECHMAP_APP.catalogHeaders, '#d9e2f3');
     sheet.hideSheet();
   }
   return sheet;
@@ -115,13 +111,24 @@ function ensureStoreSheet_(ss) {
 
 // ── Catalog CRUD ─────────────────────────────────────────────
 
+// Кеш каталога на время одного выполнения скрипта (глобалы GAS сбрасываются
+// между вызовами). Генерация зовёт insertTemplate→readCatalog_ на каждую
+// операцию — без кеша это N полных чтений _TC_LIBRARY за один прогон.
+// Инвалидируется при любой записи в каталог (invalidateCatalogCache_).
+var _catalogCache_ = null;
+
+function invalidateCatalogCache_() {
+  _catalogCache_ = null;
+}
+
 function readCatalog_() {
+  if (_catalogCache_) return _catalogCache_;
   const sheet = getCatalogSheetIfExists_(SpreadsheetApp.getActive());
   if (!sheet) return [];
   const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return [];
+  if (lastRow < 2) { _catalogCache_ = []; return _catalogCache_; }
 
-  return sheet
+  _catalogCache_ = sheet
     .getRange(2, 1, lastRow - 1, TECHMAP_APP.catalogHeaders.length)
     .getValues()
     .filter((row) => row[0])
@@ -141,6 +148,22 @@ function readCatalog_() {
       columnWidths: parseJsonArray_(row[12]),
       imagesJson: row[13] || '[]',
     }));
+  return _catalogCache_;
+}
+
+/**
+ * Преобразует внутреннюю запись каталога в DTO для sidebar/диалога.
+ * Единый контракт списка шаблонов для UI.
+ */
+function toCatalogListItem_(item) {
+  return {
+    id: item.id,
+    title: item.title,
+    category: item.category,
+    description: item.description,
+    sizeLabel: `${item.height} x ${item.width}`,
+    updatedAt: item.updatedAt,
+  };
 }
 
 function upsertCatalogRecord_(catalogSheet, record) {
@@ -168,6 +191,7 @@ function upsertCatalogRecord_(catalogSheet, record) {
 
   const targetRow = existingIndex >= 0 ? existingIndex + 2 : lastRow + 1;
   catalogSheet.getRange(targetRow, 1, 1, TECHMAP_APP.catalogHeaders.length).setValues(rowValues);
+  invalidateCatalogCache_();
 }
 
 function getTemplateById_(templateId) {
@@ -312,6 +336,7 @@ function compactifyStore_(catalog) {
         catalogSheet.getRange(idx + 2, 5).setValue(newStoreRows[id]);
       }
     });
+    invalidateCatalogCache_();
 
     if (!isSystemSheet_(savedSheet.getName())) ss.setActiveSheet(savedSheet);
   });
@@ -320,27 +345,10 @@ function compactifyStore_(catalog) {
 // ── Dimension helpers ────────────────────────────────────────
 
 function applyStoredDimensions_(targetSheet, targetRow, targetColumn, template) {
-  const rowHeights = template.rowHeights || [];
-  let i = 0;
-  while (i < rowHeights.length) {
-    const h = rowHeights[i];
-    if (!h) { i++; continue; }
-    let j = i + 1;
-    while (j < rowHeights.length && rowHeights[j] === h) j++;
-    targetSheet.setRowHeights(targetRow + i, j - i, h);
-    i = j;
-  }
-
-  const columnWidths = template.columnWidths || [];
-  i = 0;
-  while (i < columnWidths.length) {
-    const w = columnWidths[i];
-    if (!w) { i++; continue; }
-    let j = i + 1;
-    while (j < columnWidths.length && columnWidths[j] === w) j++;
-    targetSheet.setColumnWidths(targetColumn + i, j - i, w);
-    i = j;
-  }
+  applyRunLengthDimensions_(template.rowHeights || [], targetRow,
+    (start, count, size) => targetSheet.setRowHeights(start, count, size));
+  applyRunLengthDimensions_(template.columnWidths || [], targetColumn,
+    (start, count, size) => targetSheet.setColumnWidths(start, count, size));
 }
 
 function getRowHeights_(range) {
@@ -362,8 +370,7 @@ function getColumnWidths_(range) {
 }
 
 function clearTemplateMarkerNote_(targetRange) {
-  const note = targetRange.getCell(1, 1).getNote();
-  if (note && note.indexOf('techmap-template') === 0) {
-    targetRange.getCell(1, 1).clearNote();
-  }
+  // Top-left always carries the store marker note (writeRangeToStore_ stamps it),
+  // so clear unconditionally — avoids a per-insert getNote() round-trip.
+  targetRange.getCell(1, 1).setNote('');
 }

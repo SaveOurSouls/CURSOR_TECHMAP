@@ -8,7 +8,7 @@
 function showAssemblyGeneratorDialog() {
   const data = getAssemblyGeneratorData_();
   const tmpl = HtmlService.createTemplateFromFile('AssemblyGeneratorDialog');
-  tmpl.initialData = JSON.stringify(data);
+  tmpl.initialData = embedJsonForHtml_(data);
   SpreadsheetApp.getUi().showModalDialog(
     tmpl.evaluate().setWidth(680).setHeight(840),
     'Генератор техкарт — Межплатная сборка'
@@ -18,7 +18,7 @@ function showAssemblyGeneratorDialog() {
 // ── Data loading ─────────────────────────────────────────────
 
 function getAssemblyGeneratorData_() {
-  syncTechOperationsDatabase(); // всегда актуальные данные при открытии диалога
+  ensureTechOperationsSnapshotReady_(); // быстро: синк только если кеш пуст/схема сменилась
   const ss    = SpreadsheetApp.getActive();
   const sheet = ss.getActiveSheet();
 
@@ -174,9 +174,9 @@ function generateAssemblyTechCards(config) {
 
       const terData = buildTerData_(op.type, config, terRecords);
       const phMap = buildPlaceholderMap_(op, config, prevResult, thisResult, wireData, terData);
-      replacePlaceholders_(sheet, phMap);
+      const sheetState = replacePlaceholders_(sheet, phMap);
 
-      fillTechCardStructurally_(sheet, op, op.type, config, prevResult, thisResult, wireData, terData);
+      fillTechCardStructurally_(sheet, op, op.type, config, prevResult, thisResult, wireData, terData, sheetState);
 
       prevResult = thisResult;
       createdSheets.push(insertResult.sheetName);
@@ -239,7 +239,6 @@ function computeOperationResult_(opType, config, prevResult, wireData) {
     }
     case 'prsTermB': {
       const tB = sB.termArt || sB.termName || '';
-      const n  = wires.reduce((s, w) => s + (w.qty || 1), 0);
       return tB ? `Заготовка с обжатыми терминалами ${tB} сторона В` : 'Заготовка';
     }
     case 'insTermB': {
@@ -342,23 +341,27 @@ function buildCutLengthKd_(wireData) {
 function replacePlaceholders_(sheet, phMap) {
   const lastRow = sheet.getLastRow();
   const lastCol = sheet.getLastColumn();
-  if (lastRow < 1 || lastCol < 1) return;
+  if (lastRow < 1 || lastCol < 1) return null;
 
   const range    = sheet.getRange(1, 1, lastRow, lastCol);
   const values   = range.getValues();
   const formulas = range.getFormulas();
+  const mergeMap = buildMergeMap_(sheet); // читаем мёрджи ДО записей: переиспользуются в structural fill (−1 чтение, −1 flush)
 
+  const phEntries = Object.entries(phMap); // один раз, не на каждую ячейку
   const dirtyRows = {};
   for (let r = 0; r < values.length; r++) {
     for (let c = 0; c < values[r].length; c++) {
       if (formulas[r][c]) continue;
       const val = values[r][c];
       if (typeof val !== 'string' || val === '') continue;
+      if (val.indexOf('{{') < 0 && val.indexOf('[') < 0) continue; // быстрый отсев ячеек без плейсхолдеров
       let nv = val;
-      for (const [token, repl] of Object.entries(phMap)) {
+      for (const [token, repl] of phEntries) {
         if (nv.includes(token)) nv = nv.split(token).join(String(repl));
       }
       if (nv !== val) {
+        values[r][c] = nv; // держим in-memory копию в актуальном состоянии для повторного использования
         if (!dirtyRows[r]) dirtyRows[r] = [];
         dirtyRows[r].push({ c, val: nv });
       }
@@ -387,6 +390,10 @@ function replacePlaceholders_(sheet, phMap) {
       i = j;
     }
   }
+
+  // Отдаём пост-замены значения, формулы и мёрджи, чтобы fillTechCardStructurally_
+  // не перечитывал лист повторно (экономия 3 полных чтений на операцию).
+  return { values, formulas, mergeMap, lastRow, lastCol };
 }
 
 // ── Structural fill helpers ───────────────────────────────────
@@ -411,7 +418,9 @@ function detectSections_(values) {
 }
 
 // Creates a mutable sheet context object; ctx.refresh() re-reads all sheet data.
-function makeSheetCtx_(sheet) {
+// Опциональный seed {values, formulas} (из replacePlaceholders_) позволяет
+// пропустить начальные getValues/getFormulas — лист уже прочитан до этого.
+function makeSheetCtx_(sheet, seed) {
   const ctx = { sheet };
   ctx.refresh = function() {
     ctx.lastRow = sheet.getLastRow();
@@ -422,7 +431,32 @@ function makeSheetCtx_(sheet) {
     ctx.mergeMap = buildMergeMap_(sheet);
     ctx.sections = detectSections_(ctx.values);
   };
-  ctx.refresh();
+
+  // Лёгкое обновление после вставки count строк после 1-based afterRow.
+  // Значения и объединения читаем с листа (корректно под объединениями —
+  // новые строки под вертикальной меткой возвращаются пустыми). Формулы НЕ
+  // перечитываем (в слотах данных их нет) — вставляем пустые, экономя 1 чтение.
+  ctx.applyInsert = function(afterRow, count) {
+    ctx.lastRow = sheet.getLastRow();
+    ctx.lastCol = sheet.getLastColumn();
+    if (ctx.lastRow < 1 || ctx.lastCol < 1) { ctx.refresh(); return; }
+    ctx.values = sheet.getRange(1, 1, ctx.lastRow, ctx.lastCol).getValues();
+    const emptyRow = new Array(ctx.lastCol).fill('');
+    for (let i = 0; i < count; i++) ctx.formulas.splice(afterRow, 0, emptyRow.slice());
+    ctx.mergeMap = buildMergeMap_(sheet);
+    ctx.sections = detectSections_(ctx.values);
+  };
+
+  if (seed && seed.values && seed.values.length) {
+    ctx.lastRow  = seed.values.length;
+    ctx.lastCol  = seed.values[0] ? seed.values[0].length : 0;
+    ctx.values   = seed.values;
+    ctx.formulas = seed.formulas;
+    ctx.mergeMap = seed.mergeMap || buildMergeMap_(sheet); // мёрджи уже прочитаны в replacePlaceholders_
+    ctx.sections = detectSections_(ctx.values);
+  } else {
+    ctx.refresh();
+  }
   return ctx;
 }
 
@@ -466,9 +500,32 @@ function resolveCols_(ctx, colMap, dataRow) {
   };
 }
 
+// Quantity multiplier per assembly; defaults to 1 when not specified/invalid.
+function partQty_(config) {
+  const q = config && config.partQty;
+  return q > 0 ? q : 1;
+}
+
+// Base wire label: "<артикул|имя> <длина>мм" (пустые части отбрасываются).
+function wireBaseName_(w) {
+  return [w.art || w.name, w.length ? w.length + 'мм' : ''].filter(Boolean).join(' ');
+}
+
+// Finds the first cell matching `pattern` (tested against trimmed text).
+// Returns 0-based {row, col}; {row:-1, col:-1} if not found.
+function findColByText_(values, pattern) {
+  for (let r = 0; r < values.length; r++) {
+    const row = values[r] || [];
+    for (let c = 0; c < row.length; c++) {
+      if (pattern.test(String(row[c] || '').trim())) return { row: r, col: c };
+    }
+  }
+  return { row: -1, col: -1 };
+}
+
 // Builds the wire result name for terminal operations (used in Результат and Время sections).
 function buildWireResultName_(w, termArt, connArt, sideLabel) {
-  const base = [w.art || w.name, w.length ? w.length + 'мм' : ''].filter(Boolean).join(' ');
+  const base = wireBaseName_(w);
   const withTerm = termArt ? base + ', обжатый терминал ' + termArt : base;
   return connArt ? withTerm + ' → ' + connArt + ' сторона ' + sideLabel : withTerm;
 }
@@ -490,7 +547,7 @@ function findAndExpandSlots_(sheet, ctx, anchorRow, bound, nameCol, neededCount,
     const lastSlot = slots[slots.length - 1];
     if (insertRowsAfterSafe_(sheet, lastSlot + 1, insertCount, srcRow)) {
       for (let i = 0; i < insertCount; i++) slots.push(lastSlot + 1 + i);
-      ctx.refresh();
+      ctx.applyInsert(lastSlot + 1, insertCount);
     }
   }
   return slots;
@@ -509,7 +566,7 @@ function writeSeqNum_(sheet, rowNum, seqCol, idx, mergeMap) {
 function fillKompl_(sheet, ctx, colMap, op, config, wireData) {
   const { kompRow, sfInRow, resultRow, timeRow } = ctx.sections;
   const cols  = resolveCols_(ctx, colMap, kompRow);
-  const pQty  = (config.partQty > 0) ? config.partQty : 1;
+  const pQty  = partQty_(config);
   const opType = op.type;
   const sA = config.sideA || {};
   const sB = config.sideB || {};
@@ -538,19 +595,18 @@ function fillKompl_(sheet, ctx, colMap, op, config, wireData) {
       const lastSlot = slots[slots.length - 1];
       if (insertRowsAfterSafe_(sheet, lastSlot + 1, insertCount, kompRow + 1)) {
         for (let i = 0; i < insertCount; i++) slots.push(lastSlot + 1 + i);
-        ctx.refresh();
+        ctx.applyInsert(lastSlot + 1, insertCount);
       }
     }
     for (let i = 0; i < Math.min(wires.length, slots.length); i++) {
       const w = wires[i];
       const r = slots[i];
+      // Норма расхода в метрах; округление до 4 знаков убирает float-мусор.
       let normVal = '';
       if (w.qty > 0 && w.length > 0) {
-        const n = w.qty * w.length * pQty / 1000;
-        if (isFinite(n)) normVal = String(n).replace('.', ',');
+        normVal = formatDecimalComma_(w.qty * w.length * pQty / 1000, 4);
       } else if (w.length > 0) {
-        const n = w.length * pQty / 1000;
-        if (isFinite(n)) normVal = String(n).replace('.', ',');
+        normVal = formatDecimalComma_(w.length * pQty / 1000, 4);
       }
       writeSeqNum_(sheet, r + 1, colMap.seqCol, i, ctx.mergeMap);
       setCell_(ctx, r, cols.art,  w.art  || w.name || '');
@@ -573,11 +629,11 @@ function fillSfIn_(sheet, ctx, colMap, config, prevResult, opType) {
 
   const wires = Array.isArray(config.wires) ? config.wires : [];
   const sA    = config.sideA || {};
-  const pQty  = (config.partQty > 0) ? config.partQty : 1;
+  const pQty  = partQty_(config);
 
   let wireNames = null;
   if (opType === 'prsTermA' && wires.length > 0) {
-    wireNames = wires.map(w => [w.art || w.name, w.length ? w.length + 'мм' : ''].filter(Boolean).join(' '));
+    wireNames = wires.map(wireBaseName_);
   } else if (opType === 'insTermA' && wires.length > 0) {
     const tA = sA.termArt || sA.termName || '';
     wireNames = wires.map(w => buildWireResultName_(w, tA, '', 'А'));
@@ -590,7 +646,7 @@ function fillSfIn_(sheet, ctx, colMap, config, prevResult, opType) {
       const rowNum = slots[i] + 1;
       writeSeqNum_(sheet, rowNum, colMap.seqCol, i, ctx.mergeMap);
       fillMergedCell_(sheet, rowNum, nameC + 1, wireNames[i], ctx.mergeMap);
-      if (normC >= 0) fillMergedCell_(sheet, rowNum, normC + 1, String(wires[i].qty * pQty).replace('.', ','), ctx.mergeMap);
+      if (normC >= 0) fillMergedCell_(sheet, rowNum, normC + 1, formatDecimalComma_(wires[i].qty * pQty, 4), ctx.mergeMap);
     }
   } else {
     setCell_(ctx, sfInRow, nameC, prevResult);
@@ -601,7 +657,7 @@ function fillSfOut_(sheet, ctx, colMap, config, thisResult, opType) {
   const wires    = Array.isArray(config.wires) ? config.wires : [];
   const sA       = config.sideA || {};
   const sB       = config.sideB || {};
-  const pQty     = (config.partQty > 0) ? config.partQty : 1;
+  const pQty     = partQty_(config);
   const isCutWire = opType === 'cutWire';
   const isTermOp  = ['prsTermA','insTermA','prsTermB','insTermB'].includes(opType);
 
@@ -641,10 +697,10 @@ function fillSfOut_(sheet, ctx, colMap, config, thisResult, opType) {
       const rowNum = slots[i] + 1;
       const wName  = isTermOp
         ? buildWireResultName_(w, termArt, '', sideLbl)
-        : [w.art || w.name, w.length ? w.length + 'мм' : ''].filter(Boolean).join(' ');
+        : wireBaseName_(w);
       writeSeqNum_(sheet, rowNum, colMap.seqCol, i, ctx.mergeMap);
       fillMergedCell_(sheet, rowNum, nameC + 1, wName, ctx.mergeMap);
-      if (normC >= 0) fillMergedCell_(sheet, rowNum, normC + 1, String(w.qty * pQty).replace('.', ','), ctx.mergeMap);
+      if (normC >= 0) fillMergedCell_(sheet, rowNum, normC + 1, formatDecimalComma_(w.qty * pQty, 4), ctx.mergeMap);
     }
   } else if (nameC >= 0) {
     fillMergedCell_(sheet, fSfOut + 1, nameC + 1, thisResult, ctx.mergeMap);
@@ -658,7 +714,7 @@ function fillTime_(sheet, ctx, colMap, op, config, thisResult, opType) {
   const wires      = Array.isArray(config.wires) ? config.wires : [];
   const sA         = config.sideA || {};
   const sB         = config.sideB || {};
-  const pQty       = (config.partQty > 0) ? config.partQty : 1;
+  const pQty       = partQty_(config);
 
   const timeDataRows = [];
   for (let r = timeRow + 1; r < ctx.values.length; r++) {
@@ -684,9 +740,7 @@ function fillTime_(sheet, ctx, colMap, op, config, thisResult, opType) {
       // INS: одна строка — суммарное время на все провода
       const totalQty = wires.reduce((s, w) => s + (w.qty || 1), 0);
       const rawNorm  = tOpMin * totalQty * pQty + tPrepMin;
-      const wNorm    = isFinite(rawNorm)
-        ? String(rawNorm % 1 === 0 ? rawNorm : rawNorm.toFixed(2)).replace('.', ',')
-        : '';
+      const wNorm    = formatDecimalComma_(rawNorm, 2);
       writeSeqNum_(sheet, timeDataRows[0] + 1, colMap.seqCol, 0, ctx.mergeMap);
       fillMergedCell_(sheet, timeDataRows[0] + 1, tNameCol + 1, thisResult, ctx.mergeMap);
       if (tNormCol >= 0) fillMergedCell_(sheet, timeDataRows[0] + 1, tNormCol + 1, wNorm, ctx.mergeMap);
@@ -705,7 +759,7 @@ function fillTime_(sheet, ctx, colMap, op, config, thisResult, opType) {
         const lastSlot    = timeSlots[timeSlots.length - 1];
         if (insertRowsAfterSafe_(sheet, lastSlot + 1, insertCount, timeDataRows[0] + 1)) {
           for (let i = 0; i < insertCount; i++) timeSlots.push(lastSlot + 1 + i);
-          ctx.refresh();
+          ctx.applyInsert(lastSlot + 1, insertCount);
         }
       }
       const side     = (opType === 'prsTermA') ? sA : sB;
@@ -717,11 +771,9 @@ function fillTime_(sheet, ctx, colMap, op, config, thisResult, opType) {
         const rowNum  = timeSlots[i] + 1;
         const wName   = isTermOp
           ? buildWireResultName_(w, termArt, '', sideLbl)
-          : [w.art || w.name, w.length ? w.length + 'мм' : ''].filter(Boolean).join(' ');
+          : wireBaseName_(w);
         const rawNorm = (tOpMin > 0 ? tOpMin * w.qty * pQty : w.qty * pQty) + tPrepPerWire;
-        const wNorm   = isFinite(rawNorm)
-          ? String(rawNorm % 1 === 0 ? rawNorm : rawNorm.toFixed(2)).replace('.', ',')
-          : '';
+        const wNorm   = formatDecimalComma_(rawNorm, 2);
         writeSeqNum_(sheet, rowNum, colMap.seqCol, i, ctx.mergeMap);
         fillMergedCell_(sheet, rowNum, tNameCol + 1, wName, ctx.mergeMap);
         if (tNormCol >= 0) fillMergedCell_(sheet, rowNum, tNormCol + 1, wNorm, ctx.mergeMap);
@@ -743,12 +795,7 @@ function fillTime_(sheet, ctx, colMap, op, config, thisResult, opType) {
 
 function fillDopusk_(sheet, ctx, wireData) {
   const wd = wireData || {};
-  let dopuskCol = -1;
-  outer: for (let r = 0; r < ctx.values.length; r++) {
-    for (let c = 0; c < (ctx.values[r] || []).length; c++) {
-      if (/^допуск$/i.test(String((ctx.values[r] || [])[c] || '').trim())) { dopuskCol = c; break outer; }
-    }
-  }
+  const dopuskCol = findColByText_(ctx.values, /^допуск$/i).col;
   if (dopuskCol < 0) return;
   const tolStr = buildCutTolerance_(wd);
   const lenStr = buildCutLengthKd_(wd);
@@ -765,12 +812,7 @@ function fillDopusk_(sheet, ctx, wireData) {
 }
 
 function fillTerminalFields_(sheet, ctx, terData) {
-  let dopCol = -1;
-  outerDop: for (let r = 0; r < ctx.values.length; r++) {
-    for (let c = 0; c < (ctx.values[r] || []).length; c++) {
-      if (/^допуск$/i.test(String((ctx.values[r] || [])[c] || '').trim())) { dopCol = c; break outerDop; }
-    }
-  }
+  const dopCol = findColByText_(ctx.values, /^допуск$/i).col;
   if (dopCol >= 0) {
     for (let r = 0; r < ctx.values.length; r++) {
       const rowText     = (ctx.values[r] || []).map(c => String(c || '').toLowerCase()).join(' ');
@@ -788,14 +830,8 @@ function fillTerminalFields_(sheet, ctx, terData) {
     }
   }
   if (!terData.applicator) return;
-  let progRow = -1, progCol = -1;
-  outerProg: for (let r = 0; r < ctx.values.length; r++) {
-    for (let c = 0; c < (ctx.values[r] || []).length; c++) {
-      if (/№\s*прог/i.test(String((ctx.values[r] || [])[c] || '').trim())) {
-        progRow = r; progCol = c; break outerProg;
-      }
-    }
-  }
+  const prog = findColByText_(ctx.values, /№\s*прог/i);
+  const progRow = prog.row, progCol = prog.col;
   if (progRow >= 0 && progCol >= 0) {
     for (let dr = progRow + 1; dr < Math.min(progRow + 8, ctx.values.length); dr++) {
       if (!String((ctx.values[dr] || [])[progCol] || '').trim()) {
@@ -808,8 +844,8 @@ function fillTerminalFields_(sheet, ctx, terData) {
 
 // ── Structural fill orchestrator ──────────────────────────────
 
-function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisResult, wireData, terData) {
-  const ctx    = makeSheetCtx_(sheet);
+function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisResult, wireData, terData, sheetState) {
+  const ctx    = makeSheetCtx_(sheet, sheetState);
   if (ctx.lastRow < 1) return;
   const colMap = detectGlobalColumns_(ctx.values);
   const isCutWire = opType === 'cutWire';
@@ -832,16 +868,117 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
 
 // ── Row insertion ─────────────────────────────────────────────
 
-// Inserts `count` rows after `afterRow` (1-based), handling merged cells gracefully.
-// Unmerges everything, inserts, copies srcRow template, then restores merges.
+// Inserts `count` rows after `afterRow` (1-based), copying srcRow as the template.
+// Быстрый путь — один Sheets API batchUpdate (insertDimension сам сдвигает все
+// объединения ниже, copyPaste тиражирует строку-шаблон). При сбое/недоступности
+// API откатывается на проверенный SpreadsheetApp-путь (legacy).
 function insertRowsAfterSafe_(sheet, afterRow, count, srcRow) {
+  if (typeof Sheets !== 'undefined') {
+    try {
+      const r = insertRowsViaSheetsApi_(sheet, afterRow, count, srcRow);
+      recordInsertOutcome_('api-ok');
+      return r;
+    } catch (e) {
+      recordInsertOutcome_('FALLBACK: ' + (e && e.message));
+      // падаем на legacy ниже
+    }
+  } else {
+    recordInsertOutcome_('FALLBACK: Sheets undefined');
+  }
+  return insertRowsAfterLegacy_(sheet, afterRow, count, srcRow);
+}
+
+// Записывает исход последней вставки строк (диагностика причины мигания).
+function recordInsertOutcome_(outcome) {
+  try {
+    PropertiesService.getDocumentProperties()
+      .setProperty('tc_last_insert', outcome + '  @' + new Date().toISOString());
+  } catch (e) {}
+}
+
+/**
+ * Вставка строк одним вызовом Sheets API. Последовательность в одном batchUpdate
+ * (атомарно, без мигания):
+ *   1) insertDimension — вставляет строки, сам сдвигает содержимое/объединения ниже;
+ *   2) unmergeCells по новым строкам — снимает объединения, которые insertDimension
+ *      растянул на новые строки (вертикальные метки секций, пересекающие точку вставки),
+ *      иначе copyPaste падает «нельзя вставить в диапазон с объединениями»;
+ *   3) copyPaste строки-шаблона в каждую новую строку;
+ *   4) mergeCells — пересоздаёт пересекающие объединения уже растянутыми на count.
+ */
+function insertRowsViaSheetsApi_(sheet, afterRow, count, srcRow) {
+  // КРИТИЧНО: сбросить отложенные записи SpreadsheetApp ДО серверной правки,
+  // иначе они лягут на дореставочные позиции строк после сдвига.
+  SpreadsheetApp.flush();
+
+  const sheetId     = sheet.getSheetId();
+  const lastCol     = sheet.getLastColumn();
+  const adjustedSrc = srcRow > afterRow ? srcRow + count : srcRow; // позиция шаблона после вставки
+  const srcIdx      = adjustedSrc - 1; // 0-based
+
+  // Объединения, ПЕРЕСЕКАЮЩИЕ точку вставки (r1 ≤ afterRow < r2) — их insertDimension
+  // растянет на новые строки. Снимем по новым строкам и пересоздадим растянутыми.
+  const crossing = sheet.getRange(1, 1, sheet.getLastRow(), lastCol).getMergedRanges()
+    .map(r => ({ r1: r.getRow(), r2: r.getLastRow(), c1: r.getColumn(), c2: r.getLastColumn() }))
+    .filter(m => m.r1 <= afterRow && m.r2 > afterRow);
+
+  const requests = [{
+    insertDimension: {
+      range: { sheetId, dimension: 'ROWS', startIndex: afterRow, endIndex: afterRow + count },
+      inheritFromBefore: afterRow > 0,
+    },
+  }];
+
+  // Снимаем каждое пересекающее объединение по ПОЛНОМУ (растянутому) диапазону —
+  // unmergeCells требует выделить весь диапазон объединения, не часть.
+  crossing.forEach(m => {
+    requests.push({
+      unmergeCells: {
+        range: { sheetId, startRowIndex: m.r1 - 1, endRowIndex: m.r2 + count, startColumnIndex: m.c1 - 1, endColumnIndex: m.c2 },
+      },
+    });
+  });
+
+  for (let i = 0; i < count; i++) {
+    const destIdx = afterRow + i; // 0-based новая строка
+    requests.push({
+      copyPaste: {
+        source:      { sheetId, startRowIndex: srcIdx,  endRowIndex: srcIdx + 1,  startColumnIndex: 0, endColumnIndex: lastCol },
+        destination: { sheetId, startRowIndex: destIdx, endRowIndex: destIdx + 1, startColumnIndex: 0, endColumnIndex: lastCol },
+        pasteType: 'PASTE_NORMAL',
+        pasteOrientation: 'NORMAL',
+      },
+    });
+  }
+
+  // Восстанавливаем пересекающие объединения уже растянутыми на count строк.
+  crossing.forEach(m => {
+    requests.push({
+      mergeCells: {
+        mergeType: 'MERGE_ALL',
+        range: { sheetId, startRowIndex: m.r1 - 1, endRowIndex: m.r2 + count, startColumnIndex: m.c1 - 1, endColumnIndex: m.c2 },
+      },
+    });
+  });
+
+  Sheets.Spreadsheets.batchUpdate({ requests }, SpreadsheetApp.getActive().getId());
+  return true;
+}
+
+// Проверенный SpreadsheetApp-путь: разрыв затронутых объединений → insertRowsAfter →
+// построчный copyTo → восстановление. Используется как fallback.
+function insertRowsAfterLegacy_(sheet, afterRow, count, srcRow) {
   const lastCol = sheet.getLastColumn();
 
   const fullRange = sheet.getRange(1, 1, sheet.getLastRow(), sheet.getLastColumn());
-  const merges = fullRange.getMergedRanges().map(r => ({
+  const allMerges = fullRange.getMergedRanges().map(r => ({
     r1: r.getRow(), r2: r.getLastRow(),
     c1: r.getColumn(), c2: r.getLastColumn()
   }));
+  // insertRowsAfter не трогает объединения, целиком расположенные ВЫШЕ точки
+  // вставки. Ломаем/восстанавливаем только затронутые (r2 > afterRow) — результат
+  // идентичен полному перебору, но работы заметно меньше (шапка карты выше зоны вставки).
+  const merges = allMerges.filter(m => m.r2 > afterRow);
 
   merges.forEach(m => {
     try {
@@ -871,7 +1008,8 @@ function insertRowsAfterSafe_(sheet, afterRow, count, srcRow) {
   });
 
   // Применяем горизонтальные объединения исходной строки к каждой новой
-  const srcRowMerges = merges.filter(m => m.r1 === srcRow && m.r2 === srcRow && m.c2 > m.c1);
+  // (ищем среди ВСЕХ — строка-шаблон может быть выше afterRow и не попасть в merges)
+  const srcRowMerges = allMerges.filter(m => m.r1 === srcRow && m.r2 === srcRow && m.c2 > m.c1);
   for (let i = 1; i <= count; i++) {
     srcRowMerges.forEach(m => {
       try { sheet.getRange(afterRow + i, m.c1, 1, m.c2 - m.c1 + 1).merge(); } catch (e) {}

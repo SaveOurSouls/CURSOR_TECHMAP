@@ -29,8 +29,8 @@ const TECHOPS_DB_APP = {
     'extra1', 'extra2', 'extra3', 'extra4', 'extra5', 'extra6', 'extra7', 'extra8',
     'extra9', 'extra10', 'extra11', 'extra12',
   ],
-  cacheKeyPrefix:   'techmap-techops-db-v11',
-  schemaVersion:    11,
+  cacheKeyPrefix:   'techmap-techops-db-v12',
+  schemaVersion:    12,
   cacheChunkSize:   80000,
   cacheTtlSeconds:  21600,
   tabs: {

@@ -33,12 +33,66 @@ function toInt_(value) {
   return Number.isFinite(n) ? Math.trunc(n) : 0;
 }
 
+/**
+ * Форматирует число для записи в техкарту: округляет до maxDecimals знаков,
+ * срезает хвостовые нули и использует запятую как десятичный разделитель
+ * (конвенция проекта). Единый источник форматирования дробных значений —
+ * устраняет float-мусор вида "0,31100000000000005" в нормах расхода.
+ *
+ * @param {number|string} value      число или строка (с . или , разделителем)
+ * @param {number}        [maxDecimals=2] максимум знаков после запятой
+ * @returns {string} форматированная строка или '' для нечислового/пустого ввода
+ */
+function formatDecimalComma_(value, maxDecimals) {
+  const n = typeof value === 'number'
+    ? value
+    : parseFloat(String(value === null || value === undefined ? '' : value).replace(',', '.'));
+  if (!isFinite(n)) return '';
+  const d = maxDecimals === undefined ? 2 : maxDecimals;
+  return String(Number(n.toFixed(d))).replace('.', ',');
+}
+
 /** Конвертирует секунды в минуты; возвращает '' если значение равно нулю. */
 function secToMin_(value) {
   const s = parseFloat(String(value || '').replace(',', '.'));
   if (!s) return '';
   const m = s / 60;
   return String(m % 1 === 0 ? m : m.toFixed(2)).replace('.', ',');
+}
+
+/**
+ * Нормализует десятичный разделитель технического числа к запятой (конвенция
+ * проекта для L+/L-/шага/обжима и т.п.). Чистая функция, не зависит от Sheets.
+ *
+ * Правило: если значение целиком парсится как число (опц. знак, цифры, один
+ * разделитель . или ,) — заменяет точку на запятую. Любое нечисловое значение
+ * (буквы, единицы измерения, диапазоны) возвращается без изменений — данные
+ * не теряются и не искажаются.
+ *
+ * @param {*} value входное значение (строка/число/пусто)
+ * @returns {string} нормализованная строка или '' для пустого ввода
+ */
+function normalizeTechnicalDecimal_(value) {
+  const str = String(value === null || value === undefined ? '' : value).trim();
+  if (str === '') return '';
+  return /^[+-]?\d+([.,]\d+)?$/.test(str) ? str.replace('.', ',') : str;
+}
+
+/**
+ * Сериализует объект в JSON для безопасного встраивания в <script> через
+ * GAS-скриптлет <?!= ... ?> (неэкранированный вывод). Экранирует символы,
+ * которыми пользовательские данные (напр. название шаблона) могли бы
+ * вырваться из script-контекста или сломать JS-литерал:
+ *   <  >  → \uXXXX (предотвращает </script> breakout — stored XSS),
+ *   U+2028 / U+2029 → \uXXXX (иначе обрывают строковый литерал JS).
+ *
+ * @param {*} obj любой JSON-сериализуемый объект
+ * @returns {string} безопасная для встраивания JSON-строка
+ */
+function embedJsonForHtml_(obj) {
+  return JSON.stringify(obj).replace(/[<>\u2028\u2029]/g, function (ch) {
+    return '\\u' + ch.charCodeAt(0).toString(16).padStart(4, '0');
+  });
 }
 
 /** Парсит JSON-массив; возвращает [] при ошибке или пустом значении. */
@@ -49,6 +103,24 @@ function parseJsonArray_(value) {
     return Array.isArray(parsed) ? parsed : [];
   } catch (e) {
     return [];
+  }
+}
+
+/**
+ * Безопасно парсит JSON; возвращает fallback при пустом/битом значении.
+ * Заменяет россыпь inline try/catch в путях загрузки снапшота.
+ *
+ * @param {*} value      сырая строка JSON
+ * @param {*} fallback   значение по умолчанию при ошибке/пустом вводе
+ * @returns {*} распарсенный объект или fallback
+ */
+function safeJsonParse_(value, fallback) {
+  if (value === null || value === undefined || value === '') return fallback;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed === null || parsed === undefined ? fallback : parsed;
+  } catch (e) {
+    return fallback;
   }
 }
 
@@ -73,6 +145,57 @@ function ensureSheetCapacity_(sheet, requiredRows, requiredColumns) {
   if (sheet.getMaxColumns() < requiredColumns) {
     sheet.insertColumnsAfter(sheet.getMaxColumns(), requiredColumns - sheet.getMaxColumns());
   }
+}
+
+/**
+ * Записывает строку заголовков в row 1 листа единым батч-вызовом
+ * с фирменным оформлением (жирный + фон). Единый источник стиля шапки
+ * для всех служебных листов.
+ *
+ * @param {Sheet}    sheet   целевой лист
+ * @param {string[]} headers массив заголовков колонок
+ * @param {string}   [background='#f3f6fc'] цвет фона шапки
+ */
+function writeSheetHeader_(sheet, headers, background) {
+  sheet
+    .getRange(1, 1, 1, headers.length)
+    .setValues([headers])
+    .setFontWeight('bold')
+    .setBackground(background || '#f3f6fc');
+}
+
+/**
+ * Применяет значения размеров (высоты строк / ширины колонок) к листу,
+ * группируя подряд идущие одинаковые значения в один батч-вызов сеттера
+ * (run-length encoding). Нулевые/пустые значения пропускаются.
+ *
+ * @param {number[]} values массив размеров (px), индекс 0 = start
+ * @param {number}   start  1-based начальная строка/колонка
+ * @param {function(number, number, number)} setter (startIndex, count, size)
+ */
+function applyRunLengthDimensions_(values, start, setter) {
+  let i = 0;
+  while (i < values.length) {
+    const size = values[i];
+    if (!size) { i += 1; continue; }
+    let j = i + 1;
+    while (j < values.length && values[j] === size) j += 1;
+    setter(start + i, j - i, size);
+    i = j;
+  }
+}
+
+/**
+ * Проверяет наличие колонки в карте заголовков. Корректно обрабатывает
+ * индекс 0 (первая колонка) в отличие от простого truthy-чека.
+ *
+ * @param {Object} headerMap карта normalizedHeader → columnIndex
+ * @param {string} key       нормализованный ключ заголовка
+ * @returns {boolean}
+ */
+function hasHeader_(headerMap, key) {
+  const idx = headerMap[key];
+  return idx === 0 || idx > 0;
 }
 
 /**

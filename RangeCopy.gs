@@ -11,24 +11,29 @@
  * смещение относительных ссылок.
  */
 function copyRangePreservingFormulas_(sourceRange, targetRange) {
-  const srcSheet   = sourceRange.getSheet();
-  const dstSheet   = targetRange.getSheet();
-  const hideSrc    = srcSheet.isSheetHidden();
-  const hideDst    = dstSheet.isSheetHidden();
-  if (hideSrc) srcSheet.showSheet();
-  if (hideDst) dstSheet.showSheet();
+  const srcSheet = sourceRange.getSheet();
+  const ss       = SpreadsheetApp.getActive();
 
-  const ss          = SpreadsheetApp.getActive();
-  const priorActive = ss.getActiveSheet();
+  targetRange.breakApart();
 
-  try {
-    targetRange.breakApart();
+  let formulas;
+  try { formulas = sourceRange.getFormulas(); } catch (e) { formulas = null; }
 
-    let formulas;
-    try { formulas = sourceRange.getFormulas(); } catch (e) { formulas = null; }
+  // Быстрый путь: Sheets API copyPaste (по sheetId) работает на СКРЫТЫХ листах
+  // и применяет значения+формат+мёрджи атомарно. Не показываем _TC_STORE и не
+  // переключаем активный лист — нет мигания и «сброса/возврата» форматирования.
+  const copiedViaSheetsApi = tryCopyRangeViaSheetsApi_(sourceRange, targetRange);
 
-    const copiedViaSheetsApi = tryCopyRangeViaSheetsApi_(sourceRange, targetRange);
-    if (!copiedViaSheetsApi) {
+  if (!copiedViaSheetsApi) {
+    // Фолбэк copyTo требует видимый и активный лист (на полностью скрытом падает).
+    // Только здесь временно показываем листы и прячем обратно в finally.
+    const dstSheet    = targetRange.getSheet();
+    const hideSrc     = srcSheet.isSheetHidden();
+    const hideDst     = dstSheet.isSheetHidden();
+    const priorActive = ss.getActiveSheet();
+    if (hideSrc) srcSheet.showSheet();
+    if (hideDst) dstSheet.showSheet();
+    try {
       try {
         ss.setActiveSheet(srcSheet);
         SpreadsheetApp.flush();
@@ -42,19 +47,19 @@ function copyRangePreservingFormulas_(sourceRange, targetRange) {
         SpreadsheetApp.flush();
         copyRangeFormatPreservingMerges_(sourceRange, targetRange, ss, priorActive, srcSheet, dstSheet);
       }
-    }
-
-    if (formulas) applySourceFormulasCellwise_(targetRange, formulas);
-
-    // in-cell изображения PASTE_NORMAL не переносит — явно копируем через API
-    copyInCellImageValues_(sourceRange, targetRange);
-  } finally {
-    if (hideSrc) srcSheet.hideSheet();
-    if (hideDst) dstSheet.hideSheet();
-    if (priorActive && !isSystemSheet_(priorActive.getName())) {
-      try { ss.setActiveSheet(priorActive); } catch (e) {}
+    } finally {
+      if (hideSrc) srcSheet.hideSheet();
+      if (hideDst) dstSheet.hideSheet();
+      if (priorActive && !isSystemSheet_(priorActive.getName())) {
+        try { ss.setActiveSheet(priorActive); } catch (e) {}
+      }
     }
   }
+
+  if (formulas) applySourceFormulasCellwise_(targetRange, formulas);
+
+  // in-cell изображения PASTE_NORMAL не переносит — явно копируем через API
+  copyInCellImageValues_(sourceRange, targetRange);
 }
 
 /**

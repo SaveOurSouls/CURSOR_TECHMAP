@@ -1043,7 +1043,7 @@
 
       function startCatalogPoll() {
         if (catalogPollTimer) return;
-        catalogPollTimer = setInterval(pollCatalogVersion, 1000);
+        catalogPollTimer = setInterval(pollCatalogVersion, 2500);
       }
 
       function stopCatalogPoll() {
@@ -1185,6 +1185,41 @@
         return String(value || '').toLowerCase().replace(/\s+/g, '');
       }
 
+      // Builds a collapsible operations-tree group node. Returns {header, childUl}
+      // with the ▶-arrow / label / count layout and click-to-toggle already wired.
+      // opts: { open, pad, color, weight }. Used by all four DB tree renderers.
+      function mkOpGroup_(label, count, opts) {
+        const o = opts || {};
+        const header = document.createElement('div');
+        header.className = 'op-group-header' + (o.open ? ' open' : '');
+        if (o.pad)    header.style.paddingLeft = o.pad;
+        if (o.color)  header.style.color = o.color;
+        if (o.weight) header.style.fontWeight = o.weight;
+
+        const arrow = document.createElement('span');
+        arrow.className = 'op-arrow';
+        arrow.textContent = '▶';
+        const name = document.createElement('span');
+        name.textContent = label;
+        const cnt = document.createElement('span');
+        cnt.className = 'op-group-count';
+        cnt.textContent = count;
+        header.appendChild(arrow);
+        header.appendChild(name);
+        header.appendChild(cnt);
+
+        const childUl = document.createElement('ul');
+        childUl.className = 'op-children' + (o.open ? ' open' : '');
+
+        header.onclick = function () {
+          const isOpen = header.classList.contains('open');
+          header.classList.toggle('open', !isOpen);
+          childUl.classList.toggle('open', !isOpen);
+        };
+
+        return { header, childUl };
+      }
+
       function renderOperationResults(dbKey) {
         if (dbKey === 'dbOb') {
           renderObTree();
@@ -1270,43 +1305,17 @@
 
         groups.forEach((items, groupName) => {
           const li = document.createElement('li');
-
-          const header = document.createElement('div');
-          header.className = 'op-group-header' + (firstGroup && query ? ' open' : '');
-
-          const arrow = document.createElement('span');
-          arrow.className = 'op-arrow';
-          arrow.textContent = '▶';
-
-          const nameSpan = document.createElement('span');
-          nameSpan.textContent = groupName;
-
-          const count = document.createElement('span');
-          count.className = 'op-group-count';
-          count.textContent = items.length;
-
-          header.appendChild(arrow);
-          header.appendChild(nameSpan);
-          header.appendChild(count);
-
-          const childList = document.createElement('ul');
-          childList.className = 'op-children' + (firstGroup && query ? ' open' : '');
+          const { header, childUl } = mkOpGroup_(groupName, items.length, { open: firstGroup && !!query });
 
           items.forEach((item) => {
             const child = document.createElement('li');
             child.textContent = item.label;
             child.onclick = function() { addOperationToQueue('dbOb', item); };
-            childList.appendChild(child);
+            childUl.appendChild(child);
           });
 
-          header.onclick = function() {
-            const isOpen = header.classList.contains('open');
-            header.classList.toggle('open', !isOpen);
-            childList.classList.toggle('open', !isOpen);
-          };
-
           li.appendChild(header);
-          li.appendChild(childList);
+          li.appendChild(childUl);
           fragment.appendChild(li);
           firstGroup = false;
         });
@@ -1353,27 +1362,7 @@
 
         groups.forEach((leaves, groupName) => {
           const li = document.createElement('li');
-
-          const header = document.createElement('div');
-          header.className = 'op-group-header' + (firstGroup && query ? ' open' : '');
-
-          const arrow = document.createElement('span');
-          arrow.className = 'op-arrow';
-          arrow.textContent = '▶';
-
-          const nameSpan = document.createElement('span');
-          nameSpan.textContent = groupName;
-
-          const count = document.createElement('span');
-          count.className = 'op-group-count';
-          count.textContent = leaves.length;
-
-          header.appendChild(arrow);
-          header.appendChild(nameSpan);
-          header.appendChild(count);
-
-          const childList = document.createElement('ul');
-          childList.className = 'op-children' + (firstGroup && query ? ' open' : '');
+          const { header, childUl } = mkOpGroup_(groupName, leaves.length, { open: firstGroup && !!query });
 
           leaves.forEach(({ item, leafText }) => {
             const child = document.createElement('li');
@@ -1382,17 +1371,11 @@
             child.onclick = function onClick() {
               addOperationToQueue('dbOp', item);
             };
-            childList.appendChild(child);
+            childUl.appendChild(child);
           });
 
-          header.onclick = function onHeaderClick() {
-            const isOpen = header.classList.contains('open');
-            header.classList.toggle('open', !isOpen);
-            childList.classList.toggle('open', !isOpen);
-          };
-
           li.appendChild(header);
-          li.appendChild(childList);
+          li.appendChild(childUl);
           fragment.appendChild(li);
           firstGroup = false;
         });
@@ -1436,24 +1419,6 @@
           stepMap.get(step).push({ item, art });
         });
 
-        const mkHdr = (pad, color, weight) => {
-          const d = document.createElement('div');
-          d.className = 'op-group-header';
-          if (pad)    d.style.paddingLeft = pad;
-          if (color)  d.style.color = color;
-          if (weight) d.style.fontWeight = weight;
-          return d;
-        };
-        const mkArrow = () => { const s = document.createElement('span'); s.className = 'op-arrow'; s.textContent = '▶'; return s; };
-        const mkCount = (n) => { const s = document.createElement('span'); s.className = 'op-group-count'; s.textContent = n; return s; };
-        const mkLabel = (text) => { const s = document.createElement('span'); s.textContent = text; return s; };
-        const mkUl = (cls) => { const u = document.createElement('ul'); u.className = cls; return u; };
-        const toggle = (hdr, ul) => hdr.onclick = function() {
-          const o = hdr.classList.contains('open');
-          hdr.classList.toggle('open', !o);
-          ul.classList.toggle('open', !o);
-        };
-
         const fragment = document.createDocumentFragment();
         let firstMfr = true;
 
@@ -1462,39 +1427,25 @@
           compMap.forEach((sm) => sm.forEach((stm) => stm.forEach((a) => { total += a.length; })));
 
           const mfrLi = document.createElement('li');
-          const mfrHdr = mkHdr(null, null, null);
-          mfrHdr.className += (firstMfr && query ? ' open' : '');
-          mfrHdr.appendChild(mkArrow()); mfrHdr.appendChild(mkLabel(mfrName)); mfrHdr.appendChild(mkCount(total));
-
-          const mfrUl = mkUl('op-children' + (firstMfr && query ? ' open' : ''));
-          toggle(mfrHdr, mfrUl);
+          const mfr = mkOpGroup_(mfrName, total, { open: firstMfr && !!query });
 
           compMap.forEach((serMap, compName) => {
             let compTotal = 0;
             serMap.forEach((stm) => stm.forEach((a) => { compTotal += a.length; }));
 
             const compLi = document.createElement('li'); compLi.style.padding = '0';
-            const compHdr = mkHdr('20px', '#3c4043', 'normal');
-            compHdr.appendChild(mkArrow()); compHdr.appendChild(mkLabel(compName)); compHdr.appendChild(mkCount(compTotal));
-            const compUl = mkUl('op-children');
-            toggle(compHdr, compUl);
+            const comp = mkOpGroup_(compName, compTotal, { pad: '20px', color: '#3c4043', weight: 'normal' });
 
             serMap.forEach((stepMap, serName) => {
               let serTotal = 0;
               stepMap.forEach((a) => { serTotal += a.length; });
 
               const serLi = document.createElement('li'); serLi.style.padding = '0';
-              const serHdr = mkHdr('32px', '#5f6368', 'normal');
-              serHdr.appendChild(mkArrow()); serHdr.appendChild(mkLabel(serName)); serHdr.appendChild(mkCount(serTotal));
-              const serUl = mkUl('op-children');
-              toggle(serHdr, serUl);
+              const ser = mkOpGroup_(serName, serTotal, { pad: '32px', color: '#5f6368', weight: 'normal' });
 
               stepMap.forEach((leaves, stepName) => {
                 const stepLi = document.createElement('li'); stepLi.style.padding = '0';
-                const stepHdr = mkHdr('44px', '#80868b', 'normal');
-                stepHdr.appendChild(mkArrow()); stepHdr.appendChild(mkLabel(stepName)); stepHdr.appendChild(mkCount(leaves.length));
-                const stepUl = mkUl('op-children');
-                toggle(stepHdr, stepUl);
+                const stepG = mkOpGroup_(stepName, leaves.length, { pad: '44px', color: '#80868b', weight: 'normal' });
 
                 leaves.forEach(({ item, art }) => {
                   const child = document.createElement('li');
@@ -1502,26 +1453,26 @@
                   child.textContent = art;
                   child.title = item.label;
                   child.onclick = function() { addOperationToQueue('dbTer', item); };
-                  stepUl.appendChild(child);
+                  stepG.childUl.appendChild(child);
                 });
 
-                stepLi.appendChild(stepHdr);
-                stepLi.appendChild(stepUl);
-                serUl.appendChild(stepLi);
+                stepLi.appendChild(stepG.header);
+                stepLi.appendChild(stepG.childUl);
+                ser.childUl.appendChild(stepLi);
               });
 
-              serLi.appendChild(serHdr);
-              serLi.appendChild(serUl);
-              compUl.appendChild(serLi);
+              serLi.appendChild(ser.header);
+              serLi.appendChild(ser.childUl);
+              comp.childUl.appendChild(serLi);
             });
 
-            compLi.appendChild(compHdr);
-            compLi.appendChild(compUl);
-            mfrUl.appendChild(compLi);
+            compLi.appendChild(comp.header);
+            compLi.appendChild(comp.childUl);
+            mfr.childUl.appendChild(compLi);
           });
 
-          mfrLi.appendChild(mfrHdr);
-          mfrLi.appendChild(mfrUl);
+          mfrLi.appendChild(mfr.header);
+          mfrLi.appendChild(mfr.childUl);
           fragment.appendChild(mfrLi);
           firstMfr = false;
         });
@@ -1573,15 +1524,7 @@
           types.forEach((mm) => mm.forEach((aa) => { total += aa.length; }));
 
           const wireLi = document.createElement('li');
-          const wireHdr = document.createElement('div');
-          wireHdr.className = 'op-group-header' + (first && query ? ' open' : '');
-          const wa = document.createElement('span'); wa.className = 'op-arrow'; wa.textContent = '▶';
-          const ws = document.createElement('span'); ws.textContent = wireName;
-          const wc = document.createElement('span'); wc.className = 'op-group-count'; wc.textContent = total;
-          wireHdr.appendChild(wa); wireHdr.appendChild(ws); wireHdr.appendChild(wc);
-
-          const wireUl = document.createElement('ul');
-          wireUl.className = 'op-children' + (first && query ? ' open' : '');
+          const wire = mkOpGroup_(wireName, total, { open: first && !!query });
 
           types.forEach((mfrs, typeName) => {
             // L2: Тип/Серия
@@ -1590,35 +1533,13 @@
 
             const typeLi = document.createElement('li');
             typeLi.style.padding = '0';
-            const typeHdr = document.createElement('div');
-            typeHdr.className = 'op-group-header';
-            typeHdr.style.paddingLeft = '20px';
-            typeHdr.style.fontWeight = 'normal';
-            typeHdr.style.color = '#3c4043';
-            const ta = document.createElement('span'); ta.className = 'op-arrow'; ta.textContent = '▶';
-            const ts = document.createElement('span'); ts.textContent = typeName;
-            const tc = document.createElement('span'); tc.className = 'op-group-count'; tc.textContent = typeTotal;
-            typeHdr.appendChild(ta); typeHdr.appendChild(ts); typeHdr.appendChild(tc);
-
-            const typeUl = document.createElement('ul');
-            typeUl.className = 'op-children';
+            const type = mkOpGroup_(typeName, typeTotal, { pad: '20px', color: '#3c4043', weight: 'normal' });
 
             mfrs.forEach((leaves, mfrName) => {
               // L3: Производитель
               const mfrLi = document.createElement('li');
               mfrLi.style.padding = '0';
-              const mfrHdr = document.createElement('div');
-              mfrHdr.className = 'op-group-header';
-              mfrHdr.style.paddingLeft = '32px';
-              mfrHdr.style.fontWeight = 'normal';
-              mfrHdr.style.color = '#5f6368';
-              const ma = document.createElement('span'); ma.className = 'op-arrow'; ma.textContent = '▶';
-              const ms = document.createElement('span'); ms.textContent = mfrName;
-              const mc = document.createElement('span'); mc.className = 'op-group-count'; mc.textContent = leaves.length;
-              mfrHdr.appendChild(ma); mfrHdr.appendChild(ms); mfrHdr.appendChild(mc);
-
-              const mfrUl = document.createElement('ul');
-              mfrUl.className = 'op-children';
+              const mfr = mkOpGroup_(mfrName, leaves.length, { pad: '32px', color: '#5f6368', weight: 'normal' });
 
               // L4: Артикул (leaf, clickable)
               leaves.forEach(({ item, article }) => {
@@ -1627,36 +1548,21 @@
                 child.textContent = article;
                 child.title = item.label;
                 child.onclick = function() { addOperationToQueue('dbKoax', item); };
-                mfrUl.appendChild(child);
+                mfr.childUl.appendChild(child);
               });
 
-              mfrHdr.onclick = function() {
-                const o = mfrHdr.classList.contains('open');
-                mfrHdr.classList.toggle('open', !o);
-                mfrUl.classList.toggle('open', !o);
-              };
-              mfrLi.appendChild(mfrHdr);
-              mfrLi.appendChild(mfrUl);
-              typeUl.appendChild(mfrLi);
+              mfrLi.appendChild(mfr.header);
+              mfrLi.appendChild(mfr.childUl);
+              type.childUl.appendChild(mfrLi);
             });
 
-            typeHdr.onclick = function() {
-              const o = typeHdr.classList.contains('open');
-              typeHdr.classList.toggle('open', !o);
-              typeUl.classList.toggle('open', !o);
-            };
-            typeLi.appendChild(typeHdr);
-            typeLi.appendChild(typeUl);
-            wireUl.appendChild(typeLi);
+            typeLi.appendChild(type.header);
+            typeLi.appendChild(type.childUl);
+            wire.childUl.appendChild(typeLi);
           });
 
-          wireHdr.onclick = function() {
-            const o = wireHdr.classList.contains('open');
-            wireHdr.classList.toggle('open', !o);
-            wireUl.classList.toggle('open', !o);
-          };
-          wireLi.appendChild(wireHdr);
-          wireLi.appendChild(wireUl);
+          wireLi.appendChild(wire.header);
+          wireLi.appendChild(wire.childUl);
           fragment.appendChild(wireLi);
           first = false;
         });
@@ -2103,7 +2009,7 @@
 
         restoreMainTab();
         loadTemplates();
-        ensureOperationsLoaded(true); // всегда синхронизировать при открытии сайдбара
+        ensureOperationsLoaded(false); // быстрый старт из кеша; обновление — кнопкой «Обновить»
       });
 
     </script>
