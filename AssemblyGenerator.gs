@@ -156,11 +156,16 @@ function generateAssemblyTechCards(config) {
   const ss = SpreadsheetApp.getActive();
   const createdSheets = [];
   let prevResult = '';
+  let prevResultNorm = ''; // норма выхода предыдущей операции → норма входа текущей
   const terRecords = readTerRecordsForGenerator_();
 
+  // Только операции с выбранным шаблоном; последняя из них — финальный лист (изделие).
+  const ops = config.ops.filter(o => o.templateId);
+
   try {
-    for (const op of config.ops) {
-      if (!op.templateId) continue;
+    for (let i = 0; i < ops.length; i++) {
+      const op = ops[i];
+      const isLast = i === ops.length - 1;
 
       const wireData = (op.type === 'cutWire' && Array.isArray(config.wires))
         ? buildCombinedWireData_(config.wires)
@@ -175,9 +180,10 @@ function generateAssemblyTechCards(config) {
       const phMap = buildPlaceholderMap_(op, config, prevResult, thisResult, wireData, terData);
       const sheetState = replacePlaceholders_(sheet, phMap);
 
-      fillTechCardStructurally_(sheet, op, op.type, config, prevResult, thisResult, wireData, terData, sheetState);
+      fillTechCardStructurally_(sheet, op, op.type, config, prevResult, thisResult, wireData, terData, sheetState, prevResultNorm, isLast);
 
       prevResult = thisResult;
+      prevResultNorm = computeOutputNorm_(op.type, config);
       createdSheets.push(insertResult.sheetName);
     }
 
@@ -538,6 +544,30 @@ function findColByText_(values, pattern) {
   return { row: -1, col: -1 };
 }
 
+// Норма ВЫХОДА операции = норма ВХОДА следующей (результат перетекает в след. лист).
+// Для одиночной заготовки (ins/prsB) — (кол-во контактов на провод × кол-во сборок).
+// Для пооперационных (cut/prsA) выход пооводной — одиночной нормы нет (следующая
+// операция берёт вход пооводно), возвращаем ''.
+function computeOutputNorm_(opType, config) {
+  const wires = Array.isArray(config.wires) ? config.wires : [];
+  const pQty = partQty_(config);
+  if (['insTermA', 'insTermB', 'prsTermB'].includes(opType) && wires.length) {
+    return String((wires[0].qty || 1) * pQty);
+  }
+  return '';
+}
+
+// Перезаписывает ярлык «Полуфабрикат»/«П/Ф» в строке rowIdx (0-based) на newLabel.
+function relabelSemifinished_(sheet, ctx, rowIdx, newLabel) {
+  const row = ctx.values[rowIdx] || [];
+  for (let c = 0; c < row.length; c++) {
+    if (/полуфабрикат|^п\/ф/i.test(String(row[c] || '').trim())) {
+      fillMergedCell_(sheet, rowIdx + 1, c + 1, newLabel, ctx.mergeMap);
+      return;
+    }
+  }
+}
+
 // Builds the wire result name for terminal operations (used in Результат and Время sections).
 function buildWireResultName_(w, termArt, connArt, sideLabel) {
   const base = wireBaseName_(w);
@@ -635,7 +665,7 @@ function fillKompl_(sheet, ctx, colMap, op, config, wireData) {
   }
 }
 
-function fillSfIn_(sheet, ctx, colMap, config, prevResult, opType) {
+function fillSfIn_(sheet, ctx, colMap, config, prevResult, opType, prevResultNorm) {
   const { sfInRow, resultRow } = ctx.sections;
   const cols  = resolveCols_(ctx, colMap, sfInRow);
   const nameC = cols.name >= 0 ? cols.name : cols.art;
@@ -665,10 +695,15 @@ function fillSfIn_(sheet, ctx, colMap, config, prevResult, opType) {
     }
   } else {
     setCell_(ctx, sfInRow, nameC, prevResult);
+    // Норма входа = норма выхода предыдущей операции (тянется с прошлого листа).
+    if (normC >= 0 && prevResultNorm) setCell_(ctx, sfInRow, normC, prevResultNorm);
   }
 }
 
-function fillSfOut_(sheet, ctx, colMap, config, thisResult, opType) {
+function fillSfOut_(sheet, ctx, colMap, config, thisResult, opType, isLast) {
+  // На последнем листе результат — это готовое ИЗДЕЛИЕ: имя берём из наименования
+  // изделия, а ярлык «Полуфабрикат» меняем на «Изделие».
+  const singleName = (isLast && config.assemblyName) ? config.assemblyName : thisResult;
   const wires    = Array.isArray(config.wires) ? config.wires : [];
   const sA       = config.sideA || {};
   const sB       = config.sideB || {};
@@ -696,7 +731,7 @@ function fillSfOut_(sheet, ctx, colMap, config, thisResult, opType) {
   if (isIns && wires.length > 0 && nameC >= 0) {
     const insNorm = String((wires[0].qty || 1) * pQty);
     writeSeqNum_(sheet, fSfOut + 1, colMap.seqCol, 0, ctx.mergeMap);
-    fillMergedCell_(sheet, fSfOut + 1, nameC + 1, thisResult, ctx.mergeMap);
+    fillMergedCell_(sheet, fSfOut + 1, nameC + 1, singleName, ctx.mergeMap);
     if (normC >= 0) fillMergedCell_(sheet, fSfOut + 1, normC + 1, insNorm, ctx.mergeMap);
   } else if ((isCutWire || opType === 'prsTermA') && wires.length > 0 && nameC >= 0) {
     let resTimeBound = ctx.values.length;
@@ -718,11 +753,15 @@ function fillSfOut_(sheet, ctx, colMap, config, thisResult, opType) {
       if (normC >= 0) fillMergedCell_(sheet, rowNum, normC + 1, formatDecimalComma_(w.qty * pQty, 4), ctx.mergeMap);
     }
   } else if (nameC >= 0) {
-    fillMergedCell_(sheet, fSfOut + 1, nameC + 1, thisResult, ctx.mergeMap);
+    fillMergedCell_(sheet, fSfOut + 1, nameC + 1, singleName, ctx.mergeMap);
   }
+
+  if (isLast) relabelSemifinished_(sheet, ctx, fSfOut, 'Изделие');
 }
 
-function fillTime_(sheet, ctx, colMap, op, config, thisResult, opType) {
+function fillTime_(sheet, ctx, colMap, op, config, thisResult, opType, isLast) {
+  // На последнем листе наименование в Рассч. времени — это изделие, ярлык → «Изделие».
+  const singleName = (isLast && config.assemblyName) ? config.assemblyName : thisResult;
   const { timeRow } = ctx.sections;
   const isCutWire  = opType === 'cutWire';
   const isTermOp   = ['prsTermA','insTermA','prsTermB','insTermB'].includes(opType);
@@ -757,7 +796,7 @@ function fillTime_(sheet, ctx, colMap, op, config, thisResult, opType) {
       const rawNorm  = tOpMin * totalQty * pQty + tPrepMin;
       const wNorm    = formatDecimalComma_(rawNorm, 2);
       writeSeqNum_(sheet, timeDataRows[0] + 1, colMap.seqCol, 0, ctx.mergeMap);
-      fillMergedCell_(sheet, timeDataRows[0] + 1, tNameCol + 1, thisResult, ctx.mergeMap);
+      fillMergedCell_(sheet, timeDataRows[0] + 1, tNameCol + 1, singleName, ctx.mergeMap);
       if (tNormCol >= 0) fillMergedCell_(sheet, timeDataRows[0] + 1, tNormCol + 1, wNorm, ctx.mergeMap);
     } else {
       // CUT / PRS: по строке на каждый провод
@@ -803,9 +842,11 @@ function fillTime_(sheet, ctx, colMap, op, config, thisResult, opType) {
     for (let i = 0; i < timeDataRows.length && i < tVals.length; i++) {
       const r = timeDataRows[i];
       setCell_(ctx, r, tNormCol, tVals[i]);
-      if (i === 0 && thisResult) fillMergedCell_(sheet, r + 1, tNameCol + 1, thisResult, ctx.mergeMap);
+      if (i === 0 && singleName) fillMergedCell_(sheet, r + 1, tNameCol + 1, singleName, ctx.mergeMap);
     }
   }
+
+  if (isLast && timeDataRows.length) relabelSemifinished_(sheet, ctx, timeDataRows[0], 'Изделие');
 }
 
 function fillDopusk_(sheet, ctx, wireData) {
@@ -859,7 +900,7 @@ function fillTerminalFields_(sheet, ctx, terData) {
 
 // ── Structural fill orchestrator ──────────────────────────────
 
-function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisResult, wireData, terData, sheetState) {
+function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisResult, wireData, terData, sheetState, prevResultNorm, isLast) {
   const ctx    = makeSheetCtx_(sheet, sheetState);
   if (ctx.lastRow < 1) return;
   const colMap = detectGlobalColumns_(ctx.values);
@@ -870,11 +911,11 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
     fillKompl_(sheet, ctx, colMap, op, config, wireData);
   const isTermOp_ = ['prsTermA','insTermA','prsTermB','insTermB'].includes(opType);
   if (ctx.sections.sfInRow >= 0 && (prevResult || isTermOp_))
-    fillSfIn_(sheet, ctx, colMap, config, prevResult, opType);
+    fillSfIn_(sheet, ctx, colMap, config, prevResult, opType, prevResultNorm);
   if (thisResult && (ctx.sections.sfOutRow >= 0 || ctx.sections.resultRow >= 0))
-    fillSfOut_(sheet, ctx, colMap, config, thisResult, opType);
+    fillSfOut_(sheet, ctx, colMap, config, thisResult, opType, isLast);
   if (ctx.sections.timeRow >= 0)
-    fillTime_(sheet, ctx, colMap, op, config, thisResult, opType);
+    fillTime_(sheet, ctx, colMap, op, config, thisResult, opType, isLast);
   if (isCutWire && wires)
     fillDopusk_(sheet, ctx, wireData);
   if (['prsTermA','insTermA','prsTermB','insTermB'].includes(opType) && terData)
