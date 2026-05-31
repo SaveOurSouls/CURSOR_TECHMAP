@@ -171,7 +171,6 @@ function generateAssemblyTechCards(config) {
       if (!sheet) throw new Error(`Лист "${insertResult.sheetName}" не найден.`);
 
       const thisResult = computeOperationResult_(op.type, config, prevResult, wireData);
-
       const terData = buildTerData_(op.type, config, terRecords);
       const phMap = buildPlaceholderMap_(op, config, prevResult, thisResult, wireData, terData);
       const sheetState = replacePlaceholders_(sheet, phMap);
@@ -346,7 +345,8 @@ function replacePlaceholders_(sheet, phMap) {
   const range    = sheet.getRange(1, 1, lastRow, lastCol);
   const values   = range.getValues();
   const formulas = range.getFormulas();
-  const mergeMap = buildMergeMap_(sheet); // читаем мёрджи ДО записей: переиспользуются в structural fill (−1 чтение, −1 flush)
+  const mergeData = buildMergeData_(sheet); // читаем мёрджи ДО записей: переиспользуются в structural fill (−1 чтение, −1 flush)
+  const mergeMap  = mergeData.map;
 
   const phEntries = Object.entries(phMap); // один раз, не на каждую ячейку
   const dirtyRows = {};
@@ -393,7 +393,7 @@ function replacePlaceholders_(sheet, phMap) {
 
   // Отдаём пост-замены значения, формулы и мёрджи, чтобы fillTechCardStructurally_
   // не перечитывал лист повторно (экономия 3 полных чтений на операцию).
-  return { values, formulas, mergeMap, lastRow, lastCol };
+  return { values, formulas, mergeMap, merges: mergeData.list, lastRow, lastCol };
 }
 
 // ── Structural fill helpers ───────────────────────────────────
@@ -428,7 +428,8 @@ function makeSheetCtx_(sheet, seed) {
     if (ctx.lastRow < 1 || ctx.lastCol < 1) { ctx.values = []; ctx.formulas = []; ctx.mergeMap = {}; ctx.sections = {}; return; }
     ctx.values   = sheet.getRange(1, 1, ctx.lastRow, ctx.lastCol).getValues();
     ctx.formulas = sheet.getRange(1, 1, ctx.lastRow, ctx.lastCol).getFormulas();
-    ctx.mergeMap = buildMergeMap_(sheet);
+    const md = buildMergeData_(sheet);
+    ctx.mergeMap = md.map; ctx.merges = md.list;
     ctx.sections = detectSections_(ctx.values);
   };
 
@@ -437,13 +438,26 @@ function makeSheetCtx_(sheet, seed) {
   // новые строки под вертикальной меткой возвращаются пустыми). Формулы НЕ
   // перечитываем (в слотах данных их нет) — вставляем пустые, экономя 1 чтение.
   ctx.applyInsert = function(afterRow, count) {
-    ctx.lastRow = sheet.getLastRow();
-    ctx.lastCol = sheet.getLastColumn();
-    if (ctx.lastRow < 1 || ctx.lastCol < 1) { ctx.refresh(); return; }
-    ctx.values = sheet.getRange(1, 1, ctx.lastRow, ctx.lastCol).getValues();
+    if (!ctx.lastCol || !ctx.values) { ctx.refresh(); return; }
+    // Вставляем пустые строки в память на позицию afterRow (0-based индекс = afterRow):
+    // существующие строки сдвигаются (значения не меняются), новые слоты пусты —
+    // совпадает с листом для логики заполнения (якоря секций + пустота слотов).
+    // Не читаем getValues/getFormulas с листа — экономия 2 чтений на вставку.
     const emptyRow = new Array(ctx.lastCol).fill('');
-    for (let i = 0; i < count; i++) ctx.formulas.splice(afterRow, 0, emptyRow.slice());
-    ctx.mergeMap = buildMergeMap_(sheet);
+    for (let i = 0; i < count; i++) {
+      ctx.values.splice(afterRow, 0, emptyRow.slice());
+      ctx.formulas.splice(afterRow, 0, emptyRow.slice());
+    }
+    ctx.lastRow = ctx.values.length;
+    // Объединения: если API-путь посчитал их в памяти — берём их (0 чтений с листа),
+    // иначе (legacy/сбой) читаем с листа.
+    if (_lastPostMerges) {
+      ctx.merges = _lastPostMerges;
+      ctx.mergeMap = buildMergeMapFromList_(_lastPostMerges);
+    } else {
+      const md = buildMergeData_(sheet);
+      ctx.mergeMap = md.map; ctx.merges = md.list;
+    }
     ctx.sections = detectSections_(ctx.values);
   };
 
@@ -453,6 +467,7 @@ function makeSheetCtx_(sheet, seed) {
     ctx.values   = seed.values;
     ctx.formulas = seed.formulas;
     ctx.mergeMap = seed.mergeMap || buildMergeMap_(sheet); // мёрджи уже прочитаны в replacePlaceholders_
+    ctx.merges   = seed.merges || [];
     ctx.sections = detectSections_(ctx.values);
   } else {
     ctx.refresh();
@@ -545,7 +560,7 @@ function findAndExpandSlots_(sheet, ctx, anchorRow, bound, nameCol, neededCount,
   if (neededCount > slots.length) {
     const insertCount = neededCount - slots.length;
     const lastSlot = slots[slots.length - 1];
-    if (insertRowsAfterSafe_(sheet, lastSlot + 1, insertCount, srcRow)) {
+    if (insertRowsAfterSafe_(sheet, lastSlot + 1, insertCount, srcRow, ctx.merges)) {
       for (let i = 0; i < insertCount; i++) slots.push(lastSlot + 1 + i);
       ctx.applyInsert(lastSlot + 1, insertCount);
     }
@@ -593,7 +608,7 @@ function fillKompl_(sheet, ctx, colMap, op, config, wireData) {
     if (wires.length > slots.length) {
       const insertCount = wires.length - slots.length;
       const lastSlot = slots[slots.length - 1];
-      if (insertRowsAfterSafe_(sheet, lastSlot + 1, insertCount, kompRow + 1)) {
+      if (insertRowsAfterSafe_(sheet, lastSlot + 1, insertCount, kompRow + 1, ctx.merges)) {
         for (let i = 0; i < insertCount; i++) slots.push(lastSlot + 1 + i);
         ctx.applyInsert(lastSlot + 1, insertCount);
       }
@@ -757,7 +772,7 @@ function fillTime_(sheet, ctx, colMap, op, config, thisResult, opType) {
       if (wires.length > timeSlots.length) {
         const insertCount = wires.length - timeSlots.length;
         const lastSlot    = timeSlots[timeSlots.length - 1];
-        if (insertRowsAfterSafe_(sheet, lastSlot + 1, insertCount, timeDataRows[0] + 1)) {
+        if (insertRowsAfterSafe_(sheet, lastSlot + 1, insertCount, timeDataRows[0] + 1, ctx.merges)) {
           for (let i = 0; i < insertCount; i++) timeSlots.push(lastSlot + 1 + i);
           ctx.applyInsert(lastSlot + 1, insertCount);
         }
@@ -868,32 +883,42 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
 
 // ── Row insertion ─────────────────────────────────────────────
 
+// Список объединений ПОСЛЕ последней API-вставки (посчитан в памяти из pre-merges).
+// applyInsert использует его, чтобы не читать getMergedRanges с листа. null → legacy.
+var _lastPostMerges = null;
+
+// Строит mergeMap[row][col]={r,c} (top-left) из списка прямоугольников [{r1,r2,c1,c2}].
+function buildMergeMapFromList_(list) {
+  const map = {};
+  (list || []).forEach((m) => {
+    for (let r = m.r1; r <= m.r2; r++) {
+      for (let c = m.c1; c <= m.c2; c++) {
+        if (r !== m.r1 || c !== m.c1) {
+          if (!map[r]) map[r] = {};
+          map[r][c] = { r: m.r1, c: m.c1 };
+        }
+      }
+    }
+  });
+  return map;
+}
+
 // Inserts `count` rows after `afterRow` (1-based), copying srcRow as the template.
 // Быстрый путь — один Sheets API batchUpdate (insertDimension сам сдвигает все
 // объединения ниже, copyPaste тиражирует строку-шаблон). При сбое/недоступности
 // API откатывается на проверенный SpreadsheetApp-путь (legacy).
-function insertRowsAfterSafe_(sheet, afterRow, count, srcRow) {
+// knownMerges (опц.) — уже прочитанный список объединений [{r1,r2,c1,c2}] из ctx,
+// чтобы не читать getMergedRanges повторно на каждую вставку.
+function insertRowsAfterSafe_(sheet, afterRow, count, srcRow, knownMerges) {
+  _lastPostMerges = null; // сбрасываем: только успешный API-путь выставит его
   if (typeof Sheets !== 'undefined') {
     try {
-      const r = insertRowsViaSheetsApi_(sheet, afterRow, count, srcRow);
-      recordInsertOutcome_('api-ok');
-      return r;
+      return insertRowsViaSheetsApi_(sheet, afterRow, count, srcRow, knownMerges);
     } catch (e) {
-      recordInsertOutcome_('FALLBACK: ' + (e && e.message));
-      // падаем на legacy ниже
+      // API недоступен или вызов упал — падаем на проверенный legacy-путь ниже
     }
-  } else {
-    recordInsertOutcome_('FALLBACK: Sheets undefined');
   }
-  return insertRowsAfterLegacy_(sheet, afterRow, count, srcRow);
-}
-
-// Записывает исход последней вставки строк (диагностика причины мигания).
-function recordInsertOutcome_(outcome) {
-  try {
-    PropertiesService.getDocumentProperties()
-      .setProperty('tc_last_insert', outcome + '  @' + new Date().toISOString());
-  } catch (e) {}
+  return insertRowsAfterLegacy_(sheet, afterRow, count, srcRow, knownMerges);
 }
 
 /**
@@ -906,7 +931,7 @@ function recordInsertOutcome_(outcome) {
  *   3) copyPaste строки-шаблона в каждую новую строку;
  *   4) mergeCells — пересоздаёт пересекающие объединения уже растянутыми на count.
  */
-function insertRowsViaSheetsApi_(sheet, afterRow, count, srcRow) {
+function insertRowsViaSheetsApi_(sheet, afterRow, count, srcRow, knownMerges) {
   // КРИТИЧНО: сбросить отложенные записи SpreadsheetApp ДО серверной правки,
   // иначе они лягут на дореставочные позиции строк после сдвига.
   SpreadsheetApp.flush();
@@ -918,9 +943,10 @@ function insertRowsViaSheetsApi_(sheet, afterRow, count, srcRow) {
 
   // Объединения, ПЕРЕСЕКАЮЩИЕ точку вставки (r1 ≤ afterRow < r2) — их insertDimension
   // растянет на новые строки. Снимем по новым строкам и пересоздадим растянутыми.
-  const crossing = sheet.getRange(1, 1, sheet.getLastRow(), lastCol).getMergedRanges()
-    .map(r => ({ r1: r.getRow(), r2: r.getLastRow(), c1: r.getColumn(), c2: r.getLastColumn() }))
-    .filter(m => m.r1 <= afterRow && m.r2 > afterRow);
+  // Берём уже прочитанный список из ctx (knownMerges), иначе читаем сами.
+  const allMerges = knownMerges || sheet.getRange(1, 1, sheet.getLastRow(), lastCol).getMergedRanges()
+    .map(r => ({ r1: r.getRow(), r2: r.getLastRow(), c1: r.getColumn(), c2: r.getLastColumn() }));
+  const crossing = allMerges.filter(m => m.r1 <= afterRow && m.r2 > afterRow);
 
   const requests = [{
     insertDimension: {
@@ -962,19 +988,38 @@ function insertRowsViaSheetsApi_(sheet, afterRow, count, srcRow) {
   });
 
   Sheets.Spreadsheets.batchUpdate({ requests }, SpreadsheetApp.getActive().getId());
+
+  // Считаем НОВЫЙ список объединений в памяти (insertDimension сдвигает/растягивает
+  // по предсказуемым правилам) — чтобы applyInsert не читал getMergedRanges с листа:
+  //   выше точки вставки (r2 ≤ afterRow) — без изменений;
+  //   ниже (r1 > afterRow) — сдвиг на +count;
+  //   пересекающие — растянуты до r2+count;
+  //   + горизонтальные объединения строки-шаблона тиражируются в новые строки.
+  const post = [];
+  allMerges.forEach((m) => {
+    if (m.r2 <= afterRow)      post.push({ r1: m.r1, r2: m.r2, c1: m.c1, c2: m.c2 });
+    else if (m.r1 > afterRow)  post.push({ r1: m.r1 + count, r2: m.r2 + count, c1: m.c1, c2: m.c2 });
+    else                       post.push({ r1: m.r1, r2: m.r2 + count, c1: m.c1, c2: m.c2 });
+  });
+  const srcHoriz = allMerges.filter((m) => m.r1 === srcRow && m.r2 === srcRow && m.c2 > m.c1);
+  for (let i = 0; i < count; i++) {
+    const nr = afterRow + 1 + i;
+    srcHoriz.forEach((m) => post.push({ r1: nr, r2: nr, c1: m.c1, c2: m.c2 }));
+  }
+  _lastPostMerges = post;
   return true;
 }
 
 // Проверенный SpreadsheetApp-путь: разрыв затронутых объединений → insertRowsAfter →
 // построчный copyTo → восстановление. Используется как fallback.
-function insertRowsAfterLegacy_(sheet, afterRow, count, srcRow) {
+function insertRowsAfterLegacy_(sheet, afterRow, count, srcRow, knownMerges) {
   const lastCol = sheet.getLastColumn();
 
-  const fullRange = sheet.getRange(1, 1, sheet.getLastRow(), sheet.getLastColumn());
-  const allMerges = fullRange.getMergedRanges().map(r => ({
-    r1: r.getRow(), r2: r.getLastRow(),
-    c1: r.getColumn(), c2: r.getLastColumn()
-  }));
+  const allMerges = knownMerges || sheet.getRange(1, 1, sheet.getLastRow(), sheet.getLastColumn())
+    .getMergedRanges().map(r => ({
+      r1: r.getRow(), r2: r.getLastRow(),
+      c1: r.getColumn(), c2: r.getLastColumn()
+    }));
   // insertRowsAfter не трогает объединения, целиком расположенные ВЫШЕ точки
   // вставки. Ломаем/восстанавливаем только затронутые (r2 > afterRow) — результат
   // идентичен полному перебору, но работы заметно меньше (шапка карты выше зоны вставки).
@@ -1023,15 +1068,25 @@ function insertRowsAfterLegacy_(sheet, afterRow, count, srcRow) {
 
 // Returns mergeMap[row1based][col1based] = {r, c} pointing to top-left of merged range.
 function buildMergeMap_(sheet) {
+  return buildMergeData_(sheet).map;
+}
+
+// Reads merged ranges ONCE and returns both:
+//   map  — mergeMap[row1based][col1based] = {r, c} (top-left), для резолва записи в мёрджи;
+//   list — [{r1, r2, c1, c2}] (1-based) — прямоугольники объединений, для детекта пересечений.
+// Позволяет переиспользовать прочитанные объединения и не читать getMergedRanges дважды.
+function buildMergeData_(sheet) {
   const map = {};
+  const list = [];
   try {
     const lr = sheet.getLastRow();
     const lc = sheet.getLastColumn();
-    if (lr < 1 || lc < 1) return map;
+    if (lr < 1 || lc < 1) return { map, list };
     const merges = sheet.getRange(1, 1, lr, lc).getMergedRanges();
     for (const m of merges) {
       const r1 = m.getRow(), c1 = m.getColumn();
       const r2 = m.getLastRow(), c2 = m.getLastColumn();
+      list.push({ r1, r2, c1, c2 });
       for (let r = r1; r <= r2; r++) {
         for (let c = c1; c <= c2; c++) {
           if (r !== r1 || c !== c1) {
@@ -1042,7 +1097,7 @@ function buildMergeMap_(sheet) {
       }
     }
   } catch (e) {}
-  return map;
+  return { map, list };
 }
 
 // Writes value to a merged cell — resolves to the top-left cell using pre-computed mergeMap.

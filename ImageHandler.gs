@@ -120,6 +120,112 @@ function captureTemplateImages_(sourceSheet, range) {
   return result;
 }
 
+// ── Миграция картинок шаблонов в Drive-кеш ───────────────────
+
+/**
+ * Однократная миграция: переносит over-grid картинки ВСЕХ шаблонов из стора в
+ * Drive-кеш и прописывает driveFileId в каталог. После этого вставка шаблонов
+ * идёт по быстрому пути insertTemplateImages_ (чтение из Drive), а не по медленному
+ * store-scan (скан всех картинок стора + XLSX). Картинки в сторе НЕ трогаются —
+ * только читаются; обратимо (вернуть imagesJson в '[]' → снова store-scan).
+ * Идемпотентна: шаблоны, уже имеющие driveFileId, пропускает.
+ */
+function migrateTemplateImagesToDrive() {
+  var ui = SpreadsheetApp.getUi();
+  var ss = SpreadsheetApp.getActive();
+  var storeSheet   = ss.getSheetByName(TECHMAP_APP.storeSheetName);
+  var catalogSheet = ss.getSheetByName(TECHMAP_APP.librarySheetName);
+  if (!storeSheet || !catalogSheet) { ui.alert('Стор или каталог не найден.'); return; }
+
+  var catalog = readCatalog_();
+  var xlsxMap = null; // ленивый XLSX-fallback (кешируется на прогон)
+  var folder = null;
+  var migrated = 0, skipped = 0, imgCount = 0;
+
+  // getImages() на полностью скрытом листе возвращает пусто — временно показываем стор.
+  runWithSheetVisible_(storeSheet, function() {
+  SpreadsheetApp.flush(); // зафиксировать показ листа до getImages
+  var allImages;
+  try { allImages = storeSheet.getImages(); } catch (e) { allImages = []; }
+
+  catalog.forEach(function(t) {
+    var existing = parseJsonArray_(t.imagesJson);
+    if (existing.some(function(im) { return im.driveFileId; })) { skipped++; return; }
+    var sr = t.storeRow, sc = t.storeColumn, h = t.height, w = t.width;
+    if (!(sr > 0 && h > 0 && w > 0)) { skipped++; return; }
+
+    var imagesData = [];
+    allImages.forEach(function(img) {
+      try {
+        var anchor = img.getAnchorCell();
+        var row = anchor.getRow(), col = anchor.getColumn();
+        var relRow = row - sr, relCol = col - sc;
+        var hasTc = false;
+        try {
+          var alt = img.getAltTextDescription();
+          if (alt && alt.indexOf('tc:') === 0) {
+            hasTc = true;
+            var parts = alt.slice(3).split(',');
+            if (parts.length === 2) {
+              var pr = parseInt(parts[0], 10), pc = parseInt(parts[1], 10);
+              if (!isNaN(pr)) relRow = pr;
+              if (!isNaN(pc)) relCol = pc;
+            }
+          }
+        } catch (e) {}
+        if (hasTc) {
+          if (row < sr || row > sr + h + 1 || col < sc || col > sc + w + 1) return;
+        } else {
+          if (row < sr || row > sr + h - 1 || col < sc || col > sc + w - 1) return;
+        }
+        var blob = getOverGridImageBlob_(img, storeSheet);
+        if (!blob) {
+          if (!xlsxMap) xlsxMap = buildXlsxImageMap_(storeSheet);
+          blob = (xlsxMap && xlsxMap[row + '_' + col]) || null;
+        }
+        if (!blob) return;
+        if (!folder) folder = getOrCreateImageCacheFolder_();
+        var driveFile = folder.createFile(blob.setName('tc_img_' + relRow + '_' + relCol));
+        imagesData.push({
+          driveFileId: driveFile.getId(),
+          relRow: relRow, relCol: relCol,
+          xOffset: img.getAnchorCellXOffset(), yOffset: img.getAnchorCellYOffset(),
+          width: img.getWidth(), height: img.getHeight(),
+        });
+        imgCount++;
+      } catch (e) {}
+    });
+
+    if (imagesData.length) {
+      updateCatalogImagesJson_(catalogSheet, t.id, JSON.stringify(imagesData));
+      migrated++;
+    }
+  });
+  }); // runWithSheetVisible_
+
+  invalidateCatalogCache_();
+  bumpCatalogVersion_();
+  ui.alert('Миграция картинок в Drive',
+    'Шаблонов обновлено: ' + migrated +
+    '\nКартинок перенесено: ' + imgCount +
+    '\n\nГенерация теперь быстрее. Запускать повторно не нужно — новые шаблоны ' +
+    'кешируются в Drive автоматически при сохранении.',
+    ui.ButtonSet.OK);
+}
+
+/** Записывает imagesJson для шаблона по id в каталог (колонка imagesJson = 14). */
+function updateCatalogImagesJson_(catalogSheet, id, json) {
+  var lastRow = catalogSheet.getLastRow();
+  if (lastRow < 2) return;
+  var ids = catalogSheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  for (var i = 0; i < ids.length; i++) {
+    if (String(ids[i][0]).trim() === id) {
+      catalogSheet.getRange(i + 2, 14).setValue(json);
+      return;
+    }
+  }
+}
+
 // ── Over-grid image insertion ────────────────────────────────
 
 /**

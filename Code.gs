@@ -48,86 +48,8 @@ function onOpen() {
     .addSeparator()
     .addItem('Генератор техкарт сборки', 'showAssemblyGeneratorDialog')
     .addSeparator()
-    .addItem('Диагностика: Sheets API', 'diagnoseSheetsApi')
-    .addItem('Диагностика: вставка строк', 'testInsertApi')
-    .addItem('Диагностика: последняя вставка', 'showLastInsertOutcome')
+    .addItem('⚡ Перенести картинки шаблонов в Drive', 'migrateTemplateImagesToDrive')
     .addToUi();
-}
-
-/** Показывает исход последней вставки строк при генерации (api-ok / FALLBACK: ...). */
-function showLastInsertOutcome() {
-  const v = PropertiesService.getDocumentProperties().getProperty('tc_last_insert');
-  SpreadsheetApp.getUi().alert('Последняя вставка строк',
-    v || 'Ещё не было вставок (сгенерируй многопроводную сборку и проверь снова).',
-    SpreadsheetApp.getUi().ButtonSet.OK);
-}
-
-/**
- * Проверяет, работает ли быстрая вставка строк через Sheets API на листе с
- * объединениями (горизонтальным и вертикальным). Показывает реальную ошибку,
- * если падает — чтобы понять, почему генерация откатывается на медленный путь.
- */
-function testInsertApi() {
-  const ui = SpreadsheetApp.getUi();
-  const ss = SpreadsheetApp.getActive();
-  const sh = ss.insertSheet('_TEST_INSERT_' + Date.now());
-  let msg;
-  try {
-    sh.getRange(1, 1, 7, 4).setValues([
-      ['hdr','hdr','hdr','hdr'],
-      ['a','b','c','d'],
-      ['LBL','n1','x','q'],   // строка 3 — верх вертикальной метки + шаблон строки
-      ['','n2','y','q'],      // строка 4
-      ['','n3','z','q'],      // строка 5
-      ['','n4','w','q'],      // строка 6 — низ вертикальной метки
-      ['z','z','z','z'],
-    ]);
-    sh.getRange(3, 1, 4, 1).merge();   // ВЕРТИКАЛЬНАЯ метка A3:A6 — пересекает точку вставки
-    sh.getRange(4, 3, 1, 2).merge();   // горизонтальное объединение в строке-шаблоне (C4:D4)
-    SpreadsheetApp.flush();
-
-    insertRowsViaSheetsApi_(sh, 4, 2, 4); // вставить 2 строки после 4 (в середину метки), шаблон = строка 4
-    msg = 'УСПЕХ ✓ — быстрая вставка работает. Причина мигания в другом.';
-  } catch (e) {
-    msg = 'ОШИБКА быстрой вставки:\n' + (e && e.message);
-  } finally {
-    try { ss.deleteSheet(sh); } catch (_) {}
-  }
-  ui.alert('Тест вставки строк', msg, ui.ButtonSet.OK);
-}
-
-/**
- * Диагностика доступности Google Sheets API (advanced service).
- * От него зависят быстрые пути: копирование шаблона, вставка строк (insertDimension),
- * скрытое копирование из _TC_STORE. Если API недоступен — всё откатывается на
- * медленные мигающие пути (разрыв/сборка объединений, copyTo с показом листа).
- * Запускать из меню «Техкарты → Диагностика», результат — во всплывающем окне.
- */
-function diagnoseSheetsApi() {
-  const ui = SpreadsheetApp.getUi();
-  if (typeof Sheets === 'undefined') {
-    ui.alert('Sheets API: НЕ ОБЪЯВЛЕН',
-      'Advanced-сервис Google Sheets API не подключён.\n\n' +
-      'Открой редактор скриптов → Службы (+) → добавь «Google Sheets API» → Сохрани.\n' +
-      'Это включит быстрые пути (нет мигания, быстрее в разы).',
-      ui.ButtonSet.OK);
-    return 'undefined';
-  }
-  try {
-    Sheets.Spreadsheets.get(SpreadsheetApp.getActive().getId(), { fields: 'spreadsheetId' });
-    ui.alert('Sheets API: РАБОТАЕТ ✓',
-      'Быстрые пути активны. Если мигание всё ещё есть — причина в другом, сообщи.',
-      ui.ButtonSet.OK);
-    return 'ok';
-  } catch (e) {
-    ui.alert('Sheets API: ОШИБКА',
-      'Сервис объявлен, но вызов падает:\n' + (e && e.message) + '\n\n' +
-      'Скорее всего Google Sheets API не включён в Cloud-проекте скрипта. ' +
-      'Открой редактор → Службы → переподключи «Google Sheets API», или включи API в ' +
-      'связанном проекте Google Cloud.',
-      ui.ButtonSet.OK);
-    return 'error';
-  }
 }
 
 
@@ -297,24 +219,24 @@ function insertTemplate(templateId) {
   copyRangePreservingFormulas_(sourceRange, targetRange);
   clearTemplateMarkerNote_(targetRange);
 
-  SpreadsheetApp.flush();
-
-  // insertTemplateImages_ reads blobs from Drive (fast). If Drive-cached images exist,
-  // skip the slow insertOverGridImages_ STORE scan (which downloads XLSX as fallback).
-  // For old templates without driveFileId, fall back to STORE scan for backward compat.
+  // Картинки вставляем ТОЛЬКО если они есть в метаданных шаблона. Пустой imagesJson
+  // (после миграции в Drive) = картинок нет → не делаем ни flush, ни скан стора
+  // (раньше store-scan гонялся впустую ~2с на каждый шаблон без картинок).
   const parsedImages = parseJsonArray_(template.imagesJson);
   const hasDriveImages = parsedImages.some((img) => img.driveFileId);
   if (parsedImages.length) {
+    SpreadsheetApp.flush(); // зафиксировать копию шаблона до вставки картинок
     insertTemplateImages_(targetSheet, targetRow, targetColumn, template.imagesJson);
-  }
-  if (!hasDriveImages) {
-    runWithSheetVisible_(sourceSheet, () => {
-      insertOverGridImages_(
-        sourceSheet, template.storeRow, template.storeColumn,
-        template.height, template.width,
-        targetSheet, targetRow, targetColumn
-      );
-    });
+    if (!hasDriveImages) {
+      // Старый шаблон без Drive-кеша — fallback на скан стора.
+      runWithSheetVisible_(sourceSheet, () => {
+        insertOverGridImages_(
+          sourceSheet, template.storeRow, template.storeColumn,
+          template.height, template.width,
+          targetSheet, targetRow, targetColumn
+        );
+      });
+    }
   }
 
   ss.setActiveSheet(targetSheet);
