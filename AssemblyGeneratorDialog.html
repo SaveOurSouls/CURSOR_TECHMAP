@@ -588,24 +588,32 @@
     const conns = getByTypes(['соед', 'conn', 'разъ', 'корпус', 'housing']);
 
     const noneOpt  = '<option value="">— нет —</option>';
-    const termOpts = noneOpt + terms.map(c =>
-      `<option value="${c.id}">${esc(c.name || c.art)} [${esc(c.art)}] ×${c.qty}</option>`
-    ).join('');
-    const connOpts = noneOpt + conns.map(c =>
-      `<option value="${c.id}">${esc(c.name || c.art)} [${esc(c.art)}] ×${c.qty}</option>`
-    ).join('');
+    // Артикул + кол-во без ГРН-префикса (название/ГРН — бесполезный номер вроде «2»).
+    const optHtml = c => `<option value="${c.id}">${esc(c.art || c.name)}</option>`;
+    const termOpts = noneOpt + terms.map(optHtml).join('');
+    const connOpts = noneOpt + conns.map(optHtml).join('');
 
     ['termSelectA','termSelectB'].forEach(id => document.getElementById(id).innerHTML = termOpts);
     ['connSelectA','connSelectB'].forEach(id => document.getElementById(id).innerHTML = connOpts);
 
-    if (terms.length) {
-      document.getElementById('termSelectA').value = terms[0].id;
-      document.getElementById('termSelectB').value = terms[0].id;
-    }
-    if (conns.length) {
-      document.getElementById('connSelectA').value = conns[0].id;
-      document.getElementById('connSelectB').value = conns[0].id;
-    }
+    // ── Авто-определение сторон из BOM ──────────────────────────
+    // Число сторон определяется по заложенным разъёмам: один разъём с кол-вом
+    // ×2 ЛИБО два разных разъёма → две стороны. Порядок компонентов в
+    // спецификации не важен. Чекбокс «Сторона В» остаётся ручным override.
+    const totalConnQty = conns.reduce((s, c) => s + (Number(c.qty) || 1), 0);
+    const twoSides = conns.length >= 2 || totalConnQty >= 2;
+
+    const setSel = (id, comp) => { if (comp) document.getElementById(id).value = comp.id; };
+    setSel('termSelectA', terms[0]);
+    setSel('connSelectA', conns[0]);
+    // Сторона B: второй разъём если он есть, иначе тот же (зеркало для ×2);
+    // терминал — второй если есть, иначе тот же.
+    setSel('termSelectB', terms[1] || terms[0]);
+    setSel('connSelectB', conns[1] || conns[0]);
+
+    const cb = document.getElementById('sideBEnabled');
+    cb.checked = twoSides;
+    document.getElementById('sideBBlock').style.display = twoSides ? '' : 'none';
   }
 
   // ── Wire list ─────────────────────────────────────────────────
