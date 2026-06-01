@@ -143,11 +143,53 @@ function readOpRecordsForGenerator_() {
 
 // ── Generator ─────────────────────────────────────────────────
 
-// config.wires  = [{name, art, qty, length}, ...]
-// config.ops    = [{type, wireIdx, templateId, opNum, tPrep, tOp, tMachine}, ...]
-//   wireIdx = -1 means "use all wires combined" (for the single CUT_WIRE op)
-// config.sideA  = {termName, termArt, termQty, connName, connArt, connQty}
-// config.sideB  = same shape or null
+/**
+ * @typedef {Object} AssemblyWire   Один провод изделия.
+ * @property {string} name    Наименование провода.
+ * @property {string} art     Артикул.
+ * @property {string|number} qty     Количество.
+ * @property {string|number} length  Длина, мм.
+ */
+
+/**
+ * @typedef {Object} AssemblySide   Сторона A или B (терминал + разъём).
+ * @property {string} termName  Наименование терминала.
+ * @property {string} termArt   Артикул терминала.
+ * @property {string|number} termQty
+ * @property {string} connName  Наименование разъёма.
+ * @property {string} connArt   Артикул разъёма.
+ * @property {string|number} connQty
+ */
+
+/**
+ * @typedef {Object} AssemblyOp   Одна операция в цепочке генерации.
+ * @property {'cutWire'|'prsTermA'|'prsTermB'|'insTermA'|'insTermB'} type  Тип операции.
+ * @property {number} wireIdx     Индекс провода в config.wires; -1 = все провода вместе (для CUT_WIRE).
+ * @property {string} templateId  ID шаблона техкарты для вставки.
+ * @property {string} [opNum]     Номер операции (CODE из БД.ОП) для поиска времени.
+ * @property {string|number} [tPrep]     Подготовительное время.
+ * @property {string|number} [tOp]       Оперативное время.
+ * @property {string|number} [tMachine]  Машинное время.
+ */
+
+/**
+ * @typedef {Object} AssemblyConfig   Полный конфиг генерации, собранный диалогом.
+ * @property {string|number} assemblyIndex  Индекс/обозначение изделия.
+ * @property {string} assemblyName          Наименование изделия (идёт в результат последнего листа).
+ * @property {string|number} partQty        Количество изделий в партии.
+ * @property {AssemblyWire[]} wires         Провода изделия.
+ * @property {AssemblyOp[]}   ops           Цепочка операций (только с templateId генерируются).
+ * @property {AssemblySide|null} sideA      Сторона A или null.
+ * @property {AssemblySide|null} sideB      Сторона B или null.
+ */
+
+/**
+ * Генерирует техкарты сборки: по листу на каждую операцию с templateId.
+ * Результат каждого листа (норма + наименование) переносится в «вход» следующего;
+ * на последнем листе полуфабрикат переименовывается в изделие (config.assemblyName).
+ * @param {AssemblyConfig} config
+ * @returns {Object} Сводка результата генерации для клиента.
+ */
 function generateAssemblyTechCards(config) {
   if (!config || !Array.isArray(config.ops) || !config.ops.length) {
     throw new Error('Нет операций для создания.');

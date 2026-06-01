@@ -744,9 +744,26 @@ function joinTechOperationsParts_(parts, delimiter) {
  * Устраняет мультиплексирование col 6-10, где раньше один столбец
  * использовался для нескольких полей разных вкладок одновременно.
  */
+// ── Единый словарь extra-колонок снапшота ────────────────────
+// Какие семантические поля записи лежат в extra-колонках (начиная с индекса
+// TECHOPS_EXTRA_BASE) для каждой вкладки. Позиция в массиве = смещение колонки.
+// Пустая строка '' = неиспользуемая колонка (заполняется пустым значением).
+// ЕДИНЫЙ источник истины: и запись (toSnapshotRow_), и чтение (parseTechOpsRow_)
+// выводятся отсюда → перестановка/добавление колонки правится в ОДНОМ месте,
+// рассинхрон чтения и записи невозможен. См. таблицу TER в CLAUDE.md.
+const TECHOPS_EXTRA_BASE = 6; // exportJson/sortKey занимают 0..5, extra-колонки — с 6
+const TECHOPS_EXTRA_FIELDS = {
+  op:   ['opNumber', 'opName', 'tOp', 'tPrep', 'tMachine'],
+  ter:  ['terManufacturer', 'terSeries', 'terComponent', 'terType', 'terArticle',
+         'terLPlus', 'terLMinus', 'terApplicator', 'terCrimpHeight',
+         'terPullForceMin', 'terPullForceMax', 'terStep'],
+  coax: ['', '', '', 'coaxWire', 'coaxType', 'coaxMfr', 'coaxArticle'],
+  ob:   ['obType'],
+};
+
 function parseTechOpsRow_(row) {
   const tabKey = row[0];
-  const base = {
+  const rec = {
     tabKey,
     displayText:      row[1],
     normalizedSearch: row[2],
@@ -754,25 +771,21 @@ function parseTechOpsRow_(row) {
     sourceSheet:      row[4],
     sortKey:          row[5] || '',
   };
-  // Extra columns [6..16] are written by toSnapshotRow_() — positions match exactly.
-  if (tabKey === 'op')   return { ...base, opNumber: row[6] || '', opName: row[7] || '', tOp: row[8] || '', tPrep: row[9] || '', tMachine: row[10] || '' };
-  if (tabKey === 'ter')  return { ...base, terManufacturer: row[6] || '', terSeries: row[7] || '', terComponent: row[8] || '', terType: row[9] || '', terArticle: row[10] || '', terLPlus: row[11] || '', terLMinus: row[12] || '', terApplicator: row[13] || '', terCrimpHeight: row[14] || '', terPullForceMin: row[15] || '', terPullForceMax: row[16] || '', terStep: row[17] || '' };
-  if (tabKey === 'coax') return { ...base, coaxWire: row[9] || '', coaxType: row[10] || '', coaxMfr: row[11] || '', coaxArticle: row[12] || '' };
-  if (tabKey === 'ob')   return { ...base, obType: row[6] || '' };
-  return base;
+  (TECHOPS_EXTRA_FIELDS[tabKey] || []).forEach((field, i) => {
+    if (field) rec[field] = row[TECHOPS_EXTRA_BASE + i] || '';
+  });
+  return rec;
 }
 
-// Returns an array of 11 extra-column values for a snapshot record (col indices 6-16).
-// Keeps each tabKey's fields at fixed positions and makes parseTechOpsRow_ the single
-// source of truth for the layout — changing one here changes both read and write paths.
+// Возвращает массив extra-колонок снапшота для записи (индексы 6..17).
+// Симметричен parseTechOpsRow_ через общий словарь TECHOPS_EXTRA_FIELDS.
 function toSnapshotRow_(record) {
-  switch (record.tabKey) {
-    case 'op':   return [record.opNumber || '', record.opName || '', record.tOp || '', record.tPrep || '', record.tMachine || '', '', '', '', '', '', '', ''];
-    case 'ter':  return [record.terManufacturer || '', record.terSeries || '', record.terComponent || '', record.terType || '', record.terArticle || '', record.terLPlus || '', record.terLMinus || '', record.terApplicator || '', record.terCrimpHeight || '', record.terPullForceMin || '', record.terPullForceMax || '', record.terStep || ''];
-    case 'coax': return ['', '', '', record.coaxWire || '', record.coaxType || '', record.coaxMfr || '', record.coaxArticle || '', '', '', '', '', ''];
-    case 'ob':   return [record.obType || '', '', '', '', '', '', '', '', '', '', '', ''];
-    default:     return ['', '', '', '', '', '', '', '', '', '', '', ''];
-  }
+  const count = TECHOPS_DB_APP.dataHeaders.length - TECHOPS_EXTRA_BASE; // = 12
+  const out = new Array(count).fill('');
+  (TECHOPS_EXTRA_FIELDS[record.tabKey] || []).forEach((field, i) => {
+    if (field && i < count) out[i] = record[field] || '';
+  });
+  return out;
 }
 
 function writeTechOperationsSnapshotToSheets_(snapshot) {
