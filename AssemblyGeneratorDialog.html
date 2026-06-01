@@ -207,6 +207,10 @@
       margin: 14px 0 5px;
     }
     .section-hdr h3 { margin: 0; }
+    /* Статус данных: зелёный = из БД (100%), жёлтый = проверить, красный = пусто/не подтянулось */
+    .f-ok    { border-color: #16A34A !important; background: #F0FDF4 !important; }
+    .f-warn  { border-color: #CA8A04 !important; background: #FEFCE8 !important; }
+    .f-empty { border-color: #DC2626 !important; background: #FEF2F2 !important; }
   </style>
 </head>
 <body>
@@ -330,6 +334,7 @@
       <label class="field-label">Пары для свивки</label>
       <div id="twistPairsList"></div>
       <button type="button" onclick="addTwistPair()" style="margin-top:4px;padding:5px 10px;border:1px dashed var(--brd);background:var(--surf);border-radius:var(--r);cursor:pointer;font-size:12px;font-weight:600;color:var(--accent)">+ Добавить пару</button>
+      <button type="button" onclick="autofillTwistPairs()" title="Определить пары по запасу длины из спецификации" style="margin:4px 0 0 6px;padding:5px 10px;border:1px dashed var(--brd);background:var(--surf);border-radius:var(--r);cursor:pointer;font-size:12px;font-weight:600;color:var(--accent)">🔄 Авто</button>
     </div>
     <div id="twistAllUI" style="display:none">
       <label class="field-label">Какие провода свивать</label>
@@ -337,6 +342,7 @@
     </div>
     <div class="ter-row">
       <div class="ter-f"><label>Шаг свивки, мм</label><input id="twistPitch" class="ter-inp" type="text" placeholder="—" oninput="refresh()" /></div>
+      <div class="ter-f"><label>Ø провода, мм</label><input id="twistWireDia" class="ter-inp" type="text" placeholder="авто из СПР.КОАКС" oninput="onTwistDiaInput()" /></div>
     </div>
   </div>
 </div>
@@ -410,6 +416,7 @@
   let nextWireIdx = 0;
   let advancedLengthMode = false;
   let sharedLength = 0;   // actual cut length used in buildConfig
+  let _twistDiaManual = false;  // пользователь вручную задал Ø свивки (не перетирать авто-значением)
   let drawingLength = 0;  // raw "по чертежу" input
 
   // ── Init ─────────────────────────────────────────────────────
@@ -430,7 +437,7 @@
       document.getElementById('twistBlock').style.display = on ? '' : 'none';
       if (on) {
         onTwistModeChange();
-        if (!document.querySelector('.twist-pair-row')) addTwistPair();  // засеять одну пару
+        if (!document.querySelector('.twist-pair-row')) autofillTwistPairs();  // авто-пары из BOM
       }
       refresh();
     });
@@ -450,6 +457,7 @@
     });
 
     autoFillAllWires();
+    maybeAutoEnableTwist();
   }
 
   function refresh() {
@@ -457,7 +465,35 @@
     renderQtyHints();
     renderTwistWires();
     renderTwistPairs();
+    autofillTwistDia();
     renderOpsCard();
+  }
+
+  // Подставляет Ø свиваемых проводов из СПР.КОАКС прямо в поле (если не задан вручную).
+  // Один общий Ø → показываем число; разные Ø у проводов → поле пустое (считается по-проводно).
+  function autofillTwistDia() {
+    const el = document.getElementById('twistWireDia');
+    if (!el || _twistDiaManual) return;
+    if (!(document.getElementById('twistEnabled') || {}).checked) return;
+    const idx = getTwistMode() === 'pairs'
+      ? getTwistPairs().reduce((a, p) => a.concat(p), [])
+      : getTwistWireIndices();
+    const active = wireEntries.filter(w => w.compId);
+    const dset = new Set();
+    idx.forEach(i => {
+      const w = active[i];
+      const c = w ? getCompById(w.compId) : null;
+      const d = c ? lookupWireDia_(c.art || c.name) : 0;
+      if (d > 0) dset.add(d);
+    });
+    el.value = dset.size === 1 ? String([...dset][0]).replace('.', ',') : '';
+  }
+
+  // Пользователь правит поле Ø вручную → его значение приоритетно, авто не перетирает.
+  function onTwistDiaInput() {
+    const el = document.getElementById('twistWireDia');
+    _twistDiaManual = !!(el && el.value.trim());
+    refresh();
   }
 
   // ── Свивка: режим / провода / пары ───────────────────────────
@@ -506,8 +542,8 @@
     return [...document.querySelectorAll('.twist-wire-cb:checked')].map(cb => Number(cb.value));
   }
 
-  // Добавить пару (два селекта проводов + удалить).
-  function addTwistPair() {
+  // Добавить пару (два селекта проводов + удалить). a/b — предвыбранные индексы.
+  function addTwistPair(a, b) {
     const list = document.getElementById('twistPairsList');
     if (!list) return;
     const opts = twistWireOptions_();
@@ -520,6 +556,49 @@
       + `<select class="twist-pair-b" style="flex:1;padding:5px" onchange="renderOpsCard()">${opts}</select>`
       + `<button type="button" onclick="this.closest('.twist-pair-row').remove();renderOpsCard()" style="border:0;background:none;color:var(--txt3);cursor:pointer;font-size:16px;padding:0 4px">×</button>`;
     list.appendChild(row);
+    if (a !== undefined && a !== null) row.querySelector('.twist-pair-a').value = String(a);
+    if (b !== undefined && b !== null) row.querySelector('.twist-pair-b').value = String(b);
+    renderOpsCard();
+  }
+
+  // Авто-определение пар свивки из BOM: провод с ДЛИНОЙ больше базовой (минимальной)
+  // = заложен запас на свивку; равные по длине свиваемые провода объединяются в пару.
+  function autoDetectTwistPairs() {
+    const active = wireEntries.filter(w => w.compId);
+    // Признак запаса на свивку — норма расхода провода (колонка «Кол-во» спецификации,
+    // лежит в comp.qty). У свиваемых проводов норма больше базовой (минимальной).
+    const normOf = (w) => { const c = getCompById(w.compId); return c ? (Number(c.qty) || 0) : 0; };
+    const vals = active.map(normOf);
+    const valid = vals.filter(v => v > 0);
+    if (!valid.length) return [];
+    const base = Math.min.apply(null, valid);          // базовая норма (1 прямой провод)
+    const byVal = {};
+    const TOL = 0.08;  // отделяет запас на свивку (дробный излишек) от кратности по кол-ву
+    active.forEach((w, i) => {
+      const v = vals[i];
+      if (v <= 0) return;
+      const ratio = v / base;
+      // Кратное базовой (×1, ×2…) = просто кол-во проводов, НЕ свивка.
+      // Свивка — только если есть положительный излишек сверх целого кратного (запас).
+      if (ratio - Math.round(ratio) > TOL) {
+        const k = v.toFixed(4);
+        (byVal[k] = byVal[k] || []).push(i);
+      }
+    });
+    const pairs = [];
+    Object.keys(byVal).forEach(k => {
+      const g = byVal[k];
+      for (let i = 0; i + 1 < g.length; i += 2) pairs.push([g[i], g[i + 1]]);
+    });
+    return pairs;
+  }
+
+  // Перезаполнить пары по авто-определению (кнопка «Авто»).
+  function autofillTwistPairs() {
+    document.getElementById('twistPairsList').innerHTML = '';
+    const auto = autoDetectTwistPairs();
+    if (auto.length) auto.forEach(p => addTwistPair(p[0], p[1]));
+    else addTwistPair();
     renderOpsCard();
   }
 
@@ -545,6 +624,19 @@
 
   function getTwistSelectionCount() {
     return getTwistMode() === 'pairs' ? getTwistPairs().length : getTwistWireIndices().length;
+  }
+
+  // Авто-включение свивки: если в BOM есть провода с запасом (длиннее базовой),
+  // взводим чекбокс и предзаполняем пары. Вызывается при инициализации.
+  function maybeAutoEnableTwist() {
+    const cb = document.getElementById('twistEnabled');
+    if (!cb || cb.checked) return;
+    if (!autoDetectTwistPairs().length) return;
+    cb.checked = true;
+    document.getElementById('twistBlock').style.display = '';
+    onTwistModeChange();
+    autofillTwistPairs();
+    refresh();
   }
 
   function renderQtyHints() {
@@ -932,10 +1024,18 @@
 
     wireEntries = [];
     nextWireIdx = 0;
+    // Кол-во провода — по соотношению норм: «Кол-во» в BOM = норма расхода, и у
+    // нескольких одинаковых проводов она кратна норме одного. Базовая (1 шт) =
+    // минимальная норма среди проводов → штук = round(норма / базовая). Не зависит
+    // от длины реза; запас на свивку (< нормы) поглощается округлением.
+    const normas   = wires.map(w => Number(w.qty) || 0).filter(v => v > 0);
+    const baseNorma = normas.length ? Math.min.apply(null, normas) : 0;
     wires.forEach(wire => {
       const idx    = nextWireIdx++;
       const length = wire.length > 0 ? wire.length : asmLen;
-      wireEntries.push({ idx, compId: wire.id, length, qty: 1 });
+      const normaM = Number(wire.qty) || 0;
+      const qty    = wireQtyFromNorma_(normaM, baseNorma);
+      wireEntries.push({ idx, compId: wire.id, length, qty });
     });
 
     renderWireList();
@@ -1003,9 +1103,38 @@
           selectedTemplates[opSpec.opKey] = sel.value;
           manualTemplates.add(opSpec.opKey); // пользователь выбрал вручную — не перезатирать
           onTemplateSelect(opSpec.opKey);
+          colorizeOpFields();
         });
       }
     });
+    colorizeOpFields();
+  }
+
+  // Подсветка полей по достоверности: зелёный = из БД (совпадение), жёлтый = вручную/
+  // без совпадения (проверить), красный = пусто. Сигнал — matchedOps[opKey].
+  function setFieldState_(el, state) {
+    if (!el) return;
+    el.classList.remove('f-ok', 'f-warn', 'f-empty');
+    if (state) el.classList.add('f-' + state);
+  }
+  function colorizeOpFields() {
+    getActiveOps().forEach(op => {
+      const k = op.opKey;
+      const matched = !!matchedOps[k];
+      const sel = document.getElementById('tmplSel_' + k);
+      if (sel) setFieldState_(sel, sel.value ? (matched ? 'ok' : 'warn') : 'empty');
+      ['tPrep', 'tOp', 'tMachine'].forEach(p => {
+        const el = document.getElementById(p + '_' + k);
+        if (!el) return;
+        const v = el.value.trim();
+        setFieldState_(el, matched ? 'ok' : (v ? 'warn' : 'empty'));
+      });
+    });
+    const dia = document.getElementById('twistWireDia');
+    if (dia) {
+      const on = (document.getElementById('twistEnabled') || {}).checked;
+      setFieldState_(dia, dia.value.trim() ? 'ok' : (on ? 'empty' : ''));
+    }
   }
 
   function buildOpItem(opSpec, num) {
@@ -1223,6 +1352,16 @@
       };
     });
 
+    const twist = {
+      enabled:     !!(document.getElementById('twistEnabled') || {}).checked,
+      mode:        getTwistMode(),
+      pairs:       getTwistPairs(),
+      wireIndices: getTwistWireIndices(),
+      pitch:       (document.getElementById('twistPitch') && document.getElementById('twistPitch').value.trim()) || '',
+      wireDia:     (document.getElementById('twistWireDia') && document.getElementById('twistWireDia').value.trim()) || '',
+    };
+    applyTwistAllowance_(wires, twist);  // свиваемые провода режем длиннее (запас на свивку)
+
     return {
       assemblyIndex: findKey(/индекс/i),
       assemblyName:  findKey(/наименование/i),
@@ -1230,15 +1369,59 @@
       wires,
       sideA: sideAInfo,
       sideB: sideBInfo,
-      twist: {
-        enabled:     !!(document.getElementById('twistEnabled') || {}).checked,
-        mode:        getTwistMode(),
-        pairs:       getTwistPairs(),
-        wireIndices: getTwistWireIndices(),
-        pitch:       (document.getElementById('twistPitch') && document.getElementById('twistPitch').value.trim()) || '',
-      },
+      twist,
       ops,
     };
+  }
+
+  // Свиваемые провода режутся длиннее на геликоидальный запас:
+  //   L_рез = L · √(1 + (π·d/p)²),  d — Ø провода (с изоляцией), p — шаг свивки.
+  function applyTwistAllowance_(wires, tw) {
+    if (!tw || !tw.enabled) return;
+    const p = parseDecimal_(tw.pitch) || 0;
+    if (p <= 0) return;
+    const manualD = parseDecimal_(tw.wireDia) || 0;   // fallback, если провода нет в справочнике
+    const idx = new Set();
+    if (tw.mode === 'pairs') (tw.pairs || []).forEach(pr => { idx.add(pr[0]); idx.add(pr[1]); });
+    else (tw.wireIndices || []).forEach(i => idx.add(i));
+    wires.forEach((w, i) => {
+      if (!idx.has(i) || !(w.length > 0)) return;
+      // Ручной Ø приоритетен; иначе авто из СПР.КОАКС по-проводно; иначе пропуск.
+      const d = (_twistDiaManual && manualD > 0) ? manualD : (lookupWireDia_(w.art || w.name) || manualD);
+      if (d > 0) w.length = Math.round(w.length * twistTakeupFactor_(d, p));
+    });
+  }
+
+  // Геликоидальный коэффициент запаса на свивку: L_рез = L · √(1 + (π·d/p)²). Чистая.
+  function twistTakeupFactor_(d, p) {
+    return (d > 0 && p > 0) ? Math.sqrt(1 + Math.pow(Math.PI * d / p, 2)) : 1;
+  }
+
+  // Кол-во одинаковых проводов по норме: round(норма / базовая), минимум 1. Чистая.
+  function wireQtyFromNorma_(norma, baseNorma) {
+    return (baseNorma > 0 && norma > 0) ? Math.max(1, Math.round(norma / baseNorma)) : 1;
+  }
+
+  // Ø изоляции провода из справочника СПР.КОАКС по марке + (AWG ИЛИ ГОСТ-сечению),
+  // распознанным из артикула. Сначала пробуем AWG, иначе ищем число = ГОСТ-сечение.
+  function lookupWireDia_(art) {
+    const wd = D && D.wireDia;
+    if (!wd) return 0;
+    const s = String(art || '').toLowerCase().replace(/,/g, '.');
+    let row = null;
+    const aw = s.match(/(\d+)\s*awg/);
+    if (aw && wd.byAwg) row = wd.byAwg[aw[1]];
+    if (!row && wd.byGost) {
+      const nums = s.match(/\d+(?:\.\d+)?/g) || [];
+      for (let i = 0; i < nums.length; i++) {
+        const k = String(Number(nums[i]));
+        if (wd.byGost[k]) { row = wd.byGost[k]; break; }
+      }
+    }
+    if (!row) return 0;
+    const sNorm = s.replace(/[\s\-]/g, '');
+    const mk = (wd.marks || []).find(x => x.norm && sNorm.includes(x.norm));
+    return (mk && row[mk.norm]) || 0;
   }
 
   // ── Generate ──────────────────────────────────────────────────

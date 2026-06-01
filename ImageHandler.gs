@@ -381,8 +381,14 @@ function buildXlsxImageMapUncached_(sheet) {
     );
     if (resp.getResponseCode() !== 200) return {};
 
+    var blob = resp.getBlob();
+    // Гард: на тяжёлой таблице XLSX огромен → Utilities.unzip падает с "Exceeded
+    // memory limit" и роняет весь скрипт. Это крайний фолбэк для картинок —
+    // лучше тихо пропустить (вернуть {}), чем крэшнуть генерацию.
+    if (blob.getBytes().length > 25 * 1024 * 1024) return {};
+
     var files = {};
-    Utilities.unzip(resp.getBlob().setContentType('application/zip')).forEach(function(f) { files[f.getName()] = f; });
+    Utilities.unzip(blob.setContentType('application/zip')).forEach(function(f) { files[f.getName()] = f; });
 
     var sheets = ss.getSheets();
     var sheetIdx = 0;

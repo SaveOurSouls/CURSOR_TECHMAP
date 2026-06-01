@@ -185,9 +185,11 @@ function insertTemplate(templateId) {
   const ss = SpreadsheetApp.getActive();
   const template = getTemplateById_(templateId);
 
-  // Remove existing sheet with the same name so re-generation doesn't produce "-2" suffix.
+  // Заменяем одноимённый лист, чтобы при ре-генерации не плодить суффиксы «-2».
+  // Но сносим ТОЛЬКО лист-техкарту (имя в формате "CODE | Тип", содержит " | "),
+  // чтобы случайно не удалить важный пользовательский лист с совпавшим именем.
   const existingSheet = ss.getSheetByName(template.title);
-  if (existingSheet) ss.deleteSheet(existingSheet);
+  if (existingSheet && template.title.indexOf(' | ') >= 0) ss.deleteSheet(existingSheet);
 
   // Create a new sheet named after the template; insert content starting at B2.
   const targetSheet = createUniqueSheet_(ss, template.title);

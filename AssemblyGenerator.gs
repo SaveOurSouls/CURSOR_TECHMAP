@@ -31,8 +31,51 @@ function getAssemblyGeneratorData_() {
   const templates    = readCatalog_().map(t => ({ id: t.id, title: t.title, category: t.category || '' }));
   const ops          = readOpRecordsForGenerator_();
   const terRecords   = readTerRecordsForGenerator_();
+  const wireDia      = readWireDiaTable_();
 
-  return { assemblyInfo, components, templates, ops, terRecords };
+  return { assemblyInfo, components, templates, ops, terRecords, wireDia };
+}
+
+// Читает справочник Ø изоляции проводов из листа «СПР.КОАКС» источника.
+// Формат: строка заголовков с «AWG» | «ГОСТ» | «Ø жилы» | <марки…>; ниже — данные.
+// Возвращает { marks:[{name,norm}], byAwg:{ '30': {'силикон':1.2, …}, … } }.
+// Используется генератором для авто-подстановки Ø в формулу запаса на свивку.
+function readWireDiaTable_() {
+  try {
+    const ss = SpreadsheetApp.openById(TECHOPS_DB_APP.sourceSpreadsheetId);
+    const sh = ss.getSheetByName('СПР.КОАКС');
+    if (!sh || sh.getLastRow() < 2) return null;
+    const vals = sh.getDataRange().getValues();
+    let hr = -1;
+    for (let r = 0; r < vals.length; r++) {
+      if (vals[r].some(c => String(c || '').trim().toLowerCase() === 'awg')) { hr = r; break; }
+    }
+    if (hr < 0) return null;
+    const headers = vals[hr].map(c => String(c || '').trim());
+    const awgCol  = headers.findIndex(h => h.toLowerCase() === 'awg');
+    const gostCol = headers.findIndex(h => h.toLowerCase() === 'гост');
+    // Колонки марок — все непустые заголовки правее «Ø жилы» (первые 3 — AWG/ГОСТ/Ø жилы).
+    const marks = [];
+    headers.forEach((h, c) => {
+      if (c > awgCol + 2 && h) marks.push({ name: h, norm: h.toLowerCase().replace(/[\s\-]/g, ''), col: c });
+    });
+    const byAwg = {};
+    const byGost = {};
+    for (let r = hr + 1; r < vals.length; r++) {
+      const awg = String(vals[r][awgCol] || '').trim();
+      if (!awg) continue;
+      const row = {};
+      marks.forEach(m => {
+        const v = parseFloat(String(vals[r][m.col] || '').replace(',', '.'));
+        if (isFinite(v) && v > 0) row[m.norm] = v;
+      });
+      byAwg[awg] = row;
+      // Индекс по ГОСТ-сечению (нормализуем число: «0,50»→«0.5»).
+      const g = gostCol >= 0 ? parseFloat(String(vals[r][gostCol] || '').replace(',', '.')) : NaN;
+      if (isFinite(g)) byGost[String(g)] = row;
+    }
+    return { marks: marks.map(m => ({ name: m.name, norm: m.norm })), byAwg, byGost };
+  } catch (e) { return null; }
 }
 
 // Find Таблица1: header row with BOTH "индекс" AND "наименование"
@@ -334,12 +377,9 @@ function computeOperationResult_(opType, config, prevResult, wireData) {
       return `${connLabel} сторона В в сборе с ${ws.length} проводами обжатыми терминалом ${tB}`.trim();
     }
     case 'twist': {
-      // Свивка: провода попарно/списком + шаг; дописываем к текущему результату.
-      const t     = config.twist || {};
-      const step  = t.pitch ? ` шаг ${t.pitch} мм` : '';
-      const label = twistWiresLabel_(config);
-      const body  = label ? `свивка ${label}${step}` : `свивка${step}`;
-      return prevResult ? `${prevResult}; ${body}` : (body.charAt(0).toUpperCase() + body.slice(1));
+      // Свивка не меняет наименование полуфабриката — просто помечаем «(со свивкой)».
+      // Детали (пары проводов + шаг) выводятся в маркер-ячейки шаблона, не в результат.
+      return prevResult ? `${prevResult} (со свивкой)` : 'Свивка';
     }
     default:         return prevResult;
   }

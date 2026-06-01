@@ -303,26 +303,30 @@ function compactifyStore_(catalog) {
     let writeRow = 1;
     const newStoreRows = {};
 
-    live.forEach((item) => {
-      const srcRange = storeSheet.getRange(item.storeRow, item.storeColumn, item.height, item.width);
-      ensureSheetCapacity_(tempSheet, writeRow + item.height - 1, item.width);
-      const destRange = tempSheet.getRange(writeRow, 1, item.height, item.width);
-      destRange.breakApart();
-      copyRangePreservingFormulas_(srcRange, destRange);
-      newStoreRows[item.id] = writeRow;
-      writeRow += item.height;
-    });
+    try {
+      live.forEach((item) => {
+        const srcRange = storeSheet.getRange(item.storeRow, item.storeColumn, item.height, item.width);
+        ensureSheetCapacity_(tempSheet, writeRow + item.height - 1, item.width);
+        const destRange = tempSheet.getRange(writeRow, 1, item.height, item.width);
+        destRange.breakApart();
+        copyRangePreservingFormulas_(srcRange, destRange);
+        newStoreRows[item.id] = writeRow;
+        writeRow += item.height;
+      });
 
-    const storeLastRow = storeSheet.getLastRow();
-    if (storeLastRow > 0) storeSheet.deleteRows(1, storeLastRow);
-    if (writeRow > 1) {
-      const cols = live.reduce((max, item) => Math.max(max, item.width || 0), 0) || 20;
-      ensureSheetCapacity_(storeSheet, writeRow - 1, cols);
-      const compactedRange = tempSheet.getRange(1, 1, writeRow - 1, cols);
-      copyRangePreservingFormulas_(compactedRange, storeSheet.getRange(1, 1, writeRow - 1, cols));
+      const storeLastRow = storeSheet.getLastRow();
+      if (storeLastRow > 0) storeSheet.deleteRows(1, storeLastRow);
+      if (writeRow > 1) {
+        const cols = live.reduce((max, item) => Math.max(max, item.width || 0), 0) || 20;
+        ensureSheetCapacity_(storeSheet, writeRow - 1, cols);
+        const compactedRange = tempSheet.getRange(1, 1, writeRow - 1, cols);
+        copyRangePreservingFormulas_(compactedRange, storeSheet.getRange(1, 1, writeRow - 1, cols));
+      }
+    } finally {
+      // Гарантированно удаляем временный лист даже при ошибке/таймауте,
+      // иначе _TC_COMPACT_TMP повиснет в документе навсегда.
+      try { ss.deleteSheet(tempSheet); } catch (e) {}
     }
-
-    ss.deleteSheet(tempSheet);
 
     const catalogLastRow = catalogSheet.getLastRow();
     if (catalogLastRow < 2) {
