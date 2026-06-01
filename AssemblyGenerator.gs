@@ -229,6 +229,9 @@ function generateAssemblyTechCards(config) {
       createdSheets.push(insertResult.sheetName);
     }
 
+    // Запоминаем созданные листы — кнопка «Удалить созданные» в диалоге их снесёт.
+    PropertiesService.getDocumentProperties()
+      .setProperty('TECHMAP_LAST_GENERATED', JSON.stringify(createdSheets));
     return { ok: true, sheets: createdSheets };
   } catch (e) {
     // Откат: удаляем все созданные листы при ошибке
@@ -242,6 +245,21 @@ function generateAssemblyTechCards(config) {
   }
 }
 
+// Удаляет листы последней генерации (имена сохранены в свойствах документа).
+// Используется кнопкой «Удалить созданные» в диалоге для быстрых итераций тестов.
+function deleteLastGeneratedSheets() {
+  const props = PropertiesService.getDocumentProperties();
+  const names = safeJsonParse_(props.getProperty('TECHMAP_LAST_GENERATED'), []);
+  const ss = SpreadsheetApp.getActive();
+  let deleted = 0;
+  (names || []).forEach((name) => {
+    const s = ss.getSheetByName(name);
+    if (s && ss.getSheets().length > 1) { ss.deleteSheet(s); deleted++; }
+  });
+  props.deleteProperty('TECHMAP_LAST_GENERATED');
+  return { deleted: deleted, names: names || [] };
+}
+
 // Combines multiple wire entries into a single data object for the CUT_WIRE tech card.
 function buildCombinedWireData_(wires) {
   if (!wires || !wires.length) return {};
@@ -252,6 +270,27 @@ function buildCombinedWireData_(wires) {
     qty:    wires.reduce((s, w) => s + (Number(w.qty) || 1), 0),
     length: wires.map(w => String(w.length || '')).join('\n'),
   };
+}
+
+// Подпись проводов свивки. multiline=true → пары по строкам с нумерацией
+// (читаемо для ячейки карты); иначе компактно в одну строку (для результата).
+function twistWiresLabel_(config, multiline) {
+  const t      = config.twist || {};
+  const wires  = Array.isArray(config.wires) ? config.wires : [];
+  const nameOf = i => { const w = wires[i]; return w ? (w.art || w.name || '').trim() : ''; };
+  if (t.mode === 'pairs' && Array.isArray(t.pairs) && t.pairs.length) {
+    const list = t.pairs.map(p => (p || []).map(nameOf).filter(Boolean).join(' + ')).filter(Boolean);
+    return multiline ? list.map((s, i) => `${i + 1}) ${s}`).join('\n') : list.join('; ');
+  }
+  const idx = Array.isArray(t.wireIndices) ? t.wireIndices : [];
+  return idx.map(nameOf).filter(Boolean).join(multiline ? '\n' : ', ');
+}
+
+// Число свивок: количество пар (режим пар) либо 1 (режим «все вместе»).
+function twistCount_(config) {
+  const t = config.twist || {};
+  if (t.mode === 'pairs' && Array.isArray(t.pairs)) return t.pairs.length || 0;
+  return 1;
 }
 
 function computeOperationResult_(opType, config, prevResult, wireData) {
@@ -293,6 +332,14 @@ function computeOperationResult_(opType, config, prevResult, wireData) {
       const tB = sB.termArt || sB.termName || '';
       const connLabel = sB.connArt || sB.connName || '';
       return `${connLabel} сторона В в сборе с ${ws.length} проводами обжатыми терминалом ${tB}`.trim();
+    }
+    case 'twist': {
+      // Свивка: провода попарно/списком + шаг; дописываем к текущему результату.
+      const t     = config.twist || {};
+      const step  = t.pitch ? ` шаг ${t.pitch} мм` : '';
+      const label = twistWiresLabel_(config);
+      const body  = label ? `свивка ${label}${step}` : `свивка${step}`;
+      return prevResult ? `${prevResult}; ${body}` : (body.charAt(0).toUpperCase() + body.slice(1));
     }
     default:         return prevResult;
   }
@@ -596,6 +643,8 @@ function computeOutputNorm_(opType, config) {
   if (['insTermA', 'insTermB', 'prsTermB'].includes(opType) && wires.length) {
     return String((wires[0].qty || 1) * pQty);
   }
+  // Свивка даёт один полуфабрикат-жгут на изделие → норма в шт.
+  if (opType === 'twist') return String(pQty);
   return '';
 }
 
@@ -796,6 +845,8 @@ function fillSfOut_(sheet, ctx, colMap, config, thisResult, opType, isLast) {
     }
   } else if (nameC >= 0) {
     fillMergedCell_(sheet, fSfOut + 1, nameC + 1, singleName, ctx.mergeMap);
+    // Свивка: норма результата = шт на изделие (иначе в шаблоне остаётся #REF!).
+    if (opType === 'twist' && normC >= 0) fillMergedCell_(sheet, fSfOut + 1, normC + 1, String(pQty), ctx.mergeMap);
   }
 
   if (isLast) relabelSemifinished_(sheet, ctx, fSfOut, 'Изделие');
@@ -875,6 +926,15 @@ function fillTime_(sheet, ctx, colMap, op, config, thisResult, opType, isLast) {
         if (tNormCol >= 0) fillMergedCell_(sheet, rowNum, tNormCol + 1, wNorm, ctx.mergeMap);
       }
     }
+  } else if (opType === 'twist') {
+    // Время свивки = (опер. время на 1 свивку) × число свивок (пар) × партия + подгот.
+    const tOpMin   = (parseFloat(String(op.tOp   || '').replace(',', '.')) || 0) / 60;
+    const tPrepMin = (parseFloat(String(op.tPrep || '').replace(',', '.')) || 0) / 60;
+    const cnt      = twistCount_(config);
+    const norm     = formatDecimalComma_(tOpMin * cnt * pQty + tPrepMin, 2);
+    writeSeqNum_(sheet, timeDataRows[0] + 1, colMap.seqCol, 0, ctx.mergeMap);
+    fillMergedCell_(sheet, timeDataRows[0] + 1, tNameCol + 1, singleName, ctx.mergeMap);
+    if (tNormCol >= 0) fillMergedCell_(sheet, timeDataRows[0] + 1, tNormCol + 1, norm, ctx.mergeMap);
   } else {
     const tVals = timeDataRows.length <= 1
       ? [secToMin_(op.tOp)]
@@ -940,6 +1000,28 @@ function fillTerminalFields_(sheet, ctx, terData) {
   }
 }
 
+// Заполняет поля свивки по текстовым маркерам в шаблоне:
+//   «вывести заданный шаг»            → значение шага свивки
+//   «записать сюда какие провода …»   → список выбранных проводов
+function fillTwistFields_(sheet, ctx, config) {
+  const t        = config.twist || {};
+  const wiresStr = twistWiresLabel_(config, true);   // пары по строкам, нумерованные
+  const pitchStr = t.pitch ? `${t.pitch} мм` : '';
+  for (let r = 0; r < ctx.values.length; r++) {
+    const row = ctx.values[r] || [];
+    for (let c = 0; c < row.length; c++) {
+      const cell = String(row[c] || '').toLowerCase();
+      if (!cell.trim()) continue;
+      // Матч по вхождению ключевых слов (устойчив к написанию/пробелам/переносам).
+      if (cell.includes('вывести') && cell.includes('шаг')) {
+        fillMergedCell_(sheet, r + 1, c + 1, pitchStr, ctx.mergeMap);
+      } else if (cell.includes('записать') && cell.includes('провод')) {
+        fillMergedCell_(sheet, r + 1, c + 1, wiresStr, ctx.mergeMap);
+      }
+    }
+  }
+}
+
 // ── Structural fill orchestrator ──────────────────────────────
 
 function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisResult, wireData, terData, sheetState, prevResultNorm, isLast) {
@@ -962,6 +1044,8 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
     fillDopusk_(sheet, ctx, wireData);
   if (['prsTermA','insTermA','prsTermB','insTermB'].includes(opType) && terData)
     fillTerminalFields_(sheet, ctx, terData);
+  if (opType === 'twist')
+    fillTwistFields_(sheet, ctx, config);
 }
 
 // ── Row insertion ─────────────────────────────────────────────

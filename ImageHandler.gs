@@ -186,6 +186,7 @@ function migrateTemplateImagesToDrive() {
         if (!blob) return;
         if (!folder) folder = getOrCreateImageCacheFolder_();
         var driveFile = folder.createFile(blob.setName('tc_img_' + relRow + '_' + relCol));
+        shareDriveItemForViewers_(driveFile);
         imagesData.push({
           driveFileId: driveFile.getId(),
           relRow: relRow, relCol: relCol,
@@ -331,8 +332,16 @@ function getOrCreateImageCacheFolder_() {
     try { return DriveApp.getFolderById(folderId); } catch (e) {}
   }
   var folder = DriveApp.createFolder(TECHMAP_APP.imageCacheFolderName);
+  shareDriveItemForViewers_(folder);
   props.setProperty('tc_image_cache_folder', folder.getId());
   return folder;
+}
+
+// Делает Drive-объект доступным любому по ссылке (просмотр). Без этого вставка
+// картинок через DriveApp.getFileById() падает у ДРУГИХ пользователей таблицы —
+// файлы кеша принадлежат создателю и приватны. Диаграммы обжима не секретны.
+function shareDriveItemForViewers_(item) {
+  try { item.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch (e) {}
 }
 
 // ── XLSX image extraction (last-resort fallback) ─────────────
@@ -500,6 +509,7 @@ function copySourceImagesToStore_(sourceSheet, range, storeSheet, storeRow, stor
         try {
           if (!folder) folder = getOrCreateImageCacheFolder_();
           var driveFile = folder.createFile(blob.setName('tc_img_' + relRow + '_' + relCol));
+          shareDriveItemForViewers_(driveFile);
           imagesData.push({
             driveFileId: driveFile.getId(),
             relRow: relRow,

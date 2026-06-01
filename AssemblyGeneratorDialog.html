@@ -315,6 +315,32 @@
   </div>
 </div>
 
+<!-- ═══ СВИВКА (TWIST, ОПЦИОНАЛЬНО) ══════════════════════════ -->
+<div class="toggle-row">
+  <input type="checkbox" id="twistEnabled" />
+  <label for="twistEnabled">Свивка (TWIST)</label>
+</div>
+<div id="twistBlock" style="display:none">
+  <div class="card">
+    <div style="display:flex;gap:18px;margin-bottom:8px;font-size:12px;font-weight:600">
+      <label style="cursor:pointer"><input type="radio" name="twistMode" value="pairs" checked onchange="onTwistModeChange()"/> Парами</label>
+      <label style="cursor:pointer"><input type="radio" name="twistMode" value="all" onchange="onTwistModeChange()"/> Все вместе</label>
+    </div>
+    <div id="twistPairsUI">
+      <label class="field-label">Пары для свивки</label>
+      <div id="twistPairsList"></div>
+      <button type="button" onclick="addTwistPair()" style="margin-top:4px;padding:5px 10px;border:1px dashed var(--brd);background:var(--surf);border-radius:var(--r);cursor:pointer;font-size:12px;font-weight:600;color:var(--accent)">+ Добавить пару</button>
+    </div>
+    <div id="twistAllUI" style="display:none">
+      <label class="field-label">Какие провода свивать</label>
+      <div id="twistWireList" style="display:flex;flex-wrap:wrap;gap:6px 14px;margin:4px 0 8px"></div>
+    </div>
+    <div class="ter-row">
+      <div class="ter-f"><label>Шаг свивки, мм</label><input id="twistPitch" class="ter-inp" type="text" placeholder="—" oninput="refresh()" /></div>
+    </div>
+  </div>
+</div>
+
 <!-- ═══ ОПЕРАЦИИ ══════════════════════════════════════════════ -->
 <h3>Операции</h3>
 <div class="card" id="opsCard">
@@ -324,6 +350,7 @@
 <!-- ═══ ДЕЙСТВИЯ ═════════════════════════════════════════════ -->
 <div class="actions">
   <button class="btn-secondary" onclick="google.script.host.close()">Отмена</button>
+  <button class="btn-secondary" id="deleteBtn" onclick="deleteGenerated()">Удалить созданные</button>
   <button class="btn-primary" id="generateBtn" onclick="generate()">Создать техкарты</button>
 </div>
 <div id="status"></div>
@@ -375,6 +402,7 @@
     insTermA: 'Монтаж терминалов (А)',
     prsTermB: 'Опрессовка терминалов (В)',
     insTermB: 'Монтаж терминалов (В)',
+    twist:    'Свивка',
   };
 
   // Wire entries state
@@ -394,6 +422,16 @@
     document.getElementById('sideBEnabled').addEventListener('change', () => {
       document.getElementById('sideBBlock').style.display =
         document.getElementById('sideBEnabled').checked ? '' : 'none';
+      refresh();
+    });
+
+    document.getElementById('twistEnabled').addEventListener('change', () => {
+      const on = document.getElementById('twistEnabled').checked;
+      document.getElementById('twistBlock').style.display = on ? '' : 'none';
+      if (on) {
+        onTwistModeChange();
+        if (!document.querySelector('.twist-pair-row')) addTwistPair();  // засеять одну пару
+      }
       refresh();
     });
 
@@ -417,7 +455,96 @@
   function refresh() {
     updateCutLength_();
     renderQtyHints();
+    renderTwistWires();
+    renderTwistPairs();
     renderOpsCard();
+  }
+
+  // ── Свивка: режим / провода / пары ───────────────────────────
+  function getTwistMode() {
+    const r = document.querySelector('input[name="twistMode"]:checked');
+    return r ? r.value : 'pairs';
+  }
+
+  function onTwistModeChange() {
+    const mode = getTwistMode();
+    document.getElementById('twistPairsUI').style.display = mode === 'pairs' ? '' : 'none';
+    document.getElementById('twistAllUI').style.display   = mode === 'all'   ? '' : 'none';
+    refresh();
+  }
+
+  // <option>-список активных кабелей (value = индекс в активном массиве).
+  function twistWireOptions_() {
+    const active = wireEntries.filter(w => w.compId);
+    return '<option value="">—</option>' + active.map((w, i) => {
+      const c = getCompById(w.compId);
+      return `<option value="${i}">${esc(c ? (c.art || c.name) : '?')}</option>`;
+    }).join('');
+  }
+
+  // Чекбоксы «какие провода свивать» (режим «все вместе»).
+  function renderTwistWires() {
+    const cont = document.getElementById('twistWireList');
+    if (!cont) return;
+    const firstBuild = !cont.querySelector('.twist-wire-cb');
+    const prev = new Set(getTwistWireIndices());
+    const active = wireEntries.filter(w => w.compId);
+    if (!active.length) {
+      cont.innerHTML = '<span style="color:var(--txt3);font-size:12px">Добавьте кабели выше</span>';
+      return;
+    }
+    cont.innerHTML = active.map((w, i) => {
+      const c  = getCompById(w.compId);
+      const nm = c ? (c.art || c.name) : '?';
+      const ck = (firstBuild || prev.has(i)) ? ' checked' : '';  // по умолчанию все
+      return `<label style="display:flex;align-items:center;gap:5px;font-size:12px;font-weight:500;cursor:pointer">`
+        + `<input type="checkbox" class="twist-wire-cb" value="${i}"${ck} onchange="renderOpsCard()"/> ${esc(nm)}</label>`;
+    }).join('');
+  }
+
+  function getTwistWireIndices() {
+    return [...document.querySelectorAll('.twist-wire-cb:checked')].map(cb => Number(cb.value));
+  }
+
+  // Добавить пару (два селекта проводов + удалить).
+  function addTwistPair() {
+    const list = document.getElementById('twistPairsList');
+    if (!list) return;
+    const opts = twistWireOptions_();
+    const row = document.createElement('div');
+    row.className = 'twist-pair-row';
+    row.style.cssText = 'display:flex;align-items:center;gap:6px;margin-bottom:5px';
+    row.innerHTML =
+        `<select class="twist-pair-a" style="flex:1;padding:5px" onchange="renderOpsCard()">${opts}</select>`
+      + `<span style="font-weight:700">+</span>`
+      + `<select class="twist-pair-b" style="flex:1;padding:5px" onchange="renderOpsCard()">${opts}</select>`
+      + `<button type="button" onclick="this.closest('.twist-pair-row').remove();renderOpsCard()" style="border:0;background:none;color:var(--txt3);cursor:pointer;font-size:16px;padding:0 4px">×</button>`;
+    list.appendChild(row);
+    renderOpsCard();
+  }
+
+  // Пересобрать option-списки в парах при смене кабелей, сохранив выбор.
+  function renderTwistPairs() {
+    const opts = twistWireOptions_();
+    document.querySelectorAll('.twist-pair-row select').forEach(sel => {
+      const cur = sel.value;
+      sel.innerHTML = opts;
+      sel.value = cur;
+    });
+  }
+
+  function getTwistPairs() {
+    const pairs = [];
+    document.querySelectorAll('.twist-pair-row').forEach(row => {
+      const a = row.querySelector('.twist-pair-a').value;
+      const b = row.querySelector('.twist-pair-b').value;
+      if (a !== '' && b !== '' && a !== b) pairs.push([Number(a), Number(b)]);
+    });
+    return pairs;
+  }
+
+  function getTwistSelectionCount() {
+    return getTwistMode() === 'pairs' ? getTwistPairs().length : getTwistWireIndices().length;
   }
 
   function renderQtyHints() {
@@ -843,6 +970,15 @@
     if (sideB && termB) ops.push({ type: 'prsTermB', opKey: 'prsTermB', label: 'Опрессовка терминалов (В)' });
     if (sideB && connB) ops.push({ type: 'insTermB', opKey: 'insTermB', label: 'Монтаж терминалов (В)'     });
 
+    // Свивка (опционально). При стороне B — ПЕРЕД монтажом B; иначе в конце цепочки.
+    const twistOn = (document.getElementById('twistEnabled') || {}).checked;
+    if (twistOn && getTwistSelectionCount() > 0) {
+      const twistOp = { type: 'twist', opKey: 'twist', label: 'Свивка' };
+      const insBIdx = ops.findIndex(o => o.type === 'insTermB');
+      if (insBIdx >= 0) ops.splice(insBIdx, 0, twistOp);
+      else ops.push(twistOp);
+    }
+
     return ops;
   }
 
@@ -1094,6 +1230,13 @@
       wires,
       sideA: sideAInfo,
       sideB: sideBInfo,
+      twist: {
+        enabled:     !!(document.getElementById('twistEnabled') || {}).checked,
+        mode:        getTwistMode(),
+        pairs:       getTwistPairs(),
+        wireIndices: getTwistWireIndices(),
+        pitch:       (document.getElementById('twistPitch') && document.getElementById('twistPitch').value.trim()) || '',
+      },
       ops,
     };
   }
@@ -1141,6 +1284,22 @@
     if (!id) return null;
     return (D.components || []).find(c => c.id === id) || null;
   }
+  function deleteGenerated() {
+    if (!confirm('Удалить листы последней генерации?')) return;
+    setStatus('Удаляю созданные листы…', false);
+    document.getElementById('deleteBtn').disabled = true;
+    google.script.run
+      .withSuccessHandler(r => {
+        document.getElementById('deleteBtn').disabled = false;
+        setStatus(r.deleted ? `Удалено листов: ${r.deleted}` : 'Нет листов последней генерации.', false);
+      })
+      .withFailureHandler(err => {
+        document.getElementById('deleteBtn').disabled = false;
+        setStatus(err.message || 'Ошибка удаления.', true);
+      })
+      .deleteLastGeneratedSheets();
+  }
+
   function setStatus(msg, err) {
     const el = document.getElementById('status');
     el.textContent = msg;
