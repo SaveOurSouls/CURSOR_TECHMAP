@@ -36,14 +36,15 @@ function getAssemblyGeneratorData_() {
   return { assemblyInfo, components, templates, ops, terRecords, wireDia };
 }
 
-// Читает справочник Ø изоляции проводов из листа «СПР.КОАКС» источника.
+// Читает справочник Ø изоляции проводов из листа справочника кабелей источника.
+// Лист: «СПР.КАБ» (ранее «СПР.КОАКС») — пробуем оба имени.
 // Формат: строка заголовков с «AWG» | «ГОСТ» | «Ø жилы» | <марки…>; ниже — данные.
 // Возвращает { marks:[{name,norm}], byAwg:{ '30': {'силикон':1.2, …}, … } }.
 // Используется генератором для авто-подстановки Ø в формулу запаса на свивку.
 function readWireDiaTable_() {
   try {
     const ss = SpreadsheetApp.openById(TECHOPS_DB_APP.sourceSpreadsheetId);
-    const sh = ss.getSheetByName('СПР.КОАКС');
+    const sh = ss.getSheetByName('СПР.КАБ') || ss.getSheetByName('СПР.КОАКС');
     if (!sh || sh.getLastRow() < 2) return null;
     const vals = sh.getDataRange().getValues();
     let hr = -1;
@@ -381,6 +382,10 @@ function computeOperationResult_(opType, config, prevResult, wireData) {
       // Детали (пары проводов + шаг) выводятся в маркер-ячейки шаблона, не в результат.
       return prevResult ? `${prevResult} (со свивкой)` : 'Свивка';
     }
+    case 'tin': {
+      // Лужение не меняет наименование полуфабриката — помечаем «(с лужением)».
+      return prevResult ? `${prevResult} (с лужением)` : 'Лужение';
+    }
     default:         return prevResult;
   }
 }
@@ -683,8 +688,8 @@ function computeOutputNorm_(opType, config) {
   if (['insTermA', 'insTermB', 'prsTermB'].includes(opType) && wires.length) {
     return String((wires[0].qty || 1) * pQty);
   }
-  // Свивка даёт один полуфабрикат-жгут на изделие → норма в шт.
-  if (opType === 'twist') return String(pQty);
+  // Свивка/лужение дают один полуфабрикат на изделие → норма в шт.
+  if (opType === 'twist' || opType === 'tin') return String(pQty);
   return '';
 }
 
@@ -885,8 +890,8 @@ function fillSfOut_(sheet, ctx, colMap, config, thisResult, opType, isLast) {
     }
   } else if (nameC >= 0) {
     fillMergedCell_(sheet, fSfOut + 1, nameC + 1, singleName, ctx.mergeMap);
-    // Свивка: норма результата = шт на изделие (иначе в шаблоне остаётся #REF!).
-    if (opType === 'twist' && normC >= 0) fillMergedCell_(sheet, fSfOut + 1, normC + 1, String(pQty), ctx.mergeMap);
+    // Свивка/лужение: норма результата = шт на изделие (иначе в шаблоне остаётся #REF!).
+    if ((opType === 'twist' || opType === 'tin') && normC >= 0) fillMergedCell_(sheet, fSfOut + 1, normC + 1, String(pQty), ctx.mergeMap);
   }
 
   if (isLast) relabelSemifinished_(sheet, ctx, fSfOut, 'Изделие');
@@ -972,6 +977,18 @@ function fillTime_(sheet, ctx, colMap, op, config, thisResult, opType, isLast) {
     const tPrepMin = (parseFloat(String(op.tPrep || '').replace(',', '.')) || 0) / 60;
     const cnt      = twistCount_(config);
     const norm     = formatDecimalComma_(tOpMin * cnt * pQty + tPrepMin, 2);
+    writeSeqNum_(sheet, timeDataRows[0] + 1, colMap.seqCol, 0, ctx.mergeMap);
+    fillMergedCell_(sheet, timeDataRows[0] + 1, tNameCol + 1, singleName, ctx.mergeMap);
+    if (tNormCol >= 0) fillMergedCell_(sheet, timeDataRows[0] + 1, tNormCol + 1, norm, ctx.mergeMap);
+  } else if (opType === 'tin') {
+    // Время лужения = (опер. время на 1 конец) × число лужёных концов × партия + подгот.
+    // Концы — только выбранные провода (config.tin.wireIndices); пусто → все.
+    const tOpMin   = (parseFloat(String(op.tOp   || '').replace(',', '.')) || 0) / 60;
+    const tPrepMin = (parseFloat(String(op.tPrep || '').replace(',', '.')) || 0) / 60;
+    const tinIdx   = (config.tin && Array.isArray(config.tin.wireIndices)) ? config.tin.wireIndices : null;
+    const tinned   = (tinIdx && tinIdx.length) ? tinIdx.map(i => wires[i]).filter(Boolean) : wires;
+    const ends     = tinned.reduce((s, w) => s + (w.qty || 1), 0) || 1;
+    const norm     = formatDecimalComma_(tOpMin * ends * pQty + tPrepMin, 2);
     writeSeqNum_(sheet, timeDataRows[0] + 1, colMap.seqCol, 0, ctx.mergeMap);
     fillMergedCell_(sheet, timeDataRows[0] + 1, tNameCol + 1, singleName, ctx.mergeMap);
     if (tNormCol >= 0) fillMergedCell_(sheet, timeDataRows[0] + 1, tNormCol + 1, norm, ctx.mergeMap);

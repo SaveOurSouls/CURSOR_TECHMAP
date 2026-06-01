@@ -347,6 +347,18 @@
   </div>
 </div>
 
+<!-- ═══ ЛУЖЕНИЕ (TIN, ТОЛЬКО БЕЗ СТОРОНЫ В) ═══════════════════ -->
+<div class="toggle-row" id="tinToggleRow">
+  <input type="checkbox" id="tinEnabled" />
+  <label for="tinEnabled">Лужение (TIN) — лужение свободных концов</label>
+</div>
+<div id="tinBlock" style="display:none">
+  <div class="card">
+    <label class="field-label">Какие концы лудить (по умолчанию все)</label>
+    <div id="tinWireList" style="display:flex;flex-wrap:wrap;gap:6px 14px;margin:4px 0 2px"></div>
+  </div>
+</div>
+
 <!-- ═══ ОПЕРАЦИИ ══════════════════════════════════════════════ -->
 <h3>Операции</h3>
 <div class="card" id="opsCard">
@@ -409,6 +421,7 @@
     prsTermB: 'Опрессовка терминалов (В)',
     insTermB: 'Монтаж терминалов (В)',
     twist:    'Свивка',
+    tin:      'Лужение',
   };
 
   // Wire entries state
@@ -427,8 +440,18 @@
     populateComponentSelects();
 
     document.getElementById('sideBEnabled').addEventListener('change', () => {
-      document.getElementById('sideBBlock').style.display =
-        document.getElementById('sideBEnabled').checked ? '' : 'none';
+      const on = document.getElementById('sideBEnabled').checked;
+      document.getElementById('sideBBlock').style.display = on ? '' : 'none';
+      // Лужение предлагаем только когда стороны В нет — прячем и снимаем при включении В.
+      const tinCb = document.getElementById('tinEnabled');
+      if (on && tinCb.checked) tinCb.checked = false;
+      document.getElementById('tinToggleRow').style.display = on ? 'none' : '';
+      refresh();
+    });
+
+    document.getElementById('tinEnabled').addEventListener('change', () => {
+      document.getElementById('tinBlock').style.display =
+        document.getElementById('tinEnabled').checked ? '' : 'none';
       refresh();
     });
 
@@ -466,6 +489,7 @@
     renderTwistWires();
     renderTwistPairs();
     autofillTwistDia();
+    renderTinWires();
     renderOpsCard();
   }
 
@@ -540,6 +564,30 @@
 
   function getTwistWireIndices() {
     return [...document.querySelectorAll('.twist-wire-cb:checked')].map(cb => Number(cb.value));
+  }
+
+  // Чекбоксы «какие концы лудить». По умолчанию все отмечены.
+  function renderTinWires() {
+    const cont = document.getElementById('tinWireList');
+    if (!cont) return;
+    const firstBuild = !cont.querySelector('.tin-wire-cb');
+    const prev = new Set(getTinWireIndices());
+    const active = wireEntries.filter(w => w.compId);
+    if (!active.length) {
+      cont.innerHTML = '<span style="color:var(--txt3);font-size:12px">Добавьте кабели выше</span>';
+      return;
+    }
+    cont.innerHTML = active.map((w, i) => {
+      const c  = getCompById(w.compId);
+      const nm = c ? (c.art || c.name) : '?';
+      const ck = (firstBuild || prev.has(i)) ? ' checked' : '';  // по умолчанию все
+      return `<label style="display:flex;align-items:center;gap:5px;font-size:12px;font-weight:500;cursor:pointer">`
+        + `<input type="checkbox" class="tin-wire-cb" value="${i}"${ck} onchange="renderOpsCard()"/> ${esc(nm)}</label>`;
+    }).join('');
+  }
+
+  function getTinWireIndices() {
+    return [...document.querySelectorAll('.tin-wire-cb:checked')].map(cb => Number(cb.value));
   }
 
   // Добавить пару (два селекта проводов + удалить). a/b — предвыбранные индексы.
@@ -1079,6 +1127,10 @@
       else ops.push(twistOp);
     }
 
+    // Лужение (опционально, только без стороны В) — в самом конце цепочки, после свивки.
+    const tinOn = !sideB && (document.getElementById('tinEnabled') || {}).checked;
+    if (tinOn && getTinWireIndices().length > 0) ops.push({ type: 'tin', opKey: 'tin', label: 'Лужение' });
+
     return ops;
   }
 
@@ -1362,6 +1414,12 @@
     };
     applyTwistAllowance_(wires, twist);  // свиваемые провода режем длиннее (запас на свивку)
 
+    const tin = {
+      enabled:     !document.getElementById('sideBEnabled').checked
+                     && !!(document.getElementById('tinEnabled') || {}).checked,
+      wireIndices: getTinWireIndices(),
+    };
+
     return {
       assemblyIndex: findKey(/индекс/i),
       assemblyName:  findKey(/наименование/i),
@@ -1370,6 +1428,7 @@
       sideA: sideAInfo,
       sideB: sideBInfo,
       twist,
+      tin,
       ops,
     };
   }

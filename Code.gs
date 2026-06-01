@@ -47,8 +47,6 @@ function onOpen() {
     .addItem('Сохранить выделение как шаблон', 'showSaveTemplateDialog')
     .addSeparator()
     .addItem('Генератор техкарт сборки', 'showAssemblyGeneratorDialog')
-    .addSeparator()
-    .addItem('⚡ Перенести картинки шаблонов в Drive', 'migrateTemplateImagesToDrive')
     .addToUi();
 }
 

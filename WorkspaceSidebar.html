@@ -820,6 +820,39 @@
         color: var(--accent);
       }
 
+      /* ─── TEMPLATE TREE (компактные строки шаблонов в дереве категорий) ─── */
+      .op-tree .op-children li.tpl-leaf {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        cursor: default;
+        color: var(--txt);
+      }
+      .op-tree .op-children li.tpl-leaf:hover {
+        background: var(--surf);
+        color: var(--txt);
+      }
+      .tpl-leaf-name {
+        flex: 1;
+        min-width: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .tpl-leaf-btns {
+        display: flex;
+        gap: 6px;
+        flex-shrink: 0;
+      }
+      .tpl-mini-btn {
+        width: auto;
+        margin: 0;
+        padding: 4px 11px;
+        font-size: 11px;
+        font-weight: 600;
+        border-radius: 6px;
+      }
+
     </style>
   </head>
   <body>
@@ -1044,26 +1077,74 @@
           return categoryOk && searchOk;
         });
 
+        list.innerHTML = '';
+
         if (!filtered.length) {
           list.innerHTML = '<div class="template-card">Ничего не найдено.</div>';
           return;
         }
 
-        list.innerHTML = filtered
-          .map(
-            (item) => `
-              <div class="template-card">
-                <div class="template-title">${escapeHtml(item.title)}</div>
-                <div class="template-meta">${escapeHtml(item.category || 'Без категории')}${item.sizeLabel ? ` · ${escapeHtml(item.sizeLabel)}` : ''}</div>
-                <div class="template-desc">${escapeHtml(item.description || '')}</div>
-                <div class="template-actions">
-                  <button class="btn-primary" onclick="insertTemplate('${escapeHtml(item.id)}')">Вставить</button>
-                  <button class="btn-danger" onclick="confirmDeleteTemplate('${escapeHtml(item.id)}', '${escapeHtml(item.title)}')">Удалить</button>
-                </div>
-              </div>
-            `
-          )
-          .join('');
+        // Группируем по категории; внутри — компактные строки со «Вставить/Удалить».
+        const groups = new Map();
+        filtered.forEach((item) => {
+          const key = item.category || 'Без категории';
+          if (!groups.has(key)) groups.set(key, []);
+          groups.get(key).push(item);
+        });
+
+        const sortedKeys = Array.from(groups.keys()).sort((a, b) => {
+          if (a === 'Без категории') return 1;
+          if (b === 'Без категории') return -1;
+          return a.localeCompare(b, 'ru');
+        });
+
+        // Разворачиваем группы при активном поиске/выбранной категории, иначе свёрнуто.
+        const expand = !!search || !!category;
+
+        const tree = document.createElement('ul');
+        tree.className = 'op-tree';
+        const fragment = document.createDocumentFragment();
+
+        sortedKeys.forEach((key) => {
+          const items = groups.get(key);
+          const groupLi = document.createElement('li');
+          const { header, childUl } = mkOpGroup_(key, items.length, { open: expand });
+
+          items.forEach((item) => {
+            const leaf = document.createElement('li');
+            leaf.className = 'tpl-leaf';
+
+            const name = document.createElement('span');
+            name.className = 'tpl-leaf-name';
+            const codePart = (item.title || '').split('|')[0].trim() || item.title;
+            name.textContent = codePart;
+            name.title = item.title + (item.sizeLabel ? ' · ' + item.sizeLabel : '');
+
+            const btns = document.createElement('span');
+            btns.className = 'tpl-leaf-btns';
+            const insBtn = document.createElement('button');
+            insBtn.className = 'btn-primary tpl-mini-btn';
+            insBtn.textContent = 'Вставить';
+            insBtn.onclick = function() { insertTemplate(item.id); };
+            const delBtn = document.createElement('button');
+            delBtn.className = 'btn-danger tpl-mini-btn';
+            delBtn.textContent = 'Удалить';
+            delBtn.onclick = function() { confirmDeleteTemplate(item.id, item.title); };
+            btns.appendChild(insBtn);
+            btns.appendChild(delBtn);
+
+            leaf.appendChild(name);
+            leaf.appendChild(btns);
+            childUl.appendChild(leaf);
+          });
+
+          groupLi.appendChild(header);
+          groupLi.appendChild(childUl);
+          fragment.appendChild(groupLi);
+        });
+
+        tree.appendChild(fragment);
+        list.appendChild(tree);
       }
 
       function populateTemplateCategories() {
