@@ -1471,16 +1471,6 @@
         return map[dbKey];
       }
 
-      function getFilteredOperationItems(dbKey, limit) {
-        const config = getOperationTabConfig(dbKey);
-        const query = normalizeSearch(document.getElementById(config.searchInputId).value);
-        const rows = operationDb[dbKey] || [];
-        const filtered = !query
-          ? rows.slice(0, limit || 80)
-          : rows.filter((item) => (item.searchText || '').indexOf(query) !== -1).slice(0, limit || 80);
-        return filtered;
-      }
-
       function setupOperationSearch(dbKey) {
         const config = getOperationTabConfig(dbKey);
         const input = document.getElementById(config.searchInputId);

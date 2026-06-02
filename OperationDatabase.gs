@@ -11,7 +11,7 @@
  * Пример вызова: diagnoseTerSheet('sshl-002t-p0.2')
  */
 function diagnoseTerSheet(searchArticle) {
-  const srcSS  = SpreadsheetApp.openById(TECHOPS_DB_APP.sourceSpreadsheetId);
+  const srcSS  = SpreadsheetApp.openById(getSourceSpreadsheetId_());
   const tab    = TECHOPS_DB_APP.tabs.ter;
   const sheet  = srcSS.getSheetByName(tab.sourceSheetName);
   if (!sheet) { Logger.log('Sheet not found: ' + tab.sourceSheetName); return; }
@@ -111,7 +111,7 @@ function saveTerDataToSourceDbImpl_(article, fieldsJson) {
   if (!fields || typeof fields !== 'object') {
     return { ok: false, message: 'Некорректные данные формы (битый JSON).' };
   }
-  const srcSS   = SpreadsheetApp.openById(TECHOPS_DB_APP.sourceSpreadsheetId);
+  const srcSS   = SpreadsheetApp.openById(getSourceSpreadsheetId_());
   const tab     = TECHOPS_DB_APP.tabs.ter;
   const sheet   = srcSS.getSheetByName(tab.sourceSheetName);
   if (!sheet) throw new Error('Лист ' + tab.sourceSheetName + ' не найден');
@@ -430,7 +430,7 @@ function ensureTechOperationsDataSheet_(ss) {
 // ── Snapshot fetch from source ───────────────────────────────
 
 function fetchTechOperationsSnapshotFromSource_() {
-  const sourceSs = SpreadsheetApp.openById(TECHOPS_DB_APP.sourceSpreadsheetId);
+  const sourceSs = SpreadsheetApp.openById(getSourceSpreadsheetId_());
   const records = [];
   const countsByTab = {};
   const diagnosticsByTab = {};
@@ -494,7 +494,7 @@ function fetchTechOperationsSnapshotFromSource_() {
 
   return {
     meta: {
-      sourceSpreadsheetId: TECHOPS_DB_APP.sourceSpreadsheetId,
+      sourceSpreadsheetId: getSourceSpreadsheetId_(),
       updatedAt: new Date().toISOString(),
       recordCount: records.length,
       schemaVersion: TECHOPS_DB_APP.schemaVersion,
@@ -825,7 +825,7 @@ function loadTechOperationsSnapshotFromSheets_() {
   }
 
   const meta = {
-    sourceSpreadsheetId: TECHOPS_DB_APP.sourceSpreadsheetId,
+    sourceSpreadsheetId: getSourceSpreadsheetId_(),
     updatedAt: '',
     recordCount: records.length,
     schemaVersion: 0,
@@ -840,7 +840,7 @@ function loadTechOperationsSnapshotFromSheets_() {
       metaSheet.getRange(2, 1, metaLastRow - 1, 2).getValues().forEach((row) => {
         const key = row[0];
         const value = row[1];
-        if      (key === 'sourceSpreadsheetId') meta.sourceSpreadsheetId = value || TECHOPS_DB_APP.sourceSpreadsheetId;
+        if      (key === 'sourceSpreadsheetId') meta.sourceSpreadsheetId = value || getSourceSpreadsheetId_();
         else if (key === 'updatedAt')           meta.updatedAt = value || '';
         else if (key === 'recordCount')            meta.recordCount        = toInt_(value);
         else if (key === 'schemaVersion')          meta.schemaVersion      = toInt_(value);
@@ -934,7 +934,7 @@ function buildTechOperationsPayload_(snapshot) {
 
 function buildTechOperationsSummary_(snapshot) {
   return {
-    sourceSpreadsheetId: snapshot.meta.sourceSpreadsheetId || TECHOPS_DB_APP.sourceSpreadsheetId,
+    sourceSpreadsheetId: snapshot.meta.sourceSpreadsheetId || getSourceSpreadsheetId_(),
     updatedAt:    snapshot.meta.updatedAt || '',
     recordCount:  snapshot.meta.recordCount || (snapshot.records ? snapshot.records.length : 0),
     countsByTab:  snapshot.meta.countsByTab || {},

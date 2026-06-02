@@ -239,6 +239,21 @@ function runWithSheetVisible_(sheet, fn) {
   }
 }
 
+// ── Конфигурация развёртывания ───────────────────────────────
+/**
+ * ID исходной таблицы-БД техопераций. Приоритет: ScriptProperties
+ * (TECHMAP_SOURCE_ID) → литерал из Config (TECHOPS_DB_APP.sourceSpreadsheetId).
+ * Для бойлерплейта новый проект задаёт свойство без правки кода; текущее
+ * поведение сохраняется через fallback на литерал.
+ */
+function getSourceSpreadsheetId_() {
+  try {
+    const id = PropertiesService.getScriptProperties().getProperty('TECHMAP_SOURCE_ID');
+    if (id) return id;
+  } catch (e) {}
+  return TECHOPS_DB_APP.sourceSpreadsheetId;
+}
+
 // ── Document lock (сериализация записи в служебные _TC_*-листы) ──
 // Защита от гонок: модальный/модели-сайдбар + генератор могут писать в общие
 // листы (_TC_TECHOPS_DB, _TC_STORE, _TC_LIBRARY) одновременно. GAS document-lock

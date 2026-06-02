@@ -984,7 +984,6 @@
     const termA   = getCompById(document.getElementById('termSelectA').value);
     const sideB   = document.getElementById('sideBEnabled').checked;
     const termB   = sideB ? getCompById(document.getElementById('termSelectB').value) : null;
-    const terRecs = D.terRecords || [];
 
     const findTer = comp => comp ? findTerRecord_(comp.art) : null;
     const terA = findTer(termA);

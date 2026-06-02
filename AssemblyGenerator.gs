@@ -43,7 +43,7 @@ function getAssemblyGeneratorData_() {
 // Используется генератором для авто-подстановки Ø в формулу запаса на свивку.
 function readWireDiaTable_() {
   try {
-    const ss = SpreadsheetApp.openById(TECHOPS_DB_APP.sourceSpreadsheetId);
+    const ss = SpreadsheetApp.openById(getSourceSpreadsheetId_());
     const sh = ss.getSheetByName('СПР.КАБ') || ss.getSheetByName('СПР.КОАКС');
     if (!sh || sh.getLastRow() < 2) return null;
     const vals = sh.getDataRange().getValues();
