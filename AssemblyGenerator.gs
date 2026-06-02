@@ -301,6 +301,20 @@ function deleteLastGeneratedSheets() {
     if (s && ss.getSheets().length > 1) { ss.deleteSheet(s); deleted++; }
   });
   props.deleteProperty('TECHMAP_LAST_GENERATED');
+
+  // После удаления активного листа Sheets перескакивает на соседний и мог
+  // открыть/показать служебный (_TC_TECHOPS_DB и т.п.) — возвращаем фокус на
+  // рабочий лист и прячем служебные обратно.
+  if (deleted > 0) {
+    const active = ss.getActiveSheet();
+    if (active && isSystemSheet_(active.getName())) {
+      const fallback = ss.getSheets().find((sh) => !isSystemSheet_(sh.getName()));
+      if (fallback) ss.setActiveSheet(fallback);
+    }
+    ss.getSheets().forEach((sh) => {
+      if (isSystemSheet_(sh.getName()) && !sh.isSheetHidden()) sh.hideSheet();
+    });
+  }
   return { deleted: deleted, names: names || [] };
 }
 

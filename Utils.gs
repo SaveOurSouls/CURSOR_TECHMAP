@@ -217,8 +217,10 @@ function createUniqueSheet_(ss, baseName) {
 /** Возвращает true если имя листа является служебным (_TC_* или _TPL_*). */
 function isSystemSheet_(sheetName) {
   return (
-    sheetName === TECHMAP_APP.librarySheetName ||
-    sheetName === TECHMAP_APP.storeSheetName   ||
+    sheetName === TECHMAP_APP.librarySheetName    ||
+    sheetName === TECHMAP_APP.storeSheetName       ||
+    sheetName === TECHOPS_DB_APP.dataSheetName     ||
+    sheetName === TECHOPS_DB_APP.metaSheetName     ||
     sheetName.indexOf(TECHMAP_APP.legacyTemplatePrefix) === 0
   );
 }
