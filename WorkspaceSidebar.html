@@ -1336,355 +1336,130 @@
         return { header, childUl };
       }
 
-      function renderOperationResults(dbKey) {
-        if (dbKey === 'dbOb') {
-          renderObTree();
-          return;
-        }
-        if (dbKey === 'dbOp') {
-          renderOpTree();
-          return;
-        }
-        if (dbKey === 'dbTer') {
-          renderTerTree();
-          return;
-        }
-        if (dbKey === 'dbKoax') {
-          renderKoaxTree();
-          return;
-        }
-        const config = getOperationTabConfig(dbKey);
-        const query = normalizeSearch(document.getElementById(config.searchInputId).value);
-        const list = document.getElementById(config.resultsId);
-        const rows = operationDb[dbKey] || [];
-        list.innerHTML = '';
+      // ── Универсальный билдер дерева БД ───────────────────────────
+      // Заменяет renderObTree/OpTree/TerTree/KoaxTree. Конфиг на вкладку:
+      // levels = уровни группировки (поле + отступ/цвет/вес заголовка),
+      // leaf = описание листа (текст/тултип/отступ). Разметка сохранена 1:1.
+      const OP_TREE_LEAF_CAP = 300;
 
-        const filtered = !query
-          ? rows.slice(0, 80)
-          : rows.filter((item) => (item.searchText || '').indexOf(query) !== -1).slice(0, 80);
+      const OP_TREE_CONFIG = {
+        dbOb: {
+          flatWhenNoKeys: true,
+          levels: [{ field: 'obType' }],
+          leaf: { text: it => it.label },
+        },
+        dbOp: {
+          levels: [{ field: 'opName', key: it => it.opName || it.label }],
+          leaf: { text: it => it.opNumber || it.label, title: it => it.label },
+        },
+        dbTer: {
+          levels: [
+            { field: 'terManufacturer' },
+            { field: 'terComponent', key: it => it.terComponent || it.label, pad: '20px', color: '#3c4043', weight: 'normal' },
+            { field: 'terSeries',    pad: '32px', color: '#5f6368', weight: 'normal' },
+            { field: 'terType',      pad: '44px', color: '#80868b', weight: 'normal' },
+          ],
+          leaf: { text: it => it.terArticle || it.label, title: it => it.label, pad: '60px' },
+        },
+        dbKoax: {
+          levels: [
+            { field: 'coaxWire' },
+            { field: 'coaxType', pad: '20px', color: '#3c4043', weight: 'normal' },
+            { field: 'coaxMfr',  pad: '32px', color: '#5f6368', weight: 'normal' },
+          ],
+          leaf: { text: it => it.coaxArticle || (it.coaxType + ' ' + it.coaxWire), title: it => it.label, pad: '36px' },
+        },
+      };
 
-        const fragment = document.createDocumentFragment();
-        filtered.forEach((item) => {
+      function groupBy_(items, keyFn) {
+        const m = new Map();
+        items.forEach(it => { const k = keyFn(it); if (!m.has(k)) m.set(k, []); m.get(k).push(it); });
+        return m;
+      }
+
+      // Добавляет листья в контейнер с cap + «показать ещё» (P4: защита от тысяч узлов).
+      function appendOpLeaves_(container, items, leaf, dbKey, shown) {
+        const cap = shown + OP_TREE_LEAF_CAP;
+        items.slice(shown, cap).forEach(it => {
           const li = document.createElement('li');
-          li.textContent = item.label;
-          li.onclick = function onClick() {
-            addOperationToQueue(dbKey, item);
+          if (leaf.pad) li.style.paddingLeft = leaf.pad;
+          li.textContent = leaf.text(it);
+          if (leaf.title) li.title = leaf.title(it);
+          li.onclick = function() { addOperationToQueue(dbKey, it); };
+          container.appendChild(li);
+        });
+        if (items.length > cap) {
+          const more = document.createElement('li');
+          more.textContent = `показать ещё ${items.length - cap}…`;
+          more.style.cssText = 'color:var(--accent);font-style:italic;cursor:pointer';
+          more.onclick = function() {
+            const parent = this.parentNode;
+            this.remove();
+            appendOpLeaves_(parent, items, leaf, dbKey, cap);
           };
-          fragment.appendChild(li);
-        });
-        list.appendChild(fragment);
+          container.appendChild(more);
+        }
       }
 
-      function renderObTree() {
-        const list = document.getElementById('opDbObResults');
-        const query = normalizeSearch(document.getElementById('opDbObSearch').value);
-        const rows = operationDb.dbOb || [];
-        list.innerHTML = '';
-
-        const filtered = !query
-          ? rows
-          : rows.filter((item) => (item.searchText || '').indexOf(query) !== -1);
-
-        if (!filtered.length) {
-          const empty = document.createElement('li');
-          empty.style.padding = '10px';
-          empty.style.color = '#80868b';
-          empty.style.fontSize = '12px';
-          empty.textContent = query ? 'Ничего не найдено.' : 'База не загружена.';
-          list.appendChild(empty);
-          return;
-        }
-
-        const hasTypes = filtered.some((item) => item.obType);
-        if (!hasTypes) {
-          const ul = document.createElement('ul');
-          ul.className = 'op-children open';
-          filtered.slice(0, 80).forEach((item) => {
-            const li = document.createElement('li');
-            li.textContent = item.label;
-            li.onclick = function() { addOperationToQueue('dbOb', item); };
-            ul.appendChild(li);
-          });
-          list.appendChild(ul);
-          return;
-        }
-
-        const groups = new Map();
-        filtered.forEach((item) => {
-          const key = item.obType || '—';
-          if (!groups.has(key)) groups.set(key, []);
-          groups.get(key).push(item);
-        });
-
-        const fragment = document.createDocumentFragment();
-        let firstGroup = true;
-
-        groups.forEach((items, groupName) => {
-          const li = document.createElement('li');
-          const { header, childUl } = mkOpGroup_(groupName, items.length, { open: firstGroup && !!query });
-
-          items.forEach((item) => {
-            const child = document.createElement('li');
-            child.textContent = item.label;
-            child.onclick = function() { addOperationToQueue('dbOb', item); };
-            childUl.appendChild(child);
-          });
-
-          li.appendChild(header);
-          li.appendChild(childUl);
-          fragment.appendChild(li);
-          firstGroup = false;
-        });
-
-        list.appendChild(fragment);
-      }
-
-      function renderOpTree() {
-        const list = document.getElementById('opDbOpResults');
-        const query = normalizeSearch(document.getElementById('opDbOpSearch').value);
-        const rows = operationDb.dbOp || [];
-        list.innerHTML = '';
-
-        // Filter rows by query (searches both name and number parts of label)
-        const filtered = !query
-          ? rows
-          : rows.filter((item) => (item.searchText || '').indexOf(query) !== -1);
-
-        if (!filtered.length) {
-          const empty = document.createElement('li');
-          empty.style.padding = '10px';
-          empty.style.color = '#80868b';
-          empty.style.fontSize = '12px';
-          empty.textContent = query ? 'Ничего не найдено.' : 'База не загружена.';
-          list.appendChild(empty);
-          return;
-        }
-
-        // Level 1: Название (group header, collapsible)
-        // Level 2: Номер   (leaf, click adds to queue)
-        // Use dedicated opName / opNumber fields — never parse label string.
-        const groups = new Map();
-        filtered.forEach((item) => {
-          const groupKey = item.opName || item.label;
-          const leafText = item.opNumber || item.label;
-          if (!groups.has(groupKey)) {
-            groups.set(groupKey, []);
-          }
-          groups.get(groupKey).push({ item, leafText });
-        });
-
-        let firstGroup = true;
-        const fragment = document.createDocumentFragment();
-
-        groups.forEach((leaves, groupName) => {
-          const li = document.createElement('li');
-          const { header, childUl } = mkOpGroup_(groupName, leaves.length, { open: firstGroup && !!query });
-
-          leaves.forEach(({ item, leafText }) => {
-            const child = document.createElement('li');
-            child.textContent = leafText;
-            child.title = item.label;
-            child.onclick = function onClick() {
-              addOperationToQueue('dbOp', item);
-            };
-            childUl.appendChild(child);
-          });
-
-          li.appendChild(header);
-          li.appendChild(childUl);
-          fragment.appendChild(li);
-          firstGroup = false;
-        });
-
-        list.appendChild(fragment);
-      }
-
-      function renderTerTree() {
-        const list = document.getElementById('opDbTerResults');
-        const query = normalizeSearch(document.getElementById('opDbTerSearch').value);
-        const rows = operationDb.dbTer || [];
-        list.innerHTML = '';
-
-        const filtered = !query
-          ? rows
-          : rows.filter((item) => (item.searchText || '').indexOf(query) !== -1);
-
-        if (!filtered.length) {
-          const empty = document.createElement('li');
-          empty.style.cssText = 'padding:10px;color:#80868b;font-size:12px;';
-          empty.textContent = query ? 'Ничего не найдено.' : 'База не загружена.';
-          list.appendChild(empty);
-          return;
-        }
-
-        // Build 5-level: Производитель → Product Name → Series → Тип контакта → Артикул
-        const manufacturers = new Map();
-        filtered.forEach((item) => {
-          const mfr  = item.terManufacturer || '—';
-          const comp = item.terComponent    || item.label;
-          const ser  = item.terSeries       || '—';
-          const step = item.terType         || '—';
-          const art  = item.terArticle      || item.label;
-          if (!manufacturers.has(mfr)) manufacturers.set(mfr, new Map());
-          const compMap = manufacturers.get(mfr);
-          if (!compMap.has(comp)) compMap.set(comp, new Map());
-          const serMap = compMap.get(comp);
-          if (!serMap.has(ser)) serMap.set(ser, new Map());
-          const stepMap = serMap.get(ser);
-          if (!stepMap.has(step)) stepMap.set(step, []);
-          stepMap.get(step).push({ item, art });
-        });
-
-        const fragment = document.createDocumentFragment();
-        let firstMfr = true;
-
-        manufacturers.forEach((compMap, mfrName) => {
-          let total = 0;
-          compMap.forEach((sm) => sm.forEach((stm) => stm.forEach((a) => { total += a.length; })));
-
-          const mfrLi = document.createElement('li');
-          const mfr = mkOpGroup_(mfrName, total, { open: firstMfr && !!query });
-
-          compMap.forEach((serMap, compName) => {
-            let compTotal = 0;
-            serMap.forEach((stm) => stm.forEach((a) => { compTotal += a.length; }));
-
-            const compLi = document.createElement('li'); compLi.style.padding = '0';
-            const comp = mkOpGroup_(compName, compTotal, { pad: '20px', color: '#3c4043', weight: 'normal' });
-
-            serMap.forEach((stepMap, serName) => {
-              let serTotal = 0;
-              stepMap.forEach((a) => { serTotal += a.length; });
-
-              const serLi = document.createElement('li'); serLi.style.padding = '0';
-              const ser = mkOpGroup_(serName, serTotal, { pad: '32px', color: '#5f6368', weight: 'normal' });
-
-              stepMap.forEach((leaves, stepName) => {
-                const stepLi = document.createElement('li'); stepLi.style.padding = '0';
-                const stepG = mkOpGroup_(stepName, leaves.length, { pad: '44px', color: '#80868b', weight: 'normal' });
-
-                leaves.forEach(({ item, art }) => {
-                  const child = document.createElement('li');
-                  child.style.paddingLeft = '60px';
-                  child.textContent = art;
-                  child.title = item.label;
-                  child.onclick = function() { addOperationToQueue('dbTer', item); };
-                  stepG.childUl.appendChild(child);
-                });
-
-                stepLi.appendChild(stepG.header);
-                stepLi.appendChild(stepG.childUl);
-                ser.childUl.appendChild(stepLi);
-              });
-
-              serLi.appendChild(ser.header);
-              serLi.appendChild(ser.childUl);
-              comp.childUl.appendChild(serLi);
-            });
-
-            compLi.appendChild(comp.header);
-            compLi.appendChild(comp.childUl);
-            mfr.childUl.appendChild(compLi);
-          });
-
-          mfrLi.appendChild(mfr.header);
-          mfrLi.appendChild(mfr.childUl);
-          fragment.appendChild(mfrLi);
-          firstMfr = false;
-        });
-
-        list.appendChild(fragment);
-      }
-
-      // БД.КОАКС — 4 levels: Провод → Тип/Серия → Производитель → Артикул
-      // Built identically to renderTerTree, one extra level added.
-      function renderKoaxTree() {
-        const list = document.getElementById('opDbKoaxResults');
-        const query = normalizeSearch(document.getElementById('opDbKoaxSearch').value);
-        const rows = operationDb.dbKoax || [];
-        list.innerHTML = '';
-
-        const filtered = !query
-          ? rows
-          : rows.filter((item) => (item.searchText || '').indexOf(query) !== -1);
-
-        if (!filtered.length) {
-          const empty = document.createElement('li');
-          empty.style.cssText = 'padding:10px;color:#80868b;font-size:12px;';
-          empty.textContent = query ? 'Ничего не найдено.' : 'База не загружена.';
-          list.appendChild(empty);
-          return;
-        }
-
-        // wire → type → mfr → [{ item, article }]
-        const wires = new Map();
-        filtered.forEach((item) => {
-          const w = item.coaxWire || '—';
-          const t = item.coaxType || '—';
-          const m = item.coaxMfr  || '—';
-          const a = item.coaxArticle || (t + ' ' + w);
-          if (!wires.has(w)) wires.set(w, new Map());
-          const types = wires.get(w);
-          if (!types.has(t)) types.set(t, new Map());
-          const mfrs = types.get(t);
-          if (!mfrs.has(m)) mfrs.set(m, []);
-          mfrs.get(m).push({ item, article: a });
-        });
-
-        const fragment = document.createDocumentFragment();
+      // Рекурсивно строит вложенные группы; на дне — кликабельные листья.
+      function buildOpTree_(items, levels, leaf, dbKey, depth, expand) {
+        const frag = document.createDocumentFragment();
+        if (!levels.length) { appendOpLeaves_(frag, items, leaf, dbKey, 0); return frag; }
+        const level = levels[0];
+        const rest  = levels.slice(1);
+        const keyFn = level.key || (it => it[level.field] || '—');
         let first = true;
-
-        wires.forEach((types, wireName) => {
-          // L1: Провод
-          let total = 0;
-          types.forEach((mm) => mm.forEach((aa) => { total += aa.length; }));
-
-          const wireLi = document.createElement('li');
-          const wire = mkOpGroup_(wireName, total, { open: first && !!query });
-
-          types.forEach((mfrs, typeName) => {
-            // L2: Тип/Серия
-            let typeTotal = 0;
-            mfrs.forEach((aa) => { typeTotal += aa.length; });
-
-            const typeLi = document.createElement('li');
-            typeLi.style.padding = '0';
-            const type = mkOpGroup_(typeName, typeTotal, { pad: '20px', color: '#3c4043', weight: 'normal' });
-
-            mfrs.forEach((leaves, mfrName) => {
-              // L3: Производитель
-              const mfrLi = document.createElement('li');
-              mfrLi.style.padding = '0';
-              const mfr = mkOpGroup_(mfrName, leaves.length, { pad: '32px', color: '#5f6368', weight: 'normal' });
-
-              // L4: Артикул (leaf, clickable)
-              leaves.forEach(({ item, article }) => {
-                const child = document.createElement('li');
-                child.style.paddingLeft = '36px';
-                child.textContent = article;
-                child.title = item.label;
-                child.onclick = function() { addOperationToQueue('dbKoax', item); };
-                mfr.childUl.appendChild(child);
-              });
-
-              mfrLi.appendChild(mfr.header);
-              mfrLi.appendChild(mfr.childUl);
-              type.childUl.appendChild(mfrLi);
-            });
-
-            typeLi.appendChild(type.header);
-            typeLi.appendChild(type.childUl);
-            wire.childUl.appendChild(typeLi);
+        groupBy_(items, keyFn).forEach((groupItems, name) => {
+          const li = document.createElement('li');
+          if (depth > 0) li.style.padding = '0';
+          const { header, childUl } = mkOpGroup_(name, groupItems.length, {
+            open: depth === 0 && first && expand,
+            pad: level.pad, color: level.color, weight: level.weight,
           });
-
-          wireLi.appendChild(wire.header);
-          wireLi.appendChild(wire.childUl);
-          fragment.appendChild(wireLi);
+          childUl.appendChild(buildOpTree_(groupItems, rest, leaf, dbKey, depth + 1, expand));
+          li.appendChild(header);
+          li.appendChild(childUl);
+          frag.appendChild(li);
           first = false;
         });
-
-        list.appendChild(fragment);
+        return frag;
       }
+
+      function renderOperationResults(dbKey) {
+        const cfg    = OP_TREE_CONFIG[dbKey];
+        const tabCfg = getOperationTabConfig(dbKey);
+        if (!cfg || !tabCfg) return;
+        const list  = document.getElementById(tabCfg.resultsId);
+        const query = normalizeSearch(document.getElementById(tabCfg.searchInputId).value);
+        const rows  = operationDb[dbKey] || [];
+        list.innerHTML = '';
+
+        const filtered = !query
+          ? rows
+          : rows.filter(it => (it.searchText || '').indexOf(query) !== -1);
+
+        if (!filtered.length) {
+          const empty = document.createElement('li');
+          empty.style.cssText = 'padding:10px;color:#80868b;font-size:12px;';
+          empty.textContent = query ? 'Ничего не найдено.' : 'База не загружена.';
+          list.appendChild(empty);
+          return;
+        }
+
+        // ОБ без значений типа → плоский список (как раньше); иначе дерево.
+        let levels = cfg.levels;
+        if (cfg.flatWhenNoKeys && !filtered.some(it => it[cfg.levels[0].field])) levels = [];
+
+        if (!levels.length) {
+          const ul = document.createElement('ul');
+          ul.className = 'op-children open';
+          appendOpLeaves_(ul, filtered, cfg.leaf, dbKey, 0);
+          list.appendChild(ul);
+        } else {
+          list.appendChild(buildOpTree_(filtered, levels, cfg.leaf, dbKey, 0, !!query));
+        }
+      }
+
 
       function getOperationTabConfig(dbKey) {
         const map = {
