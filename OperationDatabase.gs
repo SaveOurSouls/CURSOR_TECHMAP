@@ -222,27 +222,37 @@ function syncTechOperationsDatabase() {
   });
 }
 
-function getTechOperationsDatabase(forceRefresh) {
-  if (forceRefresh) {
-    syncTechOperationsDatabase();
-    return buildTechOperationsPayload_(getTechOpsCache_().load() || loadTechOperationsSnapshotFromSheets_());
-  }
+// Снапшот считается актуальным, если непустой и его schemaVersion совпадает с кодом.
+function isSnapshotSchemaCurrent_(snapshot) {
+  return !!(snapshot && snapshot.records && snapshot.records.length &&
+    String(snapshot.meta && snapshot.meta.schemaVersion) === String(TECHOPS_DB_APP.schemaVersion));
+}
 
-  const cached = getTechOpsCache_().load();
-  if (cached && cached.records && cached.records.length &&
-      String(cached.meta && cached.meta.schemaVersion) === String(TECHOPS_DB_APP.schemaVersion)) {
-    return buildTechOperationsPayload_(cached);
+/**
+ * Возвращает актуальный снапшот единым путём (ЕДИНЫЙ источник гейта кеш/листы/синк):
+ * кеш (если схема совпала) → листы (если совпала, попутно кладёт в кеш) → ресинк.
+ * forceSync=true — принудительный ресинк (кнопка «Обновить»).
+ */
+function loadValidSnapshot_(forceSync) {
+  if (forceSync) {
+    syncTechOperationsDatabase();
+    return getTechOpsCache_().load() || loadTechOperationsSnapshotFromSheets_();
   }
+  const cached = getTechOpsCache_().load();
+  if (isSnapshotSchemaCurrent_(cached)) return cached;
 
   ensureTechOperationsInfrastructure_(SpreadsheetApp.getActive());
   const stored = loadTechOperationsSnapshotFromSheets_();
-  if (!stored.records.length ||
-      String(stored.meta.schemaVersion) !== String(TECHOPS_DB_APP.schemaVersion)) {
-    syncTechOperationsDatabase();
-    return buildTechOperationsPayload_(getTechOpsCache_().load() || loadTechOperationsSnapshotFromSheets_());
+  if (isSnapshotSchemaCurrent_(stored)) {
+    getTechOpsCache_().save(stored);
+    return stored;
   }
-  getTechOpsCache_().save(stored);
-  return buildTechOperationsPayload_(stored);
+  syncTechOperationsDatabase();
+  return getTechOpsCache_().load() || loadTechOperationsSnapshotFromSheets_();
+}
+
+function getTechOperationsDatabase(forceRefresh) {
+  return buildTechOperationsPayload_(loadValidSnapshot_(forceRefresh === true));
 }
 
 /** Backward-compatible alias used by the workspace sidebar. */
@@ -981,19 +991,9 @@ function hideTechOperationsSheets_() {
  * генератора и сайдбара — данные обновляются вручную (кнопка/меню).
  */
 function ensureTechOperationsSnapshotReady_() {
-  const cached = getTechOpsCache_().load();
-  if (cached && cached.records && cached.records.length &&
-      String(cached.meta && cached.meta.schemaVersion) === String(TECHOPS_DB_APP.schemaVersion)) {
-    return;
-  }
-  ensureTechOperationsInfrastructure_(SpreadsheetApp.getActive());
-  const stored = loadTechOperationsSnapshotFromSheets_();
-  if (stored.records.length &&
-      String(stored.meta.schemaVersion) === String(TECHOPS_DB_APP.schemaVersion)) {
-    getTechOpsCache_().save(stored);
-    return;
-  }
-  syncTechOperationsDatabase(); // пусто или сменилась схема — единственный случай синка
+  // Тот же гейт кеш/листы/синк, что и в getTechOperationsDatabase — результат
+  // не нужен, важен побочный эффект: кеш гарантированно заполнен валидным снапшотом.
+  loadValidSnapshot_(false);
 }
 
 /** Возвращает snapshot из кеша или листов; используется AssemblyGenerator. */
