@@ -1824,7 +1824,14 @@
         const currentQueue = operationQueues[activeOperationDbKey] || [];
         currentQueue.forEach((item, index) => {
           const li = document.createElement('li');
-          li.innerHTML = `<span>${escapeHtml(item.label)}</span><span class="remove-btn" onclick="removeOperationFromQueue(${index})">×</span>`;
+          const label = document.createElement('span');
+          label.textContent = item.label;          // textContent → данные БД не интерпретируются как HTML
+          const rm = document.createElement('span');
+          rm.className = 'remove-btn';
+          rm.textContent = '×';
+          rm.onclick = function() { removeOperationFromQueue(index); };
+          li.appendChild(label);
+          li.appendChild(rm);
           list.appendChild(li);
         });
         document.getElementById('opQueueCount').innerText = currentQueue.length;
