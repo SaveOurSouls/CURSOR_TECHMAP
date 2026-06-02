@@ -669,6 +669,7 @@ const DB_SCHEMA = {
       { key: 'terLMinus',       aliases: ['l-', 'l−', 'l–', 'l—', 'l- в мм', 'l-(мм)', 'l −', 'l -'], regex: /^l\s*[-−–—]/, store: true },
       { key: 'terStep',         aliases: ['шаг разъема', 'шаг разъёма', 'шаг', 'pitch', 'step', 'шаг ленты', 'шаг контакта'], regex: /^шаг/, store: true },
       { key: 'terApplicator',   aliases: ['аппликатор', 'applicator', 'applikator'], store: true },
+      { key: 'terStrip',        aliases: ['длина зачистки', 'длина зачистки, мм', 'зачистка', 'длина снятия изоляции', 'strip length', 'strip'], regex: /зачист|strip/, store: true },
       { key: 'terCrimpHeight',  aliases: ['высота обжима проводника , мм', 'высота обжима проводника, мм', 'высота обжима проводника', 'crimp height conductor', 'crimp height'], store: true },
       { key: 'terPullForceMin', aliases: ['усилие обрыва контакта от, n', 'усилие обрыва контакта от n', 'усилие обрыва от, n', 'усилие обрыва от', 'pull force min', 'pull test min', 'pull-off force min'], store: true },
       { key: 'terPullForceMax', aliases: ['усилие обрыва контакта до, n', 'усилие обрыва контакта до n', 'усилие обрыва до, n', 'усилие обрыва до', 'pull force max', 'pull test max', 'pull-off force max'], store: true },
@@ -763,7 +764,7 @@ const TECHOPS_EXTRA_FIELDS = {
   op:   ['opNumber', 'opName', 'tOp', 'tPrep', 'tMachine'],
   ter:  ['terManufacturer', 'terSeries', 'terComponent', 'terType', 'terArticle',
          'terLPlus', 'terLMinus', 'terApplicator', 'terCrimpHeight',
-         'terPullForceMin', 'terPullForceMax', 'terStep'],
+         'terPullForceMin', 'terPullForceMax', 'terStep', 'terStrip'],
   coax: ['', '', '', 'coaxWire', 'coaxType', 'coaxMfr', 'coaxArticle'],
   ob:   ['obType'],
 };
@@ -938,6 +939,7 @@ function buildTechOperationsPayload_(snapshot) {
           item.terPullForceMin = record.terPullForceMin || '';
           item.terPullForceMax = record.terPullForceMax || '';
           item.terStep         = record.terStep         || '';
+          item.terStrip        = record.terStrip        || '';
         }
         if (tabKey === 'coax') {
           item.coaxWire    = record.coaxWire    || '';

@@ -159,6 +159,7 @@ function readTerRecordsForGenerator_() {
       .map(r => ({
         article:      r.terArticle    || '',
         step:         r.terStep       || '',
+        strip:        r.terStrip      || '',
         lPlus:        r.terLPlus      || '',
         lMinus:       r.terLMinus     || '',
         applicator:   r.terApplicator || '',
@@ -1093,6 +1094,32 @@ function fillTwistFields_(sheet, ctx, config) {
   }
 }
 
+// Заполняет маркеры «Зачистка А/B: Внести данные» длиной зачистки соответствующей
+// стороны (config.strip.lenA/lenB). Только реально зачищаемые стороны (strip.a/strip.b).
+// Цель — ячейки с «зачистка» И «внести» (узко, чтобы не задеть описания/дефекты).
+function fillStripFields_(sheet, ctx, config) {
+  const st = config.strip || {};
+  for (let r = 0; r < ctx.values.length; r++) {
+    const row = ctx.values[r] || [];
+    for (let c = 0; c < row.length; c++) {
+      const cell = String(row[c] || '').toLowerCase();
+      if (cell.indexOf('зачистка') < 0 || cell.indexOf('внести') < 0) continue;
+      const tail = cell.split('зачистка')[1] || '';
+      if (/^[\s:]*[aа]/.test(tail)) {
+        if (st.a && st.lenA) fillMergedCell_(sheet, r + 1, c + 1, formatStripLen_(st.lenA), ctx.mergeMap);
+      } else if (/^[\s:]*[bв]/.test(tail)) {
+        if (st.b && st.lenB) fillMergedCell_(sheet, r + 1, c + 1, formatStripLen_(st.lenB), ctx.mergeMap);
+      }
+    }
+  }
+}
+
+// Длина зачистки → строка с «мм»; если значение уже содержит буквы (единицы) — как есть.
+function formatStripLen_(v) {
+  const s = String(v == null ? '' : v).trim();
+  return /[a-zа-яё]/i.test(s) ? s : s + ' мм';
+}
+
 // ── Structural fill orchestrator ──────────────────────────────
 
 function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisResult, wireData, terData, sheetState, prevResultNorm, isLast) {
@@ -1117,6 +1144,8 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
     fillTerminalFields_(sheet, ctx, terData);
   if (opType === 'twist')
     fillTwistFields_(sheet, ctx, config);
+  if (opType === 'cutWire' && config.strip)
+    fillStripFields_(sheet, ctx, config);
 }
 
 // ── Row insertion ─────────────────────────────────────────────

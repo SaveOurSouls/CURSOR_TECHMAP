@@ -285,6 +285,7 @@
       <button id="terSaveA" class="btn-ter-save" style="display:none" onclick="saveTerPanel('A')">Записать в БД</button>
     </div>
   </div>
+  <label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:12px;font-weight:500;cursor:pointer"><input type="checkbox" id="otpA" onchange="refresh()" /> OTP — обжим без зачистки (провод даётся зачищенным)</label>
 </div>
 
 <!-- ═══ СТОРОНА В (ОПЦИОНАЛЬНО) ══════════════════════════════ -->
@@ -316,6 +317,7 @@
         <button id="terSaveB" class="btn-ter-save" style="display:none" onclick="saveTerPanel('B')">Записать в БД</button>
       </div>
     </div>
+    <label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:12px;font-weight:500;cursor:pointer"><input type="checkbox" id="otpB" onchange="refresh()" /> OTP — обжим без зачистки (провод даётся зачищенным)</label>
   </div>
 </div>
 
@@ -356,6 +358,9 @@
   <div class="card">
     <label class="field-label">Какие концы лудить (по умолчанию все)</label>
     <div id="tinWireList" style="display:flex;flex-wrap:wrap;gap:6px 14px;margin:4px 0 2px"></div>
+    <div class="ter-row" style="margin-top:8px">
+      <div class="ter-f"><label>Длина зачистки под лужение, мм</label><input id="tinStripLen" class="ter-inp" type="text" placeholder="—" oninput="refresh()" /></div>
+    </div>
   </div>
 </div>
 
@@ -1103,6 +1108,33 @@
   }
 
   // ── Active ops (auto-determined) ─────────────────────────────
+  // Какие стороны провода нужно зачистить ПРИ резке: терминал OTP (обжим без
+  // зачистки → провод даётся зачищенным) или лужёный свободный конец (= сторона B).
+  function computeStripSides_() {
+    const sideB = document.getElementById('sideBEnabled').checked;
+    const termA = getCompById(document.getElementById('termSelectA').value);
+    const termB = sideB ? getCompById(document.getElementById('termSelectB').value) : null;
+    const otpA  = !!(document.getElementById('otpA') || {}).checked;
+    const otpB  = !!(document.getElementById('otpB') || {}).checked;
+    const tinOn = !sideB && !!(document.getElementById('tinEnabled') || {}).checked
+                  && getTinWireIndices().length > 0;
+    return {
+      a: !!(termA && otpA),
+      b: (!!(termB && otpB)) || tinOn,
+    };
+  }
+
+  // Выбор шаблона резки: при наличии зачисток — CUT_WIRE+Nstrip по коду (+1/+2 в
+  // одной категории, автоподбор по категории их не различает), иначе обычная резка.
+  function pickTemplateForOp_(opSpec) {
+    if (opSpec.opKey === 'cutWire' && opSpec.stripCount > 0) {
+      const re = new RegExp('cut_wire\\+' + opSpec.stripCount + 'strip', 'i');
+      const hit = (D.templates || []).find(t => re.test(String(t.title || '').split('|')[0]));
+      if (hit) return hit.id;
+    }
+    return autoPickTemplate(opSpec.opKey);
+  }
+
   function getActiveOps() {
     const ops = [];
     const activeWires = wireEntries.filter(w => w.compId);
@@ -1116,7 +1148,9 @@
       const label = names.length === 1
         ? `Резка — ${names[0]}`
         : `Резка — ${names.length} кабелей (${names.join(', ')})`;
-      ops.push({ type: 'cutWire', opKey: 'cutWire', wireArrayIdx: -1, label });
+      const _strip = computeStripSides_();
+      ops.push({ type: 'cutWire', opKey: 'cutWire', wireArrayIdx: -1, label,
+                 stripCount: (_strip.a ? 1 : 0) + (_strip.b ? 1 : 0) });
     }
 
     const termA = getCompById(document.getElementById('termSelectA').value);
@@ -1160,7 +1194,10 @@
       const sel = document.getElementById(`tmplSel_${opSpec.opKey}`);
       if (sel) {
         // Restore saved selection or auto-pick by category
-        const saved = selectedTemplates[opSpec.opKey] || autoPickTemplate(opSpec.opKey);
+        // cutWire без ручного выбора — всегда пересчитываем под текущее число зачисток.
+        const saved = (opSpec.opKey === 'cutWire' && !manualTemplates.has('cutWire'))
+          ? pickTemplateForOp_(opSpec)
+          : (selectedTemplates[opSpec.opKey] || pickTemplateForOp_(opSpec));
         if (saved) { sel.value = saved; selectedTemplates[opSpec.opKey] = sel.value; }
         onTemplateSelect(opSpec.opKey);
         sel.addEventListener('change', () => {
@@ -1432,6 +1469,19 @@
       wireIndices: getTinWireIndices(),
     };
 
+    // Предварительная зачистка концов при резке (OTP-терминал / лужёный свободный конец).
+    // Длина: для OTP — из БД.ТЕР терминала стороны; для лужения — ручное поле.
+    const stripSides  = computeStripSides_();
+    const tinStripLen = (document.getElementById('tinStripLen') && document.getElementById('tinStripLen').value.trim()) || '';
+    const otpB        = !!(document.getElementById('otpB') || {}).checked;
+    const strip = {
+      a:    stripSides.a,
+      b:    stripSides.b,
+      lenA: stripSides.a ? ((findTerRecord_(termA && termA.art) || {}).strip || '') : '',
+      lenB: !stripSides.b ? ''
+            : ((sideB && termB && otpB) ? ((findTerRecord_(termB.art) || {}).strip || '') : tinStripLen),
+    };
+
     return {
       assemblyIndex: findKey(/индекс/i),
       assemblyName:  findKey(/наименование/i),
@@ -1441,6 +1491,7 @@
       sideB: sideBInfo,
       twist,
       tin,
+      strip,
       ops,
     };
   }
