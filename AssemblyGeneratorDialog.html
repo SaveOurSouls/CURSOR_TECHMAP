@@ -514,7 +514,7 @@
     idx.forEach(i => {
       const w = active[i];
       const c = w ? getCompById(w.compId) : null;
-      const d = c ? lookupWireDia_(c.art || c.name) : 0;
+      const d = c ? (lookupWireDia_(c.art) || lookupWireDia_(c.name)) : 0;
       if (d > 0) dset.add(d);
     });
     el.value = dset.size === 1 ? String([...dset][0]).replace('.', ',') : '';
@@ -1511,7 +1511,7 @@
     wires.forEach((w, i) => {
       if (!idx.has(i) || !(w.length > 0)) return;
       // Ручной Ø приоритетен; иначе авто из СПР.КОАКС по-проводно; иначе пропуск.
-      const d = (_twistDiaManual && manualD > 0) ? manualD : (lookupWireDia_(w.art || w.name) || manualD);
+      const d = (_twistDiaManual && manualD > 0) ? manualD : (lookupWireDia_(w.art) || lookupWireDia_(w.name) || manualD);
       if (d > 0) w.length = Math.round(w.length * twistTakeupFactor_(d, p));
     });
   }
@@ -1610,7 +1610,7 @@
     for (let j = 0; j < idx.length; j++) {
       const w = active[idx[j]];
       const c = w ? getCompById(w.compId) : null;
-      const g = c ? wireGeom_(c.art || c.name) : null;
+      const g = c ? (wireGeom_(c.art) || wireGeom_(c.name)) : null;
       if (g) return g;
     }
     return null;
