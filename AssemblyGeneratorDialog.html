@@ -344,7 +344,7 @@
     </div>
     <div class="ter-row">
       <div class="ter-f"><label>Шаг свивки, мм</label><input id="twistPitch" class="ter-inp" type="text" placeholder="—" oninput="refresh()" /></div>
-      <div class="ter-f"><label>Ø провода, мм</label><input id="twistWireDia" class="ter-inp" type="text" placeholder="авто из СПР.КОАКС" oninput="onTwistDiaInput()" /></div>
+      <div class="ter-f"><label>Ø провода, мм</label><input id="twistWireDia" class="ter-inp" type="text" placeholder="авто из СПР.КАБ" oninput="onTwistDiaInput()" /></div>
     </div>
   </div>
 </div>
@@ -504,10 +504,11 @@
     const el = document.getElementById('twistWireDia');
     if (!el || _twistDiaManual) return;
     if (!(document.getElementById('twistEnabled') || {}).checked) return;
-    const idx = getTwistMode() === 'pairs'
+    let idx = getTwistMode() === 'pairs'
       ? getTwistPairs().reduce((a, p) => a.concat(p), [])
       : getTwistWireIndices();
     const active = wireEntries.filter(w => w.compId);
+    if (!idx.length) idx = active.map((_, i) => i);   // пары/провода не выбраны → Ø по всем кабелям
     const dset = new Set();
     idx.forEach(i => {
       const w = active[i];
