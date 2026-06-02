@@ -135,19 +135,31 @@ function saveTerDataToSourceDbImpl_(article, fieldsJson) {
 
   if (artCol < 0) throw new Error('Колонка артикула не найдена в ' + tab.sourceSheetName);
 
-  // 3-pass fuzzy match: exact → normalized → strip manufacturer prefix word
+  // 3-проходный матч ПО ВСЕМ строкам с приоритетом точного: exact → normalized
+  // → без префикса-производителя. Точное совпадение всегда побеждает неточное,
+  // даже если неточное встречается в более ранней строке (защита от записи не туда).
   const normArt = s => String(s).toLowerCase().replace(/[\s\-\.\/\(\)_]/g, '');
   const artNormExact = String(article).toLowerCase().trim();
   const artNorm      = normArt(article);
   const words        = String(article).trim().split(/\s+/);
   const artNormNoMfr = words.length > 1 ? normArt(words.slice(1).join(' ')) : '';
+
   let rowIdx = -1;
+  let matchType = '';
   for (let i = tab.headerRowNumber; i < data.length; i++) {
-    const cell = String(data[i][artCol] || '');
-    if (cell.toLowerCase().trim() === artNormExact) { rowIdx = i; break; }
-    if (normArt(cell) === artNorm) { rowIdx = i; break; }
-    if (artNormNoMfr.length >= 3 && normArt(cell) === artNormNoMfr) { rowIdx = i; break; }
+    if (String(data[i][artCol] || '').toLowerCase().trim() === artNormExact) { rowIdx = i; matchType = 'exact'; break; }
   }
+  if (rowIdx < 0) {
+    for (let i = tab.headerRowNumber; i < data.length; i++) {
+      if (normArt(data[i][artCol]) === artNorm) { rowIdx = i; matchType = 'normalized'; break; }
+    }
+  }
+  if (rowIdx < 0 && artNormNoMfr.length >= 3) {
+    for (let i = tab.headerRowNumber; i < data.length; i++) {
+      if (normArt(data[i][artCol]) === artNormNoMfr) { rowIdx = i; matchType = 'noMfr'; break; }
+    }
+  }
+
   if (rowIdx < 0) {
     if (!fields._forceAdd) return { ok: false, notFound: true };
     const newRow = new Array(headers.length).fill('');
@@ -160,6 +172,18 @@ function saveTerDataToSourceDbImpl_(article, fieldsJson) {
     sheet.appendRow(newRow);
     syncTechOperationsDatabase();
     return { ok: true, added: true };
+  }
+
+  // S3: совпадение НЕточное (по нормализации / без префикса-производителя) —
+  // не пишем молча в потенциально чужую строку. Возвращаем найденный артикул
+  // на подтверждение; клиент переспросит и повторит вызов с _confirmInexact=true.
+  if (matchType !== 'exact' && !fields._confirmInexact) {
+    return {
+      ok: false,
+      needsConfirm: true,
+      matchedArticle:   String(data[rowIdx][artCol] || ''),
+      requestedArticle: String(article || ''),
+    };
   }
 
   // Точечная запись по колонкам (не вся строка): источник может содержать

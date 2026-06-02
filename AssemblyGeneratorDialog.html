@@ -775,15 +775,28 @@
     });
     const btn = document.getElementById(`terSave${side}`);
     btn.textContent = 'Сохраняю…'; btn.disabled = true;
-    const doSave = (forceAdd) => {
-      const payload = forceAdd ? { ...data, _forceAdd: true } : data;
+    const doSave = (extra) => {
+      const payload = extra ? { ...data, ...extra } : data;
       google.script.run
         .withSuccessHandler(result => {
           if (result && result.notFound) {
             btn.textContent = 'Записать в БД'; btn.disabled = false;
             if (window.confirm('Артикул «' + comp.art + '» не найден в БД.ТЕР.\nДобавить новую запись?')) {
               btn.textContent = 'Добавляю…'; btn.disabled = true;
-              doSave(true);
+              doSave({ _forceAdd: true });
+            }
+            return;
+          }
+          // S3: сервер нашёл строку только по неточному совпадению — подтверждаем,
+          // в какую именно строку пишем, прежде чем затирать данные источника.
+          if (result && result.needsConfirm) {
+            btn.textContent = 'Записать в БД'; btn.disabled = false;
+            const msg = 'Точного совпадения для «' + result.requestedArticle + '» нет.\n'
+              + 'Ближайшее в БД.ТЕР: «' + result.matchedArticle + '».\n\n'
+              + 'Записать данные именно в эту строку?';
+            if (window.confirm(msg)) {
+              btn.textContent = 'Сохраняю…'; btn.disabled = true;
+              doSave({ _confirmInexact: true });
             }
             return;
           }
@@ -798,7 +811,7 @@
         })
         .saveTerDataToSourceDb(comp.art, JSON.stringify(payload));
     };
-    doSave(false);
+    doSave(null);
   }
 
   // ── Assembly info ─────────────────────────────────────────────
