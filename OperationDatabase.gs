@@ -470,9 +470,12 @@ function fetchTechOperationsSnapshotFromSource_() {
     diagnosticsByTab[tabKey].matchedGroups = diagnostics.matchedGroups;
     diagnosticsByTab[tabKey].missingGroups = diagnostics.missingGroups;
 
+    // Колонки полей резолвим один раз на лист (не построчно) — P3.
+    const resolvedColumns = DB_SCHEMA[tabKey] ? resolveSchemaColumns_(DB_SCHEMA[tabKey], headerMap) : {};
+
     for (let rowIndex = headerRowIndex + 1; rowIndex < values.length; rowIndex += 1) {
       const row = values[rowIndex];
-      const record = buildTechOperationsRecordFromRow_(tabKey, row, headerMap, config.sourceSheetName, namedColumns);
+      const record = buildRecordFromSchema_(tabKey, row, resolvedColumns, config.sourceSheetName, namedColumns);
       if (!record || !record.displayText) continue;
       countsByTab[tabKey] += 1;
       diagnosticsByTab[tabKey].parsedRows += 1;
@@ -588,155 +591,119 @@ function buildTechOperationsHeaderDiagnostics_(tabKey, headerMap, headersRow) {
   return { foundHeaders, matchedGroups, missingGroups };
 }
 
-// ── Record builders ──────────────────────────────────────────
+// ── Record builders (декларативная схема) ───────────────────
+// ЕДИНЫЙ источник извлечения полей всех вкладок. Каждое поле описано алиасами
+// заголовков (+ опц. regex-фолбэк), флагом store (писать ли в запись) и
+// производными display/search/sortKey. Один buildRecordFromSchema_ заменяет
+// четыре ручных билдера (Ob/Op/Ter/Coax). Форма записи сохранена 1:1 — снапшот
+// и parseTechOpsRow_↔toSnapshotRow_ совместимы, schemaVersion не меняется.
+// Колонки резолвятся ОДИН раз на лист (resolveSchemaColumns_) → не нормализуем
+// алиасы построчно (узкое место P3).
+const DB_SCHEMA = {
+  ob: {
+    fields: [
+      { key: 'baseValue', aliases: ['для базы', 'длябазы'] },
+      { key: 'obType',    aliases: ['тип', 'type', 'категория', 'category', 'группа'], store: true },
+    ],
+    display: v => v.baseValue,
+    search:  v => v.baseValue,
+    sortKey: v => (v.obType ? `${v.obType} ${v.baseValue}` : v.baseValue),
+  },
+  op: {
+    fields: [
+      { key: 'opNumber', aliases: ['номер', 'number'], store: true },
+      { key: 'opName',   aliases: ['название', 'name'], store: true },
+      { key: 'tOp',      aliases: ['время операции', 'время операции, сек', 'время операции сек'], store: true },
+      { key: 'tPrep',    aliases: ['время подготовки, сек', 'время подготовки сек', 'время подготовки'], store: true },
+      { key: 'tMachine', aliases: ['время машины, сек/оп; сек/м', 'время машины сек/оп; сек/м', 'время машины'], store: true },
+    ],
+    display: v => joinTechOperationsParts_([v.opName, v.opNumber], ' | '),
+    sortKey: v => v.opName || v.opNumber,
+    search:  v => v.opNumber + ' ' + v.opName,
+  },
+  ter: {
+    fields: [
+      { key: 'terManufacturer', aliases: ['производитель', 'бренд', 'manufacturer'], store: true },
+      { key: 'terSeries',       aliases: ['series', 'серия разъемов', 'серия'], store: true },
+      { key: 'terComponent',    aliases: ['product name', 'productname', 'комплектующая'], store: true },
+      { key: 'connType',        aliases: ['тип разъёма', 'тип разъема'] },
+      { key: 'terType',         aliases: ['тип контакта', 'тип конт.', 'тип конт'], store: true },
+      { key: 'artISL',          aliases: ['артикул (контакта isl)', 'артикул контакта isl'] },
+      { key: 'artSAG',          aliases: ['артикул (контакт sag)', 'артикул контакт sag'] },
+      { key: 'terArticle',      aliases: ['артикул контакта (reel)', 'артикул контакта', 'артикул'], store: true },
+      { key: 'terLPlus',        aliases: ['l+', 'l+ в мм', 'l+(мм)', 'l +'], regex: /^l\s*\+/, store: true },
+      { key: 'terLMinus',       aliases: ['l-', 'l−', 'l–', 'l—', 'l- в мм', 'l-(мм)', 'l −', 'l -'], regex: /^l\s*[-−–—]/, store: true },
+      { key: 'terStep',         aliases: ['шаг разъема', 'шаг разъёма', 'шаг', 'pitch', 'step', 'шаг ленты', 'шаг контакта'], regex: /^шаг/, store: true },
+      { key: 'terApplicator',   aliases: ['аппликатор', 'applicator', 'applikator'], store: true },
+      { key: 'terCrimpHeight',  aliases: ['высота обжима проводника , мм', 'высота обжима проводника, мм', 'высота обжима проводника', 'crimp height conductor', 'crimp height'], store: true },
+      { key: 'terPullForceMin', aliases: ['усилие обрыва контакта от, n', 'усилие обрыва контакта от n', 'усилие обрыва от, n', 'усилие обрыва от', 'pull force min', 'pull test min', 'pull-off force min'], store: true },
+      { key: 'terPullForceMax', aliases: ['усилие обрыва контакта до, n', 'усилие обрыва контакта до n', 'усилие обрыва до, n', 'усилие обрыва до', 'pull force max', 'pull test max', 'pull-off force max'], store: true },
+    ],
+    display: v => joinTechOperationsParts_([v.terManufacturer, v.terSeries, v.terComponent], ' | '),
+    search:  v => [v.terManufacturer, v.terSeries, v.terComponent, v.connType, v.terType, v.artISL, v.artSAG].join(' '),
+    // sortKey отсутствует — как в исходном ter-билдере (sortKey → '' в снапшоте).
+  },
+  coax: {
+    fields: [
+      { key: 'coaxArticle', aliases: ['артикул'], store: true },
+      { key: 'coaxType',    aliases: ['тип/серия', 'тип / серия', 'тип серия'], store: true },
+      { key: 'coaxMfr',     aliases: ['производитель', 'бренд', 'manufacturer'], store: true },
+      { key: 'supplier',    aliases: ['поставщик', 'supplier'] },
+      { key: 'coaxWire',    aliases: ['провод'], store: true },
+      { key: 'program',     aliases: ['программа'] },
+    ],
+    display: v => joinTechOperationsParts_([v.coaxType, v.coaxWire, v.supplier], ' | '),
+    sortKey: v => `${v.coaxWire} ${v.coaxType} ${v.coaxMfr} ${v.coaxArticle}`,
+    search:  v => [v.coaxArticle, v.coaxType, v.coaxMfr, v.supplier, v.coaxWire, v.program].join(' '),
+  },
+};
 
-function buildTechOperationsRecordFromRow_(tabKey, row, headerMap, sourceSheet, namedColumns) {
-  switch (tabKey) {
-    case 'ob':   return buildTechOperationsObRecord_(row, headerMap, sourceSheet, namedColumns);
-    case 'op':   return buildTechOperationsOpRecord_(row, headerMap, sourceSheet, namedColumns);
-    case 'ter':  return buildTechOperationsTerRecord_(row, headerMap, sourceSheet, namedColumns);
-    case 'coax': return buildTechOperationsCoaxRecord_(row, headerMap, sourceSheet, namedColumns);
-    default:     return null;
-  }
-}
-
-function buildTechOperationsObRecord_(row, headerMap, sourceSheet, namedColumns) {
-  const baseValue = getTechOperationsCellByAliases_(row, headerMap, ['для базы', 'длябазы']);
-  if (!baseValue) return null;
-  const obType = getTechOperationsCellByAliases_(row, headerMap, ['тип', 'type', 'категория', 'category', 'группа']);
-  return {
-    tabKey: 'ob',
-    displayText: baseValue,
-    normalizedSearch: normalizeSearch_(baseValue),
-    exportValues: (namedColumns || []).map(({ index }) => normalizeString_(row[index]) || ''),
-    sourceSheet,
-    obType: obType || '',
-    sortKey: obType ? `${obType} ${baseValue}` : baseValue,
-  };
-}
-
-function buildTechOperationsOpRecord_(row, headerMap, sourceSheet, namedColumns) {
-  const number = getTechOperationsCellByAliases_(row, headerMap, ['номер', 'number']);
-  const name   = getTechOperationsCellByAliases_(row, headerMap, ['название', 'name']);
-  const tOp    = getTechOperationsCellByAliases_(row, headerMap, ['время операции', 'время операции, сек', 'время операции сек']);
-  const tPrep  = getTechOperationsCellByAliases_(row, headerMap, ['время подготовки, сек', 'время подготовки сек', 'время подготовки']);
-  const tMach  = getTechOperationsCellByAliases_(row, headerMap, ['время машины, сек/оп; сек/м', 'время машины сек/оп; сек/м', 'время машины']);
-
-  const displayText = joinTechOperationsParts_([name, number], ' | ');
-  if (!displayText) return null;
-
-  return {
-    tabKey: 'op',
-    displayText,
-    sortKey: name || number,
-    normalizedSearch: normalizeSearch_(number + ' ' + name),
-    exportValues: (namedColumns || []).map(({ index }) => normalizeString_(row[index]) || ''),
-    sourceSheet,
-    opNumber: number,
-    opName:   name,
-    tOp:      tOp   || '',
-    tPrep:    tPrep || '',
-    tMachine: tMach || '',
-  };
-}
-
-function buildTechOperationsTerRecord_(row, headerMap, sourceSheet, namedColumns) {
-  const manufacturer = getTechOperationsCellByAliases_(row, headerMap, ['производитель', 'бренд', 'manufacturer']);
-  const series       = getTechOperationsCellByAliases_(row, headerMap, ['series', 'серия разъемов', 'серия']);
-  const productName  = getTechOperationsCellByAliases_(row, headerMap, ['product name', 'productname', 'комплектующая']);
-  const connType     = getTechOperationsCellByAliases_(row, headerMap, ['тип разъёма', 'тип разъема']);
-  const terType      = getTechOperationsCellByAliases_(row, headerMap, ['тип контакта', 'тип конт.', 'тип конт']);
-  const artISL       = getTechOperationsCellByAliases_(row, headerMap, ['артикул (контакта isl)', 'артикул контакта isl']);
-  const artSAG       = getTechOperationsCellByAliases_(row, headerMap, ['артикул (контакт sag)', 'артикул контакт sag']);
-  const terArticle   = getTechOperationsCellByAliases_(row, headerMap, ['артикул контакта (reel)', 'артикул контакта', 'артикул']);
-  const lPlus  = getTechOperationsCellByAliases_(row, headerMap, ['l+', 'l+ в мм', 'l+(мм)', 'l +'])
-              || getTechOperationsCellByHeaderRegex_(row, headerMap, /^l\s*\+/);
-  const lMinus = getTechOperationsCellByAliases_(row, headerMap, ['l-', 'l−', 'l–', 'l—', 'l- в мм', 'l-(мм)', 'l −', 'l -'])
-              || getTechOperationsCellByHeaderRegex_(row, headerMap, /^l\s*[-−–—]/);
-  const step         = getTechOperationsCellByAliases_(row, headerMap, ['шаг разъема', 'шаг разъёма', 'шаг', 'pitch', 'step', 'шаг ленты', 'шаг контакта'])
-                    || getTechOperationsCellByHeaderRegex_(row, headerMap, /^шаг/);
-  const applicator   = getTechOperationsCellByAliases_(row, headerMap, ['аппликатор', 'applicator', 'applikator']);
-  const crimpHeight  = getTechOperationsCellByAliases_(row, headerMap, [
-    'высота обжима проводника , мм', 'высота обжима проводника, мм',
-    'высота обжима проводника', 'crimp height conductor', 'crimp height',
-  ]);
-  const pullForceMin = getTechOperationsCellByAliases_(row, headerMap, [
-    'усилие обрыва контакта от, n', 'усилие обрыва контакта от n',
-    'усилие обрыва от, n', 'усилие обрыва от', 'pull force min', 'pull test min', 'pull-off force min',
-  ]);
-  const pullForceMax = getTechOperationsCellByAliases_(row, headerMap, [
-    'усилие обрыва контакта до, n', 'усилие обрыва контакта до n',
-    'усилие обрыва до, n', 'усилие обрыва до', 'pull force max', 'pull test max', 'pull-off force max',
-  ]);
-
-  const displayText = joinTechOperationsParts_([manufacturer, series, productName], ' | ');
-  if (!displayText) return null;
-
-  return {
-    tabKey: 'ter',
-    displayText,
-    terManufacturer:  manufacturer,
-    terSeries:        series,
-    terComponent:     productName,
-    terType,
-    terArticle,
-    terLPlus:         lPlus        || '',
-    terLMinus:        lMinus       || '',
-    terStep:          step         || '',
-    terApplicator:    applicator   || '',
-    terCrimpHeight:   crimpHeight  || '',
-    terPullForceMin:  pullForceMin || '',
-    terPullForceMax:  pullForceMax || '',
-    normalizedSearch: normalizeSearch_(
-      [manufacturer, series, productName, connType, terType, artISL, artSAG].join(' ')
-    ),
-    exportValues: (namedColumns || []).map(({ index }) => normalizeString_(row[index]) || ''),
-    sourceSheet,
-  };
-}
-
-function buildTechOperationsCoaxRecord_(row, headerMap, sourceSheet, namedColumns) {
-  const article    = getTechOperationsCellByAliases_(row, headerMap, ['артикул']);
-  const typeSeries = getTechOperationsCellByAliases_(row, headerMap, ['тип/серия', 'тип / серия', 'тип серия']);
-  const mfr        = getTechOperationsCellByAliases_(row, headerMap, ['производитель', 'бренд', 'manufacturer']);
-  const supplier   = getTechOperationsCellByAliases_(row, headerMap, ['поставщик', 'supplier']);
-  const wire       = getTechOperationsCellByAliases_(row, headerMap, ['провод']);
-  const program    = getTechOperationsCellByAliases_(row, headerMap, ['программа']);
-
-  const displayText = joinTechOperationsParts_([typeSeries, wire, supplier], ' | ');
-  if (!displayText) return null;
-
-  return {
-    tabKey: 'coax',
-    displayText,
-    coaxWire:    wire,
-    coaxType:    typeSeries,
-    coaxMfr:     mfr,
-    coaxArticle: article,
-    sortKey: `${wire} ${typeSeries} ${mfr} ${article}`,
-    normalizedSearch: normalizeSearch_(
-      [article, typeSeries, mfr, supplier, wire, program].join(' ')
-    ),
-    exportValues: (namedColumns || []).map(({ index }) => normalizeString_(row[index]) || ''),
-    sourceSheet,
-  };
-}
-
-function getTechOperationsCellByHeaderRegex_(row, headerMap, pattern) {
-  for (const [key, idx] of Object.entries(headerMap)) {
-    if (pattern.test(key)) return normalizeString_(row[idx]);
-  }
-  return '';
-}
-
-function getTechOperationsCellByAliases_(row, headerMap, aliases) {
-  for (let index = 0; index < aliases.length; index += 1) {
-    const key = normalizeHeader_(aliases[index]);
-    if (hasHeader_(headerMap, key)) {
-      return normalizeString_(row[headerMap[key]]);
+// Резолвит индекс колонки для каждого поля схемы ОДИН раз на лист:
+// алиас (точное совпадение нормализованного заголовка) → regex-фолбэк → -1.
+function resolveSchemaColumns_(schema, headerMap) {
+  const resolved = {};
+  schema.fields.forEach((f) => {
+    let idx = -1;
+    for (let i = 0; i < f.aliases.length; i += 1) {
+      const key = normalizeHeader_(f.aliases[i]);
+      if (hasHeader_(headerMap, key)) { idx = headerMap[key]; break; }
     }
-  }
-  return '';
+    if (idx < 0 && f.regex) {
+      for (const k of Object.keys(headerMap)) {
+        if (f.regex.test(k)) { idx = headerMap[k]; break; }
+      }
+    }
+    resolved[f.key] = idx;
+  });
+  return resolved;
+}
+
+function readSchemaCell_(row, idx) {
+  return idx >= 0 ? normalizeString_(row[idx]) : '';
+}
+
+// Строит запись по схеме вкладки. Возвращает null если displayText пуст
+// (как ранние return null в исходных билдерах).
+function buildRecordFromSchema_(tabKey, row, resolved, sourceSheet, namedColumns) {
+  const schema = DB_SCHEMA[tabKey];
+  if (!schema) return null;
+
+  const v = {};
+  schema.fields.forEach((f) => { v[f.key] = readSchemaCell_(row, resolved[f.key]); });
+
+  const displayText = schema.display(v);
+  if (!displayText) return null;
+
+  const rec = {
+    tabKey,
+    displayText,
+    normalizedSearch: normalizeSearch_(schema.search(v)),
+    exportValues: (namedColumns || []).map(({ index }) => normalizeString_(row[index]) || ''),
+    sourceSheet,
+  };
+  if (schema.sortKey) rec.sortKey = schema.sortKey(v);
+  schema.fields.forEach((f) => { if (f.store) rec[f.key] = v[f.key] || ''; });
+  return rec;
 }
 
 function joinTechOperationsParts_(parts, delimiter) {
