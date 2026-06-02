@@ -103,6 +103,10 @@ function columnLetter_(idx) {
  * fieldsJson = JSON.stringify({lPlus, lMinus, step, applicator})
  */
 function saveTerDataToSourceDb(article, fieldsJson) {
+  return withDocumentLock_(function() { return saveTerDataToSourceDbImpl_(article, fieldsJson); });
+}
+
+function saveTerDataToSourceDbImpl_(article, fieldsJson) {
   const fields = safeJsonParse_(fieldsJson, null);
   if (!fields || typeof fields !== 'object') {
     return { ok: false, message: 'Некорректные данные формы (битый JSON).' };
@@ -182,14 +186,16 @@ function syncTechOperationsDatabaseMenu() {
 }
 
 function syncTechOperationsDatabase() {
-  const ss = SpreadsheetApp.getActive();
-  ensureTechOperationsInfrastructure_(ss);
-  getTechOpsCache_().clear();
+  return withDocumentLock_(function() {
+    const ss = SpreadsheetApp.getActive();
+    ensureTechOperationsInfrastructure_(ss);
+    getTechOpsCache_().clear();
 
-  const snapshot = fetchTechOperationsSnapshotFromSource_();
-  writeTechOperationsSnapshotToSheets_(snapshot);
-  getTechOpsCache_().save(snapshot);
-  return buildTechOperationsSummary_(snapshot);
+    const snapshot = fetchTechOperationsSnapshotFromSource_();
+    writeTechOperationsSnapshotToSheets_(snapshot);
+    getTechOpsCache_().save(snapshot);
+    return buildTechOperationsSummary_(snapshot);
+  });
 }
 
 function getTechOperationsDatabase(forceRefresh) {

@@ -103,6 +103,10 @@ function getTemplateCatalog() {
  * @returns {Object} { action, id, title, sizeLabel }
  */
 function saveSelectedRangeAsTemplate(formData) {
+  return withDocumentLock_(function() { return saveSelectedRangeAsTemplateImpl_(formData); });
+}
+
+function saveSelectedRangeAsTemplateImpl_(formData) {
   ensureInfrastructure_();
 
   const range = resolveTemplateSourceRange_(formData);
@@ -254,6 +258,10 @@ function insertTemplate(templateId) {
  * @returns {Object} { deleted, id, title }
  */
 function deleteTemplate(templateId) {
+  return withDocumentLock_(function() { return deleteTemplateImpl_(templateId); });
+}
+
+function deleteTemplateImpl_(templateId) {
   if (!templateId) {
     throw new Error('Не передан идентификатор шаблона.');
   }
@@ -283,25 +291,20 @@ function deleteTemplate(templateId) {
 
   try { deleteTemplateImages_(rawRow[13] || '[]'); } catch (e) {}
 
-  // Erase STORE slot — show sheet, set active, flush BEFORE clear so the server
-  // sees a visible sheet; flush AFTER clear to commit before hiding again.
+  // Erase STORE slot. runWithSheetVisible_ гарантирует возврат листа в скрытое
+  // состояние через finally — даже при исключении/таймауте GAS лист не повиснет
+  // видимым. Каскад очистки переиспользуем из clearStoreSlotForWrite_ (DRY).
   const storeSheet = ss.getSheetByName(TECHMAP_APP.storeSheetName);
   if (storeSheet && storeRow > 0 && height > 0) {
     const cols = Math.max(Number(rawRow[7]) || 1, 1);
     const priorActive = ss.getActiveSheet();
-    const wasHidden = storeSheet.isSheetHidden();
-    if (wasHidden) storeSheet.showSheet();
-    ss.setActiveSheet(storeSheet);
-    SpreadsheetApp.flush();
-    clearStoreSlotImages_(storeSheet, storeRow, 1, height, cols);
-    try {
-      storeSheet.getRange(storeRow, 1, height, cols).clear();
-    } catch (e) {
-      try { storeSheet.getRange(storeRow, 1, height, cols).clearContent(); } catch (e2) {}
-      try { storeSheet.getRange(storeRow, 1, height, cols).clearFormat(); } catch (e3) {}
-    }
-    SpreadsheetApp.flush();
-    if (wasHidden) storeSheet.hideSheet();
+    runWithSheetVisible_(storeSheet, function() {
+      ss.setActiveSheet(storeSheet);
+      SpreadsheetApp.flush();
+      clearStoreSlotImages_(storeSheet, storeRow, 1, height, cols);
+      clearStoreSlotForWrite_(storeSheet.getRange(storeRow, 1, height, cols));
+      SpreadsheetApp.flush();
+    });
     try {
       if (priorActive && !isSystemSheet_(priorActive.getName())) {
         ss.setActiveSheet(priorActive);

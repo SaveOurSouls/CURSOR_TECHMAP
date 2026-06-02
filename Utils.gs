@@ -239,6 +239,37 @@ function runWithSheetVisible_(sheet, fn) {
   }
 }
 
+// ── Document lock (сериализация записи в служебные _TC_*-листы) ──
+// Защита от гонок: модальный/модели-сайдбар + генератор могут писать в общие
+// листы (_TC_TECHOPS_DB, _TC_STORE, _TC_LIBRARY) одновременно. GAS document-lock
+// НЕ реентрантный — вложенный вызов (saveTer→sync) поймал бы собственный лок и
+// упал. Счётчик глубины делает обёртку реентрантной в рамках одного выполнения
+// (GAS однопоточен на вызов).
+var _docLockDepth_ = 0;
+
+/**
+ * Выполняет fn под document-lock. Реентрантно: вложенный вызов выполняет fn
+ * под уже захваченным локом, не пытаясь взять его повторно.
+ *
+ * @param {function():*} fn          операция-мутатор
+ * @param {number}       [timeoutMs=20000] ожидание захвата лока
+ * @returns {*} результат fn
+ */
+function withDocumentLock_(fn, timeoutMs) {
+  if (_docLockDepth_ > 0) return fn();
+  const lock = LockService.getDocumentLock();
+  if (!lock.tryLock(timeoutMs || 20000)) {
+    throw new Error('Документ занят другой операцией. Повторите через несколько секунд.');
+  }
+  _docLockDepth_ += 1;
+  try {
+    return fn();
+  } finally {
+    _docLockDepth_ -= 1;
+    lock.releaseLock();
+  }
+}
+
 // ── Catalog version ───────────────────────────────────────────
 
 /** Обновляет метку версии каталога (timestamp) в UserProperties. */
