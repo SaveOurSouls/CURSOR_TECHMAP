@@ -58,7 +58,7 @@ function readWireDiaTable_() {
     // Колонки марок — все непустые заголовки правее «Ø жилы» (первые 3 — AWG/ГОСТ/Ø жилы).
     const marks = [];
     headers.forEach((h, c) => {
-      if (c > awgCol + 2 && h) marks.push({ name: h, norm: h.toLowerCase().replace(/[\s\-]/g, ''), col: c });
+      if (c > awgCol + 2 && h) marks.push({ name: h, norm: h.toLowerCase().replace(/[\s-]/g, ''), col: c });
     });
     const byAwg = {};
     const byGost = {};
@@ -91,7 +91,7 @@ function scanForTable1_(data) {
     const result  = {};
     headers.forEach((h, i) => {
       if (!h || /^\d+$/.test(h)) return;
-      if (h.length > 2 && !/[\s\-]/.test(h)) return;
+      if (h.length > 2 && !/[\s-]/.test(h)) return;
       const v = dataRow[i];
       if (v !== '' && v != null) result[h] = v;
     });
@@ -414,7 +414,7 @@ function buildTerData_(opType, config, terRecords) {
   if (!side.termArt) return null;
   const termArt   = side.termArt || '';
   const termExact = termArt.toLowerCase().trim();
-  const normStr   = s => s.toLowerCase().replace(/[\s\-\.\/\(\)_]/g, '');
+  const normStr   = s => s.toLowerCase().replace(/[\s./()_-]/g, '');
   const termNorm  = normStr(termArt);
   const normR     = r => normStr(r.article || '');
   let rec = (terRecords || []).find(r => (r.article || '').toLowerCase().trim() === termExact)
@@ -439,7 +439,6 @@ function buildPlaceholderMap_(op, config, prevResult, thisResult, wireData, terD
   const sA = config.sideA || {};
   const sB = config.sideB || {};
   const wd = wireData || {};
-  const td = terData || {};
 
   return {
     [p.index]:        config.assemblyIndex || '',
@@ -719,6 +718,14 @@ function relabelSemifinished_(sheet, ctx, rowIdx, newLabel) {
   }
 }
 
+// Ячейка считается «пустой» для заполнения, если реально пуста ИЛИ содержит
+// любой видимый плейсхолдер ручной сборки в угловых кавычках (‹наименование›,
+// ‹норма›, ‹артикул›, ‹…›) — генератор его перезаписывает.
+function isPlaceholderOrEmpty_(value) {
+  const s = String(value == null ? '' : value).trim();
+  return s === '' || /^‹.*›$/.test(s);
+}
+
 // Builds the wire result name for terminal operations (used in Результат and Время sections).
 function buildWireResultName_(w, termArt, connArt, sideLabel) {
   const base = wireBaseName_(w);
@@ -735,7 +742,7 @@ function findAndExpandSlots_(sheet, ctx, anchorRow, bound, nameCol, neededCount,
     const fc = String((ctx.values[r] || [])[0] || '').toLowerCase().trim();
     if (fc && !/полуфабрикат|^п\/ф/.test(fc) && !/^\d+$/.test(fc)) break;
     const nameV = nameCol >= 0 ? String((ctx.values[r] || [])[nameCol] || '').trim() : '';
-    if (!nameV) slots.push(r);
+    if (isPlaceholderOrEmpty_(nameV)) slots.push(r);
     else break;
   }
   if (neededCount > slots.length) {
@@ -783,7 +790,7 @@ function fillKompl_(sheet, ctx, colMap, op, config, wireData) {
       if (lbl && !/^\d+$/.test(lbl)) break;
       const artV  = cols.art  >= 0 ? String((ctx.values[r] || [])[cols.art]  || '').trim() : '';
       const grnV  = cols.name >= 0 ? String((ctx.values[r] || [])[cols.name] || '').trim() : '';
-      if (!artV && !grnV) slots.push(r);
+      if (isPlaceholderOrEmpty_(artV) && isPlaceholderOrEmpty_(grnV)) slots.push(r);
       else break;
     }
     if (wires.length > slots.length) {
@@ -958,7 +965,7 @@ function fillTime_(sheet, ctx, colMap, op, config, thisResult, opType, isLast) {
         const rc = (ctx.values[r] || []).map(c => String(c || '').toLowerCase().trim());
         if (!rc.some(v => v)) break;
         if (rc.some(v => v === 'наименование' || v === 'норма' || v === 'обозначение' || v === 'факт')) continue;
-        if (!String((ctx.values[r] || [])[tNameCol] || '').trim()) timeSlots.push(r);
+        if (isPlaceholderOrEmpty_(String((ctx.values[r] || [])[tNameCol] || '').trim())) timeSlots.push(r);
         else break;
       }
       if (wires.length > timeSlots.length) {
@@ -1054,7 +1061,7 @@ function fillTerminalFields_(sheet, ctx, terData) {
         if (/datasheet|высота обжима|геометр/i.test(rowText)) {
           fillMergedCell_(sheet, r + 1, dopCol + 1, terData.crimpHeight || ASSEMBLY_GEN.noDataMark, ctx.mergeMap);
         }
-        if (/pull[\s\-]?test|разрыв|усилие обрыва/i.test(rowText)) {
+        if (/pull[\s-]?test|разрыв|усилие обрыва/i.test(rowText)) {
           fillMergedCell_(sheet, r + 1, dopCol + 1, terData.pullForce || ASSEMBLY_GEN.noDataMark, ctx.mergeMap);
         }
       }

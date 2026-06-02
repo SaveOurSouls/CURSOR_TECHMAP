@@ -392,7 +392,7 @@
   // ── Article normalization ─────────────────────────────────────
   // Strips separators so "SSHL-002T-P0.2", "SSHL 002T P0.2", "SSHL002TP02" all match.
   function normalizeArt_(art) {
-    return String(art || '').toLowerCase().replace(/[\s\-\.\/\(\)_]/g, '');
+    return String(art || '').toLowerCase().replace(/[\s./()_-]/g, '');
   }
 
   // Finds a TER record: exact → normalized → strip manufacturer prefix word.
@@ -823,7 +823,7 @@
   function renderAssemblyInfo() {
     const block   = document.getElementById('assemblyInfoBlock');
     // Ключи-артикулы (напр. "SSHL-002T-P0.2") — не являются полями сборки, фильтруем
-    const isArticleKey = k => /^[A-Za-z0-9][A-Za-z0-9\-\.\/]+[A-Za-z0-9]$/.test(String(k).trim()) &&
+    const isArticleKey = k => /^[A-Za-z0-9][A-Za-z0-9./-]+[A-Za-z0-9]$/.test(String(k).trim()) &&
                               !/[а-яёА-ЯЁ\s]/.test(String(k));
     const entries = Object.entries(D.assemblyInfo || {})
       .filter(([k, v]) => v !== '' && v != null && !isArticleKey(k));
@@ -1541,7 +1541,7 @@
       }
     }
     if (!row) return 0;
-    const sNorm = s.replace(/[\s\-]/g, '');
+    const sNorm = s.replace(/[\s-]/g, '');
     const mk = (wd.marks || []).find(x => x.norm && sNorm.includes(x.norm));
     return (mk && row[mk.norm]) || 0;
   }

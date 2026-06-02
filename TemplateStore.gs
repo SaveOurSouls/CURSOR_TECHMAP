@@ -378,3 +378,4 @@ function clearTemplateMarkerNote_(targetRange) {
   // so clear unconditionally — avoids a per-insert getNote() round-trip.
   targetRange.getCell(1, 1).setNote('');
 }
+

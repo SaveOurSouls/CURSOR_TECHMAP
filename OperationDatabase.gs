@@ -138,7 +138,7 @@ function saveTerDataToSourceDbImpl_(article, fieldsJson) {
   // 3-проходный матч ПО ВСЕМ строкам с приоритетом точного: exact → normalized
   // → без префикса-производителя. Точное совпадение всегда побеждает неточное,
   // даже если неточное встречается в более ранней строке (защита от записи не туда).
-  const normArt = s => String(s).toLowerCase().replace(/[\s\-\.\/\(\)_]/g, '');
+  const normArt = s => String(s).toLowerCase().replace(/[\s./()_-]/g, '');
   const artNormExact = String(article).toLowerCase().trim();
   const artNorm      = normArt(article);
   const words        = String(article).trim().split(/\s+/);
