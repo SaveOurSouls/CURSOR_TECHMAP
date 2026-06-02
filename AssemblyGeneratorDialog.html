@@ -343,7 +343,8 @@
       <div id="twistWireList" style="display:flex;flex-wrap:wrap;gap:6px 14px;margin:4px 0 8px"></div>
     </div>
     <div class="ter-row">
-      <div class="ter-f"><label>Шаг свивки, мм</label><input id="twistPitch" class="ter-inp" type="text" placeholder="—" oninput="refresh()" /></div>
+      <div class="ter-f"><label>Шаг свивки, мм</label><input id="twistPitch" class="ter-inp" type="text" placeholder="—" oninput="onTwistPitchInput()" /></div>
+      <div class="ter-f"><label>Z₀, Ω</label><input id="twistZ0" class="ter-inp" type="text" placeholder="по шагу / задать" oninput="onTwistZ0Input()" /></div>
       <div class="ter-f"><label>Ø провода, мм</label><input id="twistWireDia" class="ter-inp" type="text" placeholder="авто из СПР.КАБ" oninput="onTwistDiaInput()" /></div>
     </div>
   </div>
@@ -1527,15 +1528,15 @@
 
   // Ø изоляции провода из справочника СПР.КОАКС по марке + (AWG ИЛИ ГОСТ-сечению),
   // распознанным из артикула. Сначала пробуем AWG, иначе ищем число = ГОСТ-сечение.
-  function lookupWireDia_(art) {
+  // Находит {row, mk} справочника по артикулу. Марку определяем первой и ВЫРЕЗАЕМ
+  // из строки — иначе цифра марки («НВ4», «UL1061») путается с ГОСТ-сечением.
+  function wireRow_(art) {
     const wd = D && D.wireDia;
-    if (!wd) return 0;
+    if (!wd) return null;
     const s = String(art || '').toLowerCase().replace(/,/g, '.');
     const sNorm = s.replace(/[\s-]/g, '');
-    // Марку определяем первой и ВЫРЕЗАЕМ из строки — иначе цифра марки (напр. «НВ4»,
-    // «UL1061») ошибочно распознаётся как ГОСТ-сечение.
     const mk = (wd.marks || []).find(x => x.norm && sNorm.includes(x.norm));
-    if (!mk) return 0;
+    if (!mk) return null;
     let row = null;
     const aw = s.match(/(\d+)\s*awg/);
     if (aw && wd.byAwg) row = wd.byAwg[aw[1]];
@@ -1547,8 +1548,91 @@
         if (wd.byGost[k]) { row = wd.byGost[k]; break; }
       }
     }
-    if (!row) return 0;
-    return row[mk.norm] || 0;
+    return row ? { row, mk } : null;
+  }
+
+  function lookupWireDia_(art) {
+    const r = wireRow_(art);
+    return (r && r.row[r.mk.norm]) || 0;
+  }
+
+  // Диэлектрическая проницаемость изоляции по марке (типовые значения, fallback 2.5).
+  const EPS_BY_MARK = {
+    ptfe: 2.1, мгтф: 2.1, мс: 2.1, m22759: 2.5,
+    ul1061: 3.5, ul1571: 3.5, ul1007: 3.5, ul1015: 3.5, мгшв: 3.5,
+    нв4: 3.5, пвам: 4.0, пгва: 4.0, flry: 3.5,
+    силикон: 3.0, ркгм: 3.0, txl: 2.3, gxl: 2.3,
+  };
+
+  // Геометрия+диэлектрик витой пары по проводу: {d — Ø жилы, D — Ø изоляции, eps}. null если нет данных.
+  function wireGeom_(art) {
+    const r = wireRow_(art);
+    if (!r) return null;
+    const Dia = r.row[r.mk.norm];   // Ø изоляции = расстояние между центрами витой пары
+    const d   = r.row.__core;       // Ø жилы (медь)
+    if (!(Dia > 0 && d > 0 && Dia > d)) return null;
+    return { d: d, D: Dia, eps: EPS_BY_MARK[r.mk.norm] || 2.5 };
+  }
+
+  // Z₀ витой пары (Лефферсон): Z0 = (120/√εeff)·arccosh(D/d),
+  // εeff = 1 + q(εr−1), q = 0.25 + 0.0004·θ²(град), θ = arctan(π·D/p). Чистая.
+  function twistZ0_(d, D, p, eps) {
+    if (!(d > 0 && D > d && p > 0 && eps >= 1)) return 0;
+    const thetaDeg = Math.atan(Math.PI * D / p) * 180 / Math.PI;
+    const q = 0.25 + 0.0004 * thetaDeg * thetaDeg;
+    const epsEff = 1 + q * (eps - 1);
+    const x = D / d;
+    const acosh = Math.log(x + Math.sqrt(x * x - 1));
+    return 120 / Math.sqrt(epsEff) * acosh;
+  }
+
+  // Обратно: шаг p под целевое Z₀ (бисекция; Z₀ монотонно растёт с шагом).
+  // {p, reachable}. Если цель вне достижимого диапазона — ближайший край (reachable=false).
+  function twistPitchForZ0_(d, D, z0, eps) {
+    if (!(d > 0 && D > d && z0 > 0 && eps >= 1)) return null;
+    let lo = 2, hi = 2000;                          // мм: tight → loose
+    if (z0 <= twistZ0_(d, D, lo, eps)) return { p: lo, reachable: false };
+    if (z0 >= twistZ0_(d, D, hi, eps)) return { p: hi, reachable: false };
+    for (let i = 0; i < 60; i++) {
+      const mid = (lo + hi) / 2;
+      if (twistZ0_(d, D, mid, eps) < z0) lo = mid; else hi = mid;
+    }
+    return { p: Math.round((lo + hi) / 2 * 10) / 10, reachable: true };
+  }
+
+  // Общая геометрия свиваемых проводов (берём первый подходящий; в витой паре провода одинаковые).
+  function twistGeom_() {
+    let idx = getTwistMode() === 'pairs'
+      ? getTwistPairs().reduce((a, p) => a.concat(p), [])
+      : getTwistWireIndices();
+    const active = wireEntries.filter(w => w.compId);
+    if (!idx.length) idx = active.map((_, i) => i);
+    for (let j = 0; j < idx.length; j++) {
+      const w = active[idx[j]];
+      const c = w ? getCompById(w.compId) : null;
+      const g = c ? wireGeom_(c.art || c.name) : null;
+      if (g) return g;
+    }
+    return null;
+  }
+
+  // Шаг введён → пересчитать Z₀; Z₀ введён → пересчитать шаг.
+  function onTwistPitchInput() {
+    const g = twistGeom_();
+    const p = parseDecimal_((document.getElementById('twistPitch') || {}).value);
+    const z0El = document.getElementById('twistZ0');
+    if (z0El && g && p > 0) { const z = twistZ0_(g.d, g.D, p, g.eps); z0El.value = z > 0 ? String(Math.round(z)) : ''; }
+    refresh();
+  }
+  function onTwistZ0Input() {
+    const g = twistGeom_();
+    const z0 = parseDecimal_((document.getElementById('twistZ0') || {}).value);
+    const pEl = document.getElementById('twistPitch');
+    if (pEl && g && z0 > 0) {
+      const res = twistPitchForZ0_(g.d, g.D, z0, g.eps);
+      if (res) pEl.value = String(res.p).replace('.', ',');
+    }
+    refresh();
   }
 
   // ── Generate ──────────────────────────────────────────────────

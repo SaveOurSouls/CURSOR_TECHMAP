@@ -60,12 +60,15 @@ function readWireDiaTable_() {
     headers.forEach((h, c) => {
       if (c > awgCol + 2 && h) marks.push({ name: h, norm: h.toLowerCase().replace(/[\s-]/g, ''), col: c });
     });
+    const coreCol = awgCol + 2; // 3-я колонка после AWG — «Ø жилы» (медь), нужен для Z₀
     const byAwg = {};
     const byGost = {};
     for (let r = hr + 1; r < vals.length; r++) {
       const awg = String(vals[r][awgCol] || '').trim();
       if (!awg) continue;
       const row = {};
+      const core = parseFloat(String(vals[r][coreCol] || '').replace(',', '.'));
+      if (isFinite(core) && core > 0) row.__core = core;
       marks.forEach(m => {
         const v = parseFloat(String(vals[r][m.col] || '').replace(',', '.'));
         if (isFinite(v) && v > 0) row[m.norm] = v;
