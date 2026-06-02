@@ -565,7 +565,7 @@
       const nm = c ? (c.art || c.name) : '?';
       const ck = (firstBuild || prev.has(i)) ? ' checked' : '';  // по умолчанию все
       return `<label style="display:flex;align-items:center;gap:5px;font-size:12px;font-weight:500;cursor:pointer">`
-        + `<input type="checkbox" class="twist-wire-cb" value="${i}"${ck} onchange="renderOpsCard()"/> ${esc(nm)}</label>`;
+        + `<input type="checkbox" class="twist-wire-cb" value="${i}"${ck} onchange="onTwistPairChange()"/> ${esc(nm)}</label>`;
     }).join('');
   }
 
@@ -606,9 +606,9 @@
     row.className = 'twist-pair-row';
     row.style.cssText = 'display:flex;align-items:center;gap:6px;margin-bottom:5px';
     row.innerHTML =
-        `<select class="twist-pair-a" style="flex:1;padding:5px" onchange="renderOpsCard()">${opts}</select>`
+        `<select class="twist-pair-a" style="flex:1;padding:5px" onchange="onTwistPairChange()">${opts}</select>`
       + `<span style="font-weight:700">+</span>`
-      + `<select class="twist-pair-b" style="flex:1;padding:5px" onchange="renderOpsCard()">${opts}</select>`
+      + `<select class="twist-pair-b" style="flex:1;padding:5px" onchange="onTwistPairChange()">${opts}</select>`
       + `<button type="button" onclick="this.closest('.twist-pair-row').remove();renderOpsCard()" style="border:0;background:none;color:var(--txt3);cursor:pointer;font-size:16px;padding:0 4px">×</button>`;
     list.appendChild(row);
     if (a !== undefined && a !== null) row.querySelector('.twist-pair-a').value = String(a);
@@ -1633,6 +1633,17 @@
       if (res) pEl.value = String(res.p).replace('.', ',');
     }
     refresh();
+  }
+
+  // Смена выбранной пары/проводов свивки → пересчитать Ø и Z₀ из ВЫБРАННЫХ проводов
+  // (а не из всех кабелей BOM, которые разнотипные). Без полного refresh — не сбрасываем селекты.
+  function onTwistPairChange() {
+    autofillTwistDia();
+    const z0El = document.getElementById('twistZ0');
+    const g = twistGeom_();
+    const p = parseDecimal_((document.getElementById('twistPitch') || {}).value);
+    if (z0El && g && p > 0) { const z = twistZ0_(g.d, g.D, p, g.eps); z0El.value = z > 0 ? String(Math.round(z)) : ''; }
+    renderOpsCard();
   }
 
   // ── Generate ──────────────────────────────────────────────────
