@@ -1114,8 +1114,12 @@ function fillStripFields_(sheet, ctx, config) {
 
       const need = side === 'a' ? st.a : st.b;
       const len  = side === 'a' ? st.lenA : st.lenB;
-      if (!need || !len) continue;
-      const val = formatStripLen_(len);
+      // Сторона не зачищается → прочерк (чтобы не путали с незаполненной).
+      // Зачищается, но длины нет → оставляем «Внести данные» для ручного ввода.
+      let val;
+      if (!need) val = '—';
+      else if (len) val = formatStripLen_(len);
+      else continue;
 
       if (cell.indexOf('внести') >= 0) {
         // Метка и плейсхолдер в одной ячейке — заменяем только «внести данные».
