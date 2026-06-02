@@ -1102,13 +1102,32 @@ function fillStripFields_(sheet, ctx, config) {
   for (let r = 0; r < ctx.values.length; r++) {
     const row = ctx.values[r] || [];
     for (let c = 0; c < row.length; c++) {
-      const cell = String(row[c] || '').toLowerCase();
-      if (cell.indexOf('зачистка') < 0 || cell.indexOf('внести') < 0) continue;
-      const tail = cell.split('зачистка')[1] || '';
-      if (/^[\s:]*[aа]/.test(tail)) {
-        if (st.a && st.lenA) fillMergedCell_(sheet, r + 1, c + 1, formatStripLen_(st.lenA), ctx.mergeMap);
-      } else if (/^[\s:]*[bв]/.test(tail)) {
-        if (st.b && st.lenB) fillMergedCell_(sheet, r + 1, c + 1, formatStripLen_(st.lenB), ctx.mergeMap);
+      const raw  = String(row[c] || '');
+      const cell = raw.toLowerCase();
+      const zi   = cell.indexOf('зачистка');
+      if (zi < 0) continue;
+      const tail = cell.slice(zi + 'зачистка'.length);
+      let side = '';
+      if (/^[\s:]*[aа]/.test(tail)) side = 'a';
+      else if (/^[\s:]*[bв]/.test(tail)) side = 'b';
+      else continue;
+
+      const need = side === 'a' ? st.a : st.b;
+      const len  = side === 'a' ? st.lenA : st.lenB;
+      if (!need || !len) continue;
+      const val = formatStripLen_(len);
+
+      if (cell.indexOf('внести') >= 0) {
+        // Метка и плейсхолдер в одной ячейке — заменяем только «внести данные».
+        fillMergedCell_(sheet, r + 1, c + 1, raw.replace(/внести\s*данные/ig, val), ctx.mergeMap);
+      } else {
+        // Плейсхолдер «Внести данные» в отдельной ячейке справа (метка и поле разнесены).
+        for (let cc = c + 1; cc < row.length; cc++) {
+          if (String(row[cc] || '').toLowerCase().indexOf('внести') >= 0) {
+            fillMergedCell_(sheet, r + 1, cc + 1, val, ctx.mergeMap);
+            break;
+          }
+        }
       }
     }
   }
