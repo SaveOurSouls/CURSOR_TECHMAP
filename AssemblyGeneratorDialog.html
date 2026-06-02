@@ -1531,20 +1531,24 @@
     const wd = D && D.wireDia;
     if (!wd) return 0;
     const s = String(art || '').toLowerCase().replace(/,/g, '.');
+    const sNorm = s.replace(/[\s-]/g, '');
+    // Марку определяем первой и ВЫРЕЗАЕМ из строки — иначе цифра марки (напр. «НВ4»,
+    // «UL1061») ошибочно распознаётся как ГОСТ-сечение.
+    const mk = (wd.marks || []).find(x => x.norm && sNorm.includes(x.norm));
+    if (!mk) return 0;
     let row = null;
     const aw = s.match(/(\d+)\s*awg/);
     if (aw && wd.byAwg) row = wd.byAwg[aw[1]];
     if (!row && wd.byGost) {
-      const nums = s.match(/\d+(?:\.\d+)?/g) || [];
+      const rest = sNorm.split(mk.norm).join(' ');       // строка без марки
+      const nums = rest.match(/\d+(?:\.\d+)?/g) || [];
       for (let i = 0; i < nums.length; i++) {
         const k = String(Number(nums[i]));
         if (wd.byGost[k]) { row = wd.byGost[k]; break; }
       }
     }
     if (!row) return 0;
-    const sNorm = s.replace(/[\s-]/g, '');
-    const mk = (wd.marks || []).find(x => x.norm && sNorm.includes(x.norm));
-    return (mk && row[mk.norm]) || 0;
+    return row[mk.norm] || 0;
   }
 
   // ── Generate ──────────────────────────────────────────────────
