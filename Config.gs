@@ -111,4 +111,7 @@ const ASSEMBLY_GEN = {
   },
   // Linear tolerance: at 1000mm → ±toleranceMmPerM mm; scales proportionally
   toleranceMmPerM: 7,
+  // Маркер в техкарте, когда значение ОЖИДАЛОСЬ из БД, но не подтянулось —
+  // чтобы оператор сразу видел незаполненное поле и внёс вручную.
+  noDataMark: '⚠ НЕТ ДАННЫХ',
 };

@@ -428,7 +428,7 @@ function buildTerData_(opType, config, terRecords) {
     }
   }
   return {
-    applicator:  rec && rec.applicator  ? rec.applicator  : 'не найдено',
+    applicator:  rec && rec.applicator  ? rec.applicator  : ASSEMBLY_GEN.noDataMark,
     crimpHeight: rec ? (rec.crimpHeight  || '') : '',
     pullForce:   rec ? [rec.pullForceMin, rec.pullForceMax].filter(Boolean).join(' - ') : '',
   };
@@ -1050,11 +1050,12 @@ function fillTerminalFields_(sheet, ctx, terData) {
       const isControlRow = (ctx.values[r] || []).slice(0, 4).some(c => /^контроль$/i.test(String(c || '').trim()));
       if (!isControlRow) continue;
       if (!cur || cur === '-' || cur === '—') {
-        if (terData.crimpHeight && /datasheet|высота обжима|геометр/i.test(rowText)) {
-          fillMergedCell_(sheet, r + 1, dopCol + 1, terData.crimpHeight, ctx.mergeMap);
+        // Контрольная строка ожидает значение из БД — если его нет, ставим маркер «нет данных».
+        if (/datasheet|высота обжима|геометр/i.test(rowText)) {
+          fillMergedCell_(sheet, r + 1, dopCol + 1, terData.crimpHeight || ASSEMBLY_GEN.noDataMark, ctx.mergeMap);
         }
-        if (terData.pullForce && /pull[\s\-]?test|разрыв|усилие обрыва/i.test(rowText)) {
-          fillMergedCell_(sheet, r + 1, dopCol + 1, terData.pullForce, ctx.mergeMap);
+        if (/pull[\s\-]?test|разрыв|усилие обрыва/i.test(rowText)) {
+          fillMergedCell_(sheet, r + 1, dopCol + 1, terData.pullForce || ASSEMBLY_GEN.noDataMark, ctx.mergeMap);
         }
       }
     }
@@ -1114,12 +1115,9 @@ function fillStripFields_(sheet, ctx, config) {
 
       const need = side === 'a' ? st.a : st.b;
       const len  = side === 'a' ? st.lenA : st.lenB;
-      // Сторона не зачищается → прочерк (чтобы не путали с незаполненной).
-      // Зачищается, но длины нет → оставляем «Внести данные» для ручного ввода.
-      let val;
-      if (!need) val = '—';
-      else if (len) val = formatStripLen_(len);
-      else continue;
+      // Сторона не зачищается → прочерк; зачищается и длина есть → длина;
+      // зачищается, но длина не подтянулась из БД → видимый маркер «нет данных».
+      const val = !need ? '—' : (len ? formatStripLen_(len) : ASSEMBLY_GEN.noDataMark);
 
       if (cell.indexOf('внести') >= 0) {
         // Метка и плейсхолдер в одной ячейке — заменяем только «внести данные».
