@@ -42,7 +42,7 @@
 |---|---|
 | `_TC_LIBRARY` | Каталог шаблонов (id, title, storeRow, размеры, JSON картинок) |
 | `_TC_STORE` | Хранилище содержимого шаблонов блоками |
-| `_TC_TECHOPS_DB` | Локальная копия БД техопераций (18 колонок) |
+| `_TC_TECHOPS_DB` | Локальная копия БД техопераций (19 колонок: 6 базовых + `extra1`…`extra13`) |
 | `_TC_TECHOPS_META` | Мета БД: источник, дата, версия схемы |
 
 ---
@@ -60,7 +60,7 @@
 | `СПР.КАБ` | — | Справочник Ø изоляции проводов (AWG / ГОСТ / Ø по маркам) для запаса на свивку (ранее `СПР.КОАКС`) |
 
 - Кеш: `CacheService` чанками (`ChunkCache_`), снапшот в `_TC_TECHOPS_DB`.
-- `schemaVersion` в `Config.gs` (текущая **12**) — при несовпадении автосинхронизация.
+- `schemaVersion` в `Config.gs` (текущая **14**) — при несовпадении автосинхронизация.
   Бампится вместе с `cacheKeyPrefix` (`techmap-techops-db-vN`).
 - Маппинг extra-колонок ↔ поля — единый словарь `TECHOPS_EXTRA_FIELDS` (read/write симметричны).
 
@@ -73,10 +73,10 @@
 
 ### Цепочка операций
 
-`Резка → Опрессовка A → [Свивка] → Монтаж A → Опрессовка B → [Свивка] → Монтаж B`
+`Резка → Опрессовка A → [Свивка] → [Лужение] → Монтаж A → Опрессовка B → [Свивка] → Монтаж B`
 
 Типы операций: `cutWire`, `prsTermA`/`prsTermB` (опрессовка), `insTermA`/`insTermB` (монтаж),
-`twist` (свивка). Добавление нового типа — скилл `/new-optype`.
+`twist` (свивка), `tin` (лужение). Добавление нового типа — скилл `/new-optype`.
 
 ### Структурный фил (без плейсхолдеров)
 
@@ -115,9 +115,15 @@
 
 ## Картинки
 
-- При сохранении шаблона картинки кешируются в Drive (папка `_TC_IMAGE_CACHE`) —
-  ускоряет вставку.
-- Получение blob: `getBlob()` → `getUrl()`+`UrlFetchApp` → XLSX-unzip (fallback для GAS 2024+).
+- При сохранении шаблона over-grid картинки кешируются в Drive (папка `_TC_IMAGE_CACHE`)
+  и вписываются в `_TC_STORE`; вставка шаблона достаёт их из Drive по `driveFileId`.
+- Получение blob: `getBlob()` → `getUrl()`+`UrlFetchApp` → XLSX-unzip. На GAS 2024+ первые
+  два пути для over-grid обычно мертвы → работает XLSX-fallback (гард 25 МБ); если capture
+  не дал blob, потеря не молчит — предупреждение в диалоге сохранения + лог `IMG capture …`.
+- **Лимит `insertImage` ≈ 1 млн символов (≈750 КБ).** Картинка крупнее (напр. ~1 МБ) не
+  вставляется ни в `_TC_STORE`, ни на карту → автофолбэк: берётся уменьшенное Drive-превью
+  (`thumbnail?id=…&sz=w800`, ~0.5–0.7 МБ) и вставляется плавающим в ту же позицию (оригинал
+  в Drive не трогается). `w1000+` часто возвращает оригинал — поэтому именно `w800`.
 - Файлы кеша расшариваются «по ссылке — просмотр», чтобы картинки подтягивались
   у всех пользователей таблицы (а не только у владельца Drive-файлов).
 
@@ -141,8 +147,11 @@ https://www.googleapis.com/auth/spreadsheets
 https://www.googleapis.com/auth/drive
 https://www.googleapis.com/auth/script.container.ui
 https://www.googleapis.com/auth/script.external_request
+https://www.googleapis.com/auth/script.scriptapp
 ```
 Advanced service: **Google Sheets API v4** (для copyPaste и in-cell картинок).
+`executionApi` (`access: MYSELF`) включён — функции вызываются через `clasp run` для
+синхронной диагностики (`script.scriptapp` нужен для управления триггерами).
 
 ---
 
