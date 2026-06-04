@@ -243,22 +243,28 @@ function writeRangeToStore_(sourceRange, storeRow, storeColumn) {
 
   runWithSheetVisible_(storeSheet, () => {
     const targetRange = storeSheet.getRange(storeRow, storeColumn, height, width);
-    targetRange.breakApart();
-    clearStoreSlotForWrite_(targetRange);
+    clearStoreSlotForWrite_(targetRange); // снимет объединения и очистит слот
     SpreadsheetApp.flush();
     copyRangePreservingFormulas_(sourceRange, targetRange);
     targetRange.getCell(1, 1).setNote('techmap-template-store');
   });
 }
 
-/** Очистка слота _TC_STORE перед записью; full clear() по скрытому листу иногда падает. */
+/** Полностью очищает слот _TC_STORE (контент + формат + валидации + объединения). */
 function clearStoreSlotForWrite_(targetRange) {
+  // 1) Снять объединения — иначе clearContent на части объединённой ячейки падает.
+  try { targetRange.breakApart(); } catch (e0) {}
+  // 2) ВАЖНО: clear() БЕЗ аргументов чистит контент+формат+валидации. Прежний
+  //    clear({contentsOnly:false}) был no-op (опции-флаги: ничего не true → ничего не
+  //    чистится) — при записи маскировалось последующим copy, но при УДАЛЕНИИ слот
+  //    оставался с данными (строка каталога ушла, данные в сторе остались).
   try {
-    targetRange.clear({ contentsOnly: false });
+    targetRange.clear();
   } catch (e) {
-    try { targetRange.clearDataValidations(); } catch (e2) {}
+    // Фолбэк по категориям, если full clear падает на скрытом листе.
+    try { targetRange.clearContent(); } catch (e2) {}
     try { targetRange.clearFormat(); } catch (e3) {}
-    try { targetRange.clearContent(); } catch (e4) {}
+    try { targetRange.clearDataValidations(); } catch (e4) {}
     try { targetRange.removeCheckboxes(); } catch (e5) {}
   }
 }

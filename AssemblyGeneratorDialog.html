@@ -515,6 +515,7 @@
   let wireEntries = [];   // [{idx, compId, length, qty}]
   let nextWireIdx = 0;
   let advancedLengthMode = false;
+  let activeTab = 'inter';   // 'inter' (межплатная) | 'coax' (коакс)
   let sharedLength = 0;   // actual cut length used in buildConfig
   let _twistDiaManual = false;  // пользователь вручную задал Ø свивки (не перетирать авто-значением)
   let drawingLength = 0;  // raw "по чертежу" input
@@ -525,6 +526,7 @@
     renderAssemblyInfo();
     renderSpyTable();
     populateComponentSelects();
+    populateCoaxSelects();
 
     document.getElementById('sideBEnabled').addEventListener('change', () => {
       const on = document.getElementById('sideBEnabled').checked;
@@ -1210,6 +1212,7 @@
   // Выбор шаблона резки: при наличии зачисток — CUT_WIRE+Nstrip по коду (+1/+2 в
   // одной категории, автоподбор по категории их не различает), иначе обычная резка.
   function pickTemplateForOp_(opSpec) {
+    if (opSpec.tmplHint) return pickCoaxTemplate_(opSpec.tmplHint, opSpec.side);
     if (opSpec.opKey === 'cutWire' && opSpec.stripCount > 0) {
       const re = new RegExp('cut_wire\\+' + opSpec.stripCount + 'strip', 'i');
       const hit = (D.templates || []).find(t => re.test(String(t.title || '').split('|')[0]));
@@ -1218,7 +1221,157 @@
     return autoPickTemplate(opSpec.opKey);
   }
 
+  // ── КОАКС ─────────────────────────────────────────────────────
+  function switchGenTab(tab) {
+    activeTab = tab;
+    document.getElementById('tabInter').style.display = tab === 'inter' ? '' : 'none';
+    document.getElementById('tabCoax').style.display  = tab === 'coax'  ? '' : 'none';
+    document.querySelectorAll('.gen-tab-btn').forEach(b =>
+      b.classList.toggle('active', b.dataset.tab === tab));
+    renderOpsCard();
+  }
+
+  function coaxRecByIdx(v) {
+    const i = parseInt(v, 10);
+    return (D.coaxRecords || [])[i] || null;
+  }
+
+  function coaxOptionLabel_(r) {
+    return r.article || [r.type, r.wire].filter(Boolean).join(' ') || '—';
+  }
+
+  function populateCoaxSelects() {
+    const recs = D.coaxRecords || [];
+    const opts = '<option value="">— выбрать —</option>' +
+      recs.map((r, i) => `<option value="${i}">${esc(coaxOptionLabel_(r))}</option>`).join('');
+    ['coaxConnA', 'coaxConnB'].forEach(id => {
+      const sel = document.getElementById(id);
+      if (sel) sel.innerHTML = opts;
+    });
+  }
+
+  // Префилл «Тип пина»/«Тип экрана» из записи БД (если заполнено) + сводка размеров.
+  function onCoaxConnChange(side) {
+    const rec = coaxRecByIdx(document.getElementById('coaxConn' + side).value);
+    const info = document.getElementById('coaxInfo' + side);
+    if (rec) {
+      const pinSel = document.getElementById('coaxPin' + side);
+      if (rec.pinType && /внутри/i.test(rec.pinType)) pinSel.value = 'внутри корпуса';
+      else if (rec.pinType) pinSel.value = 'пайка';
+      if (side === 'A' && rec.shieldType) {
+        const sh = document.getElementById('coaxShield');
+        sh.value = /пайк/i.test(rec.shieldType) ? 'пайка' : 'обжим';
+      }
+      const dims = ['D1:' + (rec.d1 || '—'), 'D2:' + (rec.d2 || '—'), 'D3:' + (rec.d3 || '—'),
+                    'L1:' + (rec.l1 || '—'), 'L2:' + (rec.l2 || '—'), 'L3:' + (rec.l3 || '—')];
+      info.textContent = `${rec.wire || ''} · ${dims.join(' ')}`;
+    } else {
+      info.textContent = '';
+    }
+    renderOpsCard();
+  }
+
+  function onCoaxPinChange() { renderOpsCard(); }
+
+  function onCoaxSideBToggle() {
+    const on = document.getElementById('coaxSideBEnabled').checked;
+    document.getElementById('coaxSideBBlock').style.display = on ? '' : 'none';
+    renderOpsCard();
+  }
+
+  // Цепочка коакс-операций: скелет + слоты ПИН (по стороне) и ЭКРАН (на сборку).
+  // Сторона A = кириллица «А», B = латиница «B» (как в каталоге шаблонов).
+  function getActiveOpsCoax_() {
+    const connA = coaxRecByIdx((document.getElementById('coaxConnA') || {}).value);
+    if (!connA) return [];
+    const sideB = document.getElementById('coaxSideBEnabled').checked;
+    const connB = sideB ? coaxRecByIdx(document.getElementById('coaxConnB').value) : null;
+    const pinA  = document.getElementById('coaxPinA').value;
+    const pinB  = sideB ? document.getElementById('coaxPinB').value : '';
+    const shield = document.getElementById('coaxShield').value;
+    const pinHint = p => p === 'внутри корпуса' ? 'SDR_COAX_pin_R/A' : 'SDR_COAX_pin';
+    const ops = [];
+
+    ops.push({ type: 'coaxCut',    opKey: 'coaxCut',    label: 'Резка кабеля', tmplHint: 'CUT_WIRE_auto' });
+    ops.push({ type: 'coaxCutTut', opKey: 'coaxCutTut', label: 'Резка ТУТ',    tmplHint: 'CUT_TUT_short' });
+    ops.push({ type: 'coaxStrip', side: 'A', opKey: 'coaxStripA', label: 'Разделка коаксиала (А)', tmplHint: 'STRIP_COAX_auto' });
+    if (sideB && connB) ops.push({ type: 'coaxStrip', side: 'B', opKey: 'coaxStripB', label: 'Разделка коаксиала (B)', tmplHint: 'STRIP_COAX_auto' });
+    ops.push({ type: 'coaxPin', side: 'A', opKey: 'coaxPinA', label: 'Пайка центрального контакта (А)', tmplHint: pinHint(pinA) });
+    if (sideB && connB) ops.push({ type: 'coaxPin', side: 'B', opKey: 'coaxPinB', label: 'Пайка центрального контакта (B)', tmplHint: pinHint(pinB) });
+    ops.push({ type: 'coaxInsTut',    opKey: 'coaxInsTut',    label: 'Монтаж ТУТ',           tmplHint: 'INS_TUT' });
+    ops.push({ type: 'coaxInsSleeve', opKey: 'coaxInsSleeve', label: 'Монтаж втулки экрана', tmplHint: 'INS_SLEEVE_coax' });
+    // Корпус — кроме сторон, где пин паяется внутри корпуса (R/A).
+    if (pinA !== 'внутри корпуса') ops.push({ type: 'coaxHousing', side: 'A', opKey: 'coaxHousingA', label: 'Монтаж корпуса (А)', tmplHint: 'INS_housing_COAX' });
+    if (sideB && connB && pinB !== 'внутри корпуса') ops.push({ type: 'coaxHousing', side: 'B', opKey: 'coaxHousingB', label: 'Монтаж корпуса (B)', tmplHint: 'INS_housing_COAX' });
+    // Экран (на сборку): пайка → SDR_COAX_housing по сторонам; обжим → один PRS_SLEEVE_coax.
+    if (shield === 'пайка') {
+      ops.push({ type: 'coaxSolderShield', side: 'A', opKey: 'coaxSolderShieldA', label: 'Пайка экрана (А)', tmplHint: 'SDR_COAX_housing' });
+      if (sideB && connB) ops.push({ type: 'coaxSolderShield', side: 'B', opKey: 'coaxSolderShieldB', label: 'Пайка экрана (B)', tmplHint: 'SDR_COAX_housing' });
+    } else {
+      ops.push({ type: 'coaxShield', opKey: 'coaxShield', label: 'Опрессовка втулки экрана', tmplHint: 'PRS_SLEEVE_coax' });
+    }
+    ops.push({ type: 'coaxHeat', opKey: 'coaxHeat', label: 'Усадка ТУТ', tmplHint: 'HEAT_TYT_short' });
+    return ops;
+  }
+
+  // Детерминированный выбор коакс-шаблона: точное совпадение префикса «КОД» (до « | »)
+  // с подсказкой + (если задана сторона) совпадение метки (А/A) или (B/В) в заголовке.
+  function pickCoaxTemplate_(hint, side) {
+    const norm = s => String(s || '').toLowerCase().replace(/\s+/g, '');
+    const target = norm(hint);
+    const cands = (D.templates || []).filter(t => norm(String(t.title || '').split('|')[0]) === target);
+    if (!cands.length) return '';
+    if (!side) return cands[0].id;
+    const re = side === 'A' ? /\([АA]\)/ : /\([BВ]\)/;   // А/A кир/лат · B/В лат/кир
+    return (cands.find(t => re.test(String(t.title || ''))) || cands[0]).id;
+  }
+
+  function buildConfigCoax_() {
+    const info    = D.assemblyInfo || {};
+    const entries = Object.entries(info);
+    const findKey = pattern => {
+      const e = entries.find(([k]) => pattern.test(k));
+      return e ? String(e[1] ?? '') : '';
+    };
+    const sideB = document.getElementById('coaxSideBEnabled').checked;
+    const connA = coaxRecByIdx(document.getElementById('coaxConnA').value);
+    const connB = sideB ? coaxRecByIdx(document.getElementById('coaxConnB').value) : null;
+    const mkSide = (rec, pinType) => rec ? {
+      article: rec.article, type: rec.type, wire: rec.wire, mfr: rec.mfr, program: rec.program,
+      d1: rec.d1, d2: rec.d2, d3: rec.d3, l1: rec.l1, l2: rec.l2, l3: rec.l3,
+      lPlus: rec.lPlus, lMinus: rec.lMinus, pinType: pinType,
+    } : null;
+
+    const ops = getActiveOpsCoax_().map(opSpec => {
+      const matched = matchedOps[opSpec.opKey] || null;
+      return {
+        type:       opSpec.type,
+        side:       opSpec.side || '',
+        templateId: (document.getElementById(`tmplSel_${opSpec.opKey}`) || {}).value || '',
+        opNum:      matched ? (matched.opNumber || '') : '',
+        tPrep:      (document.getElementById(`tPrep_${opSpec.opKey}`)    || {}).value || '',
+        tOp:        (document.getElementById(`tOp_${opSpec.opKey}`)      || {}).value || '',
+        tMachine:   (document.getElementById(`tMachine_${opSpec.opKey}`) || {}).value || '',
+      };
+    });
+
+    return {
+      mode:          'coax',
+      assemblyIndex: findKey(/индекс/i),
+      assemblyName:  findKey(/наименование/i),
+      partQty:       parseDecimal_(findKey(/кол[- ]?во|количеств/i)) || 1,
+      coax: {
+        cableLength: parseDecimal_((document.getElementById('coaxLen') || {}).value) || '',
+        shieldType:  document.getElementById('coaxShield').value,
+        sideA:       mkSide(connA, document.getElementById('coaxPinA').value),
+        sideB:       mkSide(connB, sideB ? document.getElementById('coaxPinB').value : ''),
+      },
+      ops,
+    };
+  }
+
   function getActiveOps() {
+    if (activeTab === 'coax') return getActiveOpsCoax_();
     const ops = [];
     const activeWires = wireEntries.filter(w => w.compId);
 
@@ -1268,7 +1421,9 @@
     const card   = document.getElementById('opsCard');
     const active = getActiveOps();
     if (!active.length) {
-      card.innerHTML = '<div class="op-empty">Добавьте кабель — появятся операции</div>';
+      card.innerHTML = '<div class="op-empty">' +
+        (activeTab === 'coax' ? 'Выберите разъём — появятся операции' : 'Добавьте кабель — появятся операции') +
+        '</div>';
       return;
     }
     card.innerHTML = active.map((opSpec, i) => buildOpItem(opSpec, i + 1)).join('');
@@ -1278,7 +1433,11 @@
       if (sel) {
         // Restore saved selection or auto-pick by category
         // cutWire без ручного выбора — всегда пересчитываем под текущее число зачисток.
-        const saved = (opSpec.opKey === 'cutWire' && !manualTemplates.has('cutWire'))
+        // cutWire и коакс-операции без ручного выбора всегда пересчитываем (число
+        // зачисток / тип пина-экрана меняют шаблон) — иначе берём сохранённый.
+        const autoRepick = (opSpec.opKey === 'cutWire' || activeTab === 'coax')
+          && !manualTemplates.has(opSpec.opKey);
+        const saved = autoRepick
           ? pickTemplateForOp_(opSpec)
           : (selectedTemplates[opSpec.opKey] || pickTemplateForOp_(opSpec));
         if (saved) { sel.value = saved; selectedTemplates[opSpec.opKey] = sel.value; }
@@ -1474,6 +1633,7 @@
 
   // ── Build config ──────────────────────────────────────────────
   function buildConfig() {
+    if (activeTab === 'coax') return buildConfigCoax_();
     const sideB  = document.getElementById('sideBEnabled').checked;
     const termA  = getCompById(document.getElementById('termSelectA').value);
     const connA  = getCompById(document.getElementById('connSelectA').value);
