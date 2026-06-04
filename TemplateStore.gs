@@ -355,7 +355,34 @@ function applyStoredDimensions_(targetSheet, targetRow, targetColumn, template) 
     (start, count, size) => targetSheet.setColumnWidths(start, count, size));
 }
 
+// Читает высоты строк И ширины колонок диапазона ОДНИМ вызовом Sheets API
+// (rowMetadata/columnMetadata.pixelSize) вместо N поячеечных getRowHeight/getColumnWidth
+// (на шаблоне 40×19 это ~59 round-trip → 1). Возвращает {rows, cols} или null при
+// недоступности/несовпадении размеров → вызывающий падает на проверенный поэлементный цикл.
+function readRangeDimensionsViaSheetsApi_(range) {
+  if (typeof Sheets === 'undefined') return null;
+  try {
+    const ss    = SpreadsheetApp.getActive();
+    const sheet = range.getSheet();
+    const a1    = "'" + sheet.getName().replace(/'/g, "''") + "'!" + range.getA1Notation();
+    const resp  = Sheets.Spreadsheets.get(ss.getId(), {
+      ranges: [a1],
+      fields: 'sheets(data(rowMetadata(pixelSize),columnMetadata(pixelSize)))',
+    });
+    const data = (((resp.sheets || [])[0] || {}).data || [])[0] || {};
+    const rows = (data.rowMetadata    || []).map((m) => (m && m.pixelSize) || 0);
+    const cols = (data.columnMetadata || []).map((m) => (m && m.pixelSize) || 0);
+    // Размеры не сошлись (API вернул не то, что ждём) — не доверяем, идём в фолбэк.
+    if (rows.length !== range.getNumRows() || cols.length !== range.getNumColumns()) return null;
+    return { rows, cols };
+  } catch (e) {
+    return null;
+  }
+}
+
 function getRowHeights_(range) {
+  const api = readRangeDimensionsViaSheetsApi_(range);
+  if (api) return api.rows;
   const sheet = range.getSheet();
   const heights = [];
   for (let index = 0; index < range.getNumRows(); index += 1) {
@@ -365,6 +392,8 @@ function getRowHeights_(range) {
 }
 
 function getColumnWidths_(range) {
+  const api = readRangeDimensionsViaSheetsApi_(range);
+  if (api) return api.cols;
   const sheet = range.getSheet();
   const widths = [];
   for (let index = 0; index < range.getNumColumns(); index += 1) {

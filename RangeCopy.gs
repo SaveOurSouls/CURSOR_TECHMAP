@@ -46,6 +46,10 @@ function copyRangePreservingFormulas_(sourceRange, targetRange) {
         } catch (ve) {}
         SpreadsheetApp.flush();
         copyRangeFormatPreservingMerges_(sourceRange, targetRange, ss, priorActive, srcSheet, dstSheet);
+        // PASTE_FORMAT объединения НЕ переносит — восстанавливаем их явно, иначе в
+        // этом фолбэке (когда и API, и copyTo PASTE_NORMAL не сработали) merge-ячейки
+        // шаблона теряются. Быстрые пути (API copyPaste / copyTo PASTE_NORMAL) мёрджи копируют сами.
+        copyMergesAcross_(sourceRange, targetRange);
       }
     } finally {
       if (hideSrc) srcSheet.hideSheet();
@@ -94,6 +98,10 @@ function tryCopyRangeViaSheetsApi_(sourceRange, targetRange) {
     }, SpreadsheetApp.getActive().getId());
     return true;
   } catch (e) {
+    // Молчаливая деградация на хрупкий copyTo-фолбэк теряла бы причину. Логируем —
+    // один прогон + clasp logs показывает, почему быстрый путь не сработал
+    // (квота / тип ячейки / сервис). Без этого «съезд формата» не диагностируется.
+    Logger.log('copyRange: Sheets API copyPaste упал → fallback copyTo: ' + (e && e.message || e));
     return false;
   }
 }
@@ -136,6 +144,26 @@ function copyRangeFormatPreservingMerges_(sourceRange, targetRange, ss, priorAct
   } finally {
     restorePrior();
   }
+}
+
+/**
+ * Переносит объединения ячеек из sourceRange в targetRange со сдвигом на разницу
+ * их начал. PASTE_FORMAT мёрджи не копирует, поэтому в ручном фолбэке их нужно
+ * пересоздать вручную. merge() по уже объединённой/частично занятой ячейке кидает —
+ * глотаем (идемпотентность: если быстрый путь часть мёрджей уже создал, не падаем).
+ */
+function copyMergesAcross_(sourceRange, targetRange) {
+  let merges;
+  try { merges = sourceRange.getMergedRanges(); } catch (e) { return; }
+  if (!merges || !merges.length) return;
+  const sheet = targetRange.getSheet();
+  const dR = targetRange.getRow()    - sourceRange.getRow();
+  const dC = targetRange.getColumn() - sourceRange.getColumn();
+  merges.forEach((m) => {
+    try {
+      sheet.getRange(m.getRow() + dR, m.getColumn() + dC, m.getNumRows(), m.getNumColumns()).merge();
+    } catch (e) {}
+  });
 }
 
 /**

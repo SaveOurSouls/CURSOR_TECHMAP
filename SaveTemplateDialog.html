@@ -225,8 +225,16 @@
 
         google.script.run
           .withSuccessHandler((result) => {
-            setStatus(`Шаблон "${result.title}" сохранен.`, false);
-            setTimeout(() => google.script.host.close(), 500);
+            const skipped = (result && result.skippedImages) || 0;
+            if (skipped > 0) {
+              // Картинки не перенеслись (GAS-2024 не отдал blob) — НЕ закрываем молча,
+              // показываем предупреждение, чтобы оператор проверил изображения шаблона.
+              setStatus(`Шаблон "${result.title}" сохранён, но ${skipped} картинк(а/и) не перенесены — проверьте изображения.`, true);
+              setTimeout(() => google.script.host.close(), 3500);
+            } else {
+              setStatus(`Шаблон "${result.title}" сохранен.`, false);
+              setTimeout(() => google.script.host.close(), 500);
+            }
           })
           .withFailureHandler((error) => {
             setStatus(error.message || 'Не удалось сохранить шаблон.', true);

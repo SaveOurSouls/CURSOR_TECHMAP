@@ -215,6 +215,19 @@ function migrateTemplateImagesToDrive() {
     ui.ButtonSet.OK);
 }
 
+// ЧИСТОЕ ЧТЕНИЕ (без записи/без шторма): какие коакс-шаблоны имеют imagesJson и куда ставится фото.
+function diagCoaxImages() {
+  readCatalog_().forEach(function(t) {
+    var title = String(t.title || '');
+    if (!/SDR_COAX/.test(title)) return;
+    var imgs = parseJsonArray_(t.imagesJson);
+    Logger.log('IMG «' + title + '» n=' + imgs.length
+      + ' drive=' + imgs.filter(function(i) { return i.driveFileId; }).length
+      + ' pos=' + JSON.stringify(imgs.map(function(i) { return i.relRow + ',' + i.relCol; }))
+      + ' store=' + t.storeRow + ',' + t.storeColumn + ' size=' + t.height + 'x' + t.width);
+  });
+}
+
 /** Записывает imagesJson для шаблона по id в каталог (колонка imagesJson = 14). */
 function updateCatalogImagesJson_(catalogSheet, id, json) {
   var lastRow = catalogSheet.getLastRow();
@@ -282,6 +295,20 @@ function insertOverGridImages_(sourceSheet, sourceRow, sourceCol, height, width,
   } catch (e) {}
 }
 
+// Уменьшенное превью Drive-файла (blob) или null. insertImage режет blob по лимиту
+// ~1 млн символов (≈750КБ бинарника); w800-превью обычно 0.5–0.7МБ → влезает, тогда как
+// ~1МБ оригинал — нет. w1000+ часто возвращает оригинал (если нативная ширина ≤ размера).
+function thumbBlob_(driveFileId, sz) {
+  if (driveFileId == null || driveFileId === '') return null;
+  try {
+    var r = UrlFetchApp.fetch('https://drive.google.com/thumbnail?id=' + driveFileId + '&sz=' + (sz || 'w800'),
+      { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
+    if (r.getResponseCode() !== 200) return null;
+    var b = r.getBlob();
+    return (b && b.getBytes().length > 0 && (b.getContentType() || '').indexOf('image') === 0) ? b : null;
+  } catch (e) { return null; }
+}
+
 /**
  * Вставляет over-grid изображения из imagesJson на целевой лист.
  * Предпочитает driveFileId (быстрое чтение из Drive); fallback на base64
@@ -304,12 +331,23 @@ function insertTemplateImages_(targetSheet, targetRow, targetCol, imagesJson) {
           'tc_image'
         );
       }
-      if (!blob) return;
-      var inserted = targetSheet.insertImage(blob, col, row, img.xOffset || 0, img.yOffset || 0);
-      if (inserted && img.width && img.height) {
-        inserted.setWidth(img.width).setHeight(img.height);
+      if (!blob) { Logger.log('IMG insert: blob пуст (drive=' + img.driveFileId + ')'); return; }
+      try {
+        var inserted = targetSheet.insertImage(blob, col, row, img.xOffset || 0, img.yOffset || 0);
+        if (inserted && img.width && img.height) inserted.setWidth(img.width).setHeight(img.height);
+        Logger.log('IMG insert OK: @' + row + ',' + col + ' drive=' + img.driveFileId);
+      } catch (insErr) {
+        // Оригинал превысил лимит insertImage (~1 млн символов) → плавающее w800-превью Drive в ту же позицию.
+        var tb = thumbBlob_(img.driveFileId, 'w800');
+        if (tb) {
+          var ins2 = targetSheet.insertImage(tb, col, row, img.xOffset || 0, img.yOffset || 0);
+          if (ins2 && img.width && img.height) ins2.setWidth(img.width).setHeight(img.height);
+          Logger.log('IMG insert OK (w800): @' + row + ',' + col + ' drive=' + img.driveFileId);
+        } else {
+          Logger.log('IMG insert ERR (thumb не вышел): ' + (insErr && insErr.message) + ' drive=' + img.driveFileId);
+        }
       }
-    } catch (e) {}
+    } catch (e) { Logger.log('IMG insert ERR: ' + (e && e.message || e) + ' drive=' + img.driveFileId); }
   });
 }
 
@@ -475,50 +513,57 @@ function normalizePath_(path) {
  * Кеширует каждый blob в Drive (_TC_IMAGE_CACHE).
  * Возвращает массив метаданных изображений (driveFileId, relRow, relCol, …).
  */
+// Сколько over-grid картинок НЕ перенеслось при последнем copySourceImagesToStore_
+// (getBlob/getUrl/XLSX не дали blob). Execution-scoped (как _lastPostMerges) — сейвер
+// читает после вызова и показывает видимое предупреждение вместо тихой потери.
+var _lastImageCaptureSkipped = 0;
+
 function copySourceImagesToStore_(sourceSheet, range, storeSheet, storeRow, storeCol) {
   var height = range.getNumRows();
   var width = range.getNumColumns();
   var startRow = range.getRow();
   var startCol = range.getColumn();
+  _lastImageCaptureSkipped = 0;
 
   clearStoreSlotImages_(storeSheet, storeRow, storeCol, height, width);
 
   var xlsxImages = null;
   var imagesData = [];
   var folder = null;
+  var dbgInRange = 0;
 
   try {
-    sourceSheet.getImages().forEach(function(img) {
+    var allImgs = sourceSheet.getImages();
+    Logger.log('IMG capture START «' + sourceSheet.getName() + '» getImages=' + allImgs.length
+      + ' диапазон r' + startRow + '..' + (startRow + height - 1) + ' c' + startCol + '..' + (startCol + width - 1));
+    allImgs.forEach(function(img) {
       try {
         var anchor = img.getAnchorCell();
         var row = anchor.getRow();
         var col = anchor.getColumn();
         if (row < startRow - 2 || row > startRow + height + 1) return;
         if (col < startCol - 2 || col > startCol + width + 1) return;
+        dbgInRange += 1;
         var blob = getOverGridImageBlob_(img, sourceSheet);
         if (!blob) {
           if (!xlsxImages) xlsxImages = buildXlsxImageMap_(sourceSheet);
           blob = (xlsxImages && xlsxImages[row + '_' + col]) || null;
         }
-        if (!blob) return;
+        // Картинка реально потеряна (getBlob/getUrl/XLSX не дали blob) — логируем
+        // позицию, чтобы «пропали картинки при сохранении» был диагностируем по clasp logs.
+        if (!blob) { _lastImageCaptureSkipped += 1; Logger.log('IMG capture SKIP @' + row + ',' + col + ' — getBlob/getUrl/XLSX не дали blob'); return; }
         var relRow = row - startRow;
         var relCol = col - startCol;
-        var destRow = Math.max(storeRow, storeRow + relRow);
-        var destCol = Math.max(storeCol, storeCol + relCol);
-        var inserted = storeSheet.insertImage(
-          blob, destCol, destRow,
-          img.getAnchorCellXOffset(), img.getAnchorCellYOffset()
-        );
-        if (inserted) {
-          inserted.setWidth(img.getWidth()).setHeight(img.getHeight());
-          try { inserted.setAltTextDescription('tc:' + relRow + ',' + relCol); } catch (e) {}
-        }
+        // 1) Drive-кеш — хост ссылки, лимита размера нет (основной путь). Делаем ПЕРВЫМ,
+        //    чтобы driveFileId был доступен для =IMAGE-фолбэка при показе в store.
+        var driveFileId = '';
         try {
           if (!folder) folder = getOrCreateImageCacheFolder_();
           var driveFile = folder.createFile(blob.setName('tc_img_' + relRow + '_' + relCol));
           shareDriveItemForViewers_(driveFile);
+          driveFileId = driveFile.getId();
           imagesData.push({
-            driveFileId: driveFile.getId(),
+            driveFileId: driveFileId,
             relRow: relRow,
             relCol: relCol,
             xOffset: img.getAnchorCellXOffset(),
@@ -526,10 +571,40 @@ function copySourceImagesToStore_(sourceSheet, range, storeSheet, storeRow, stor
             width: img.getWidth(),
             height: img.getHeight(),
           });
-        } catch (e) {}
-      } catch (e) {}
+        } catch (e) { Logger.log('IMG Drive-step ERR @' + row + ',' + col + ': ' + (e && e.message)); }
+        // 2) Показ В _TC_STORE как плавающей картинки. >2МБ — Google не даёт (лимит insertImage),
+        //    пропускаем: картинка уже в Drive-кеше (не теряется), но для ПОКАЗА исходник должен быть <2МБ.
+        try {
+          var destRow = Math.max(storeRow, storeRow + relRow);
+          var destCol = Math.max(storeCol, storeCol + relCol);
+          var inserted = storeSheet.insertImage(
+            blob, destCol, destRow,
+            img.getAnchorCellXOffset(), img.getAnchorCellYOffset()
+          );
+          if (inserted) {
+            inserted.setWidth(img.getWidth()).setHeight(img.getHeight());
+            try { inserted.setAltTextDescription('tc:' + relRow + ',' + relCol); } catch (e) {}
+          }
+        } catch (e) {
+          // Оригинал превысил лимит insertImage → плавающее w800-превью Drive в store.
+          var tb = thumbBlob_(driveFileId, 'w800');
+          if (tb) {
+            try {
+              var ins2 = storeSheet.insertImage(tb, Math.max(storeCol, storeCol + relCol), Math.max(storeRow, storeRow + relRow),
+                img.getAnchorCellXOffset(), img.getAnchorCellYOffset());
+              if (ins2) {
+                ins2.setWidth(img.getWidth()).setHeight(img.getHeight());
+                try { ins2.setAltTextDescription('tc:' + relRow + ',' + relCol); } catch (e3) {}
+              }
+              Logger.log('IMG store-insert OK (w800) @' + row + ',' + col);
+            } catch (e2) { Logger.log('IMG store-insert thumb ERR @' + row + ',' + col + ': ' + (e2 && e2.message)); }
+          } else { Logger.log('IMG store-insert пропущен (thumb не вышел) @' + row + ',' + col + ': ' + (e && e.message)); }
+        }
+      } catch (e) { Logger.log('IMG capture per-image ERR @' + (typeof row !== 'undefined' ? row : '?') + ',' + (typeof col !== 'undefined' ? col : '?') + ': ' + (e && e.message)); }
     });
-  } catch (e) {}
+  } catch (e) { Logger.log('IMG capture ERR (getImages): ' + (e && e.message)); }
+  Logger.log('IMG capture ИТОГ: getImages=' + (typeof allImgs !== 'undefined' ? allImgs.length : '?')
+    + ' вДиапазоне=' + dbgInRange + ' захвачено=' + imagesData.length + ' пропущено=' + _lastImageCaptureSkipped);
   return imagesData;
 }
 

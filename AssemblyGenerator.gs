@@ -25,8 +25,11 @@ function getAssemblyGeneratorData_() {
   const src = findAssemblySourceData_(ss); // ищем таблицу на любом листе, не только активном
 
   const templates    = readCatalog_().map(t => ({ id: t.id, title: t.title, category: t.category || '' }));
-  const ops          = readOpRecordsForGenerator_();
-  const terRecords   = readTerRecordsForGenerator_();
+  // Снапшот техопераций читаем ОДИН раз и передаём обоим читателям — иначе каждый
+  // дёргает getTechOperationsSnapshot_() сам и заново десериализует чанк-кеш (×3 на открытие).
+  const snapshot     = getTechOperationsSnapshot_();
+  const ops          = readOpRecordsForGenerator_(snapshot);
+  const terRecords   = readTerRecordsForGenerator_(snapshot);
   const wireDia      = readWireDiaTable_();
 
   return { assemblyInfo: src.assemblyInfo, components: src.components,
@@ -44,6 +47,10 @@ function findAssemblySourceData_(ss) {
   for (let i = 0; i < ordered.length; i++) {
     const sheet = ordered[i];
     if (isSystemSheet_(sheet.getName())) continue;
+    // Сгенерированные листы-техкарты («CODE | Тип») исходную таблицу СПЯ не содержат —
+    // пропускаем их в скане (кроме активного, i===0). На документе с десятками созданных
+    // карт это убирает десятки полных getValues при открытии генератора (ключевая причина тормозов).
+    if (i > 0 && sheet.getName().indexOf(' | ') >= 0) continue;
     if (sheet.getLastRow() < 1) continue;
     const data = sheet.getRange(1, 1, sheet.getLastRow(), Math.max(sheet.getLastColumn(), 1)).getValues();
     const components = scanForSpyTable_(data);
@@ -170,11 +177,13 @@ function scanForSpyTable_(data) {
   return [];
 }
 
-function readTerRecordsForGenerator_() {
+function readTerRecordsForGenerator_(preloaded) {
   try {
-    let snapshot = getTechOperationsSnapshot_();
-    // Auto-resync if schema version changed (e.g. new L+/L- extraction was added)
-    if (String(snapshot.meta && snapshot.meta.schemaVersion) !== String(TECHOPS_DB_APP.schemaVersion)) {
+    let snapshot = preloaded || getTechOperationsSnapshot_();
+    // Auto-resync if schema version changed (e.g. new L+/L- extraction was added).
+    // Передан готовый снапшот (открытие генератора) → схему уже выверил
+    // ensureTechOperationsSnapshotReady_, повторный ресинк не нужен.
+    if (!preloaded && String(snapshot.meta && snapshot.meta.schemaVersion) !== String(TECHOPS_DB_APP.schemaVersion)) {
       syncTechOperationsDatabase();
       snapshot = getTechOperationsSnapshot_();
     }
@@ -212,9 +221,9 @@ function readTerRecordsForGenerator_() {
   } catch (e) { return []; }
 }
 
-function readOpRecordsForGenerator_() {
+function readOpRecordsForGenerator_(preloaded) {
   try {
-    const snapshot = getTechOperationsSnapshot_();
+    const snapshot = preloaded || getTechOperationsSnapshot_();
     return (snapshot.records || [])
       .filter(r => r.tabKey === 'op')
       .map(r => ({
