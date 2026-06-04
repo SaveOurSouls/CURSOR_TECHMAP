@@ -130,6 +130,17 @@ function saveSelectedRangeAsTemplateImpl_(formData) {
   const storeSheet = ensureStoreSheet_(SpreadsheetApp.getActive());
   if (existingTemplate) {
     try { deleteTemplateImages_(existingTemplate.imagesJson || '[]'); } catch (e) {}
+    // Слот переехал (изменились размеры → новый storeRow) — очистить СТАРЫЙ, иначе
+    // его содержимое и плавающие картинки остаются орфаном в _TC_STORE. Новый слот
+    // не пересекается со старым (allocateStoreLocation_ кладёт после всех чужих блоков).
+    const moved = existingTemplate.storeRow !== storeLocation.row
+      || existingTemplate.storeColumn !== storeLocation.column;
+    if (moved) {
+      try {
+        purgeStoreSlot_(storeSheet, existingTemplate.storeRow,
+          existingTemplate.storeColumn || 1, existingTemplate.height, existingTemplate.width);
+      } catch (e) {}
+    }
   }
   const imagesData = runWithSheetVisible_(storeSheet, () => {
     return copySourceImagesToStore_(range.getSheet(), range, storeSheet, storeLocation.row, storeLocation.column);
@@ -294,26 +305,12 @@ function deleteTemplateImpl_(templateId) {
 
   try { deleteTemplateImages_(rawRow[13] || '[]'); } catch (e) {}
 
-  // Erase STORE slot. runWithSheetVisible_ гарантирует возврат листа в скрытое
-  // состояние через finally — даже при исключении/таймауте GAS лист не повиснет
-  // видимым. Каскад очистки переиспользуем из clearStoreSlotForWrite_ (DRY).
+  // Очистка слота в _TC_STORE (картинки + содержимое + объединения) — общий путь
+  // purgeStoreSlot_ (тот же, что при переносе слота на пересохранении).
   const storeSheet = ss.getSheetByName(TECHMAP_APP.storeSheetName);
-  if (storeSheet && storeRow > 0 && height > 0) {
-    const cols = Math.max(Number(rawRow[7]) || 1, 1);
-    const priorActive = ss.getActiveSheet();
-    runWithSheetVisible_(storeSheet, function() {
-      ss.setActiveSheet(storeSheet);
-      SpreadsheetApp.flush();
-      clearStoreSlotImages_(storeSheet, storeRow, 1, height, cols);
-      clearStoreSlotForWrite_(storeSheet.getRange(storeRow, 1, height, cols));
-      SpreadsheetApp.flush();
-    });
-    try {
-      if (priorActive && !isSystemSheet_(priorActive.getName())) {
-        ss.setActiveSheet(priorActive);
-      }
-    } catch (e) {}
-  }
+  const storeColumn = Math.max(Number(rawRow[5]) || 1, 1);
+  const cols = Math.max(Number(rawRow[7]) || 1, 1);
+  purgeStoreSlot_(storeSheet, storeRow, storeColumn, height, cols);
 
   catalogSheet.deleteRow(rowIndex + 2);
   invalidateCatalogCache_();

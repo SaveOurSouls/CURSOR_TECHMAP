@@ -250,6 +250,26 @@ function writeRangeToStore_(sourceRange, storeRow, storeColumn) {
   });
 }
 
+// Полностью очищает слот _TC_STORE (over-grid картинки + содержимое + объединения),
+// показывая лист на время операции и возвращая фокус на рабочий лист. Общий путь для
+// удаления шаблона И переноса слота при пересохранении с другими размерами (иначе
+// старый слот остаётся орфаном — каталог уходит на новый storeRow, а данные висят).
+function purgeStoreSlot_(storeSheet, storeRow, storeCol, height, width) {
+  if (!storeSheet || !(storeRow > 0 && height > 0 && width > 0)) return;
+  const ss = SpreadsheetApp.getActive();
+  const priorActive = ss.getActiveSheet();
+  runWithSheetVisible_(storeSheet, function () {
+    ss.setActiveSheet(storeSheet);
+    SpreadsheetApp.flush();
+    clearStoreSlotImages_(storeSheet, storeRow, storeCol, height, width);
+    clearStoreSlotForWrite_(storeSheet.getRange(storeRow, storeCol, height, width));
+    SpreadsheetApp.flush();
+  });
+  try {
+    if (priorActive && !isSystemSheet_(priorActive.getName())) ss.setActiveSheet(priorActive);
+  } catch (e) {}
+}
+
 /** Полностью очищает слот _TC_STORE (контент + формат + валидации + объединения). */
 function clearStoreSlotForWrite_(targetRange) {
   // 1) Снять объединения — иначе clearContent на части объединённой ячейки падает.
