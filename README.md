@@ -30,8 +30,9 @@
 | `WorkspaceSidebar.html` | Сайдбар: браузер шаблонов + браузер БД техопераций |
 | `Utils.gs` | Общие хелперы: нормализация, десятичные, `ChunkCache_` |
 | `RangeCopy.gs` | Копирование диапазона с сохранением формул и объединений |
-| `ImageHandler.gs` | Копирование/вставка картинок, кеш в Drive |
+| `ImageHandler.gs` | Копирование/вставка картинок, кеш в Drive, w800-фолбэк при лимите `insertImage` |
 | `SaveTemplateDialog.html` | Диалог сохранения выделения как шаблона |
+| `Diagnostics.gs` | Dev-тулинг: живые тесты (`liveTestSuite`) и `diag*`-функции для `clasp run` |
 | `appsscript.json` | Манифест GAS |
 
 ---
@@ -160,7 +161,7 @@ Advanced service: **Google Sheets API v4** (для copyPaste и in-cell карт
 Через [clasp](https://github.com/google/clasp):
 
 ```bash
-clasp push --force   # полная синхронизация (push = 12 файлов)
+clasp push --force   # полная синхронизация (push = 13 файлов, вкл. Diagnostics.gs)
 ```
 
 `clasp push --force` удаляет из GAS файлы, отсутствующие локально. Деплоить после каждой
