@@ -40,6 +40,16 @@ function SHEET_TYPE() {
   return idx >= 0 ? name.substring(idx + 3) : '';
 }
 
+// ── Диагностика покрытия ε_r (схема «логи + ручной Run») ──────────
+// Запустить из редактора (Run) → марки-колонки СПР.КАБ уходят в лог. Список марок,
+// для которых в диалоге (EPS_BY_MARK) нет ε_r, сверяется по clasp logs.
+function logWireMarks() {
+  const wd = readWireDiaTable_();
+  const marks = (wd && wd.marks) || [];
+  Logger.log('WIRE_MARKS=' + JSON.stringify(marks.map(function (m) { return m.name + '|' + m.norm; })));
+  return marks.length;
+}
+
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu(TECHMAP_APP.menuTitle)

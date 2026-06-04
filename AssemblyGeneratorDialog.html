@@ -347,6 +347,7 @@
       <div class="ter-f"><label>Z₀, Ω</label><input id="twistZ0" class="ter-inp" type="text" placeholder="по шагу / задать" oninput="onTwistZ0Input()" /></div>
       <div class="ter-f"><label>Ø провода, мм</label><input id="twistWireDia" class="ter-inp" type="text" placeholder="авто из СПР.КАБ" oninput="onTwistDiaInput()" /></div>
     </div>
+    <div id="twistEpsNote" style="font-size:11px;color:#888;margin-top:-2px"></div>
   </div>
 </div>
 
@@ -1556,22 +1557,111 @@
     return (r && r.row[r.mk.norm]) || 0;
   }
 
-  // Диэлектрическая проницаемость изоляции по марке (типовые значения, fallback 2.5).
+  // Калибр провода из артикула: {awg, mm2}. AWG — из «26awg»; мм² — сечение по ГОСТ
+  // (марку вырезаем первой, чтобы цифра марки «НВ4» не считалась сечением 4).
+  function wireGauge_(art) {
+    const wd = D && D.wireDia;
+    const s = String(art || '').toLowerCase().replace(/,/g, '.');
+    let awg = null;
+    const aw = s.match(/(\d+)\s*awg/);
+    if (aw) awg = Number(aw[1]);
+    let mm2 = null;
+    if (wd && wd.marks && wd.byGost) {
+      const sNorm = s.replace(/[\s-]/g, '');
+      const mk = wd.marks.find(x => x.norm && sNorm.includes(x.norm));
+      if (mk) {
+        const nums = sNorm.split(mk.norm).join(' ').match(/\d+(?:\.\d+)?/g) || [];
+        for (let i = 0; i < nums.length; i++) { const k = String(Number(nums[i])); if (wd.byGost[k]) { mm2 = Number(k); break; } }
+      }
+    }
+    return { awg: awg, mm2: mm2 };
+  }
+  function wireGaugeOf_(c) {
+    if (!c) return { awg: null, mm2: null };
+    const a = wireGauge_(c.art);
+    if (a.awg != null || a.mm2 != null) return a;
+    return wireGauge_(c.name);
+  }
+
+  // Диапазон совместимого провода у терминала: {awgMin,awgMax,mm2Min,mm2Max} или null.
+  // AWG инверсный (От 32 … До 28) — нормализуем в min/max.
+  function terRange_(rec) {
+    if (!rec) return null;
+    const num = v => { const n = Number(String(v || '').replace(',', '.').replace(/[^\d.]/g, '')); return (isFinite(n) && n > 0) ? n : null; };
+    const af = num(rec.awgFrom), at = num(rec.awgTo), mf = num(rec.mm2From), mt = num(rec.mm2To);
+    const r = {};
+    if (af != null && at != null) { r.awgMin = Math.min(af, at); r.awgMax = Math.max(af, at); }
+    if (mf != null && mt != null) { r.mm2Min = Math.min(mf, mt); r.mm2Max = Math.max(mf, mt); }
+    return (r.awgMin != null || r.mm2Min != null) ? r : null;
+  }
+
+  // Подходит ли провод (калибр g) к терминалу (диапазон r). {ok, basis, range}.
+  // Если калибр или диапазон неизвестны — считаем ok (проверять нечем).
+  function wireFitsTerminal_(g, r) {
+    if (!g || !r) return { ok: true };
+    if (g.awg != null && r.awgMin != null) {
+      return { ok: g.awg >= r.awgMin && g.awg <= r.awgMax, basis: 'AWG ' + g.awg, range: 'AWG ' + r.awgMin + '–' + r.awgMax };
+    }
+    if (g.mm2 != null && r.mm2Min != null) {
+      return { ok: g.mm2 >= r.mm2Min && g.mm2 <= r.mm2Max, basis: g.mm2 + ' мм²', range: r.mm2Min + '–' + r.mm2Max + ' мм²' };
+    }
+    return { ok: true };
+  }
+
+  // Проверка совместимости всех проводов с выбранными терминалами A/B.
+  // Возвращает массив строк-нарушений (пусто = всё ок или нечего проверять).
+  function checkTerminalFit_() {
+    const warns = [];
+    const sideB = document.getElementById('sideBEnabled').checked;
+    const termA = getCompById(document.getElementById('termSelectA').value);
+    const termB = sideB ? getCompById(document.getElementById('termSelectB').value) : null;
+    const rA = termA ? terRange_(findTerRecord_(termA.art)) : null;
+    const rB = termB ? terRange_(findTerRecord_(termB.art)) : null;
+    if (!rA && !rB) return warns;
+    wireEntries.filter(w => w.compId).forEach(w => {
+      const c = getCompById(w.compId);
+      if (!c) return;
+      const g = wireGaugeOf_(c);
+      [['A', rA, termA], ['B', rB, termB]].forEach(pair => {
+        const side = pair[0], r = pair[1], t = pair[2];
+        if (!r || !t) return;
+        const fit = wireFitsTerminal_(g, r);
+        if (!fit.ok) warns.push('• «' + (c.name || c.art) + '» (' + fit.basis + ') вне диапазона терминала ' + side + ' «' + (t.name || t.art) + '» (' + fit.range + ')');
+      });
+    });
+    return warns;
+  }
+
+  // Диэлектрическая проницаемость изоляции ε_r по марке (типовые значения, fallback 2.5).
+  // Ключ = норм. марки (lower, без пробелов/дефисов — как readWireDiaTable_). Что не покрыто — UI метит красным.
+  // Покрывает все 17 марок-колонок СПР.КАБ; значения сгруппированы по материалу изоляции.
   const EPS_BY_MARK = {
-    ptfe: 2.1, мгтф: 2.1, мс: 2.1, m22759: 2.5,
-    ul1061: 3.5, ul1571: 3.5, ul1007: 3.5, ul1015: 3.5, мгшв: 3.5,
-    нв4: 3.5, пвам: 4.0, пгва: 4.0, flry: 3.5,
-    силикон: 3.0, ркгм: 3.0, txl: 2.3, gxl: 2.3,
+    // Фторопласт (ПТФЭ), ε≈2.1: МГТФ, МС, PTFE
+    мгтф: 2.1, мс: 2.1, ptfe: 2.1,
+    // Фторполимер ETFE/ПТФЭ (воен. спецификация), ε≈2.5: M22759
+    m22759: 2.5,
+    // Сшитый полиэтилен (XLPE), ε≈2.3: TXL, GXL
+    txl: 2.3, gxl: 2.3,
+    // ПВХ-пластикат, ε≈3.5: UL1061/1571/1007/1015, МГШВ, НВ-4, FLRY
+    ul1061: 3.5, ul1571: 3.5, ul1007: 3.5, ul1015: 3.5,
+    мгшв: 3.5, нв4: 3.5, flry: 3.5,
+    // ПВХ автомобильный (плотный), ε≈4.0: ПВАМ, ПГВА
+    пвам: 4.0, пгва: 4.0,
+    // Кремнийорганическая (силиконовая) резина, ε≈3.0: Силикон, РКГМ
+    силикон: 3.0, ркгм: 3.0,
   };
 
-  // Геометрия+диэлектрик витой пары по проводу: {d — Ø жилы, D — Ø изоляции, eps}. null если нет данных.
+  // Геометрия+диэлектрик витой пары по проводу: {d — Ø жилы, D — Ø изоляции, eps, epsMark, epsExplicit}.
+  // epsExplicit=false → марки нет в EPS_BY_MARK, ε_r взят как fallback (для пометки в UI). null если нет данных.
   function wireGeom_(art) {
     const r = wireRow_(art);
     if (!r) return null;
     const Dia = r.row[r.mk.norm];   // Ø изоляции = расстояние между центрами витой пары
     const d   = r.row.__core;       // Ø жилы (медь)
     if (!(Dia > 0 && d > 0 && Dia > d)) return null;
-    return { d: d, D: Dia, eps: EPS_BY_MARK[r.mk.norm] || 2.5 };
+    const hasEps = Object.prototype.hasOwnProperty.call(EPS_BY_MARK, r.mk.norm);
+    return { d: d, D: Dia, eps: hasEps ? EPS_BY_MARK[r.mk.norm] : 2.5,
+             epsMark: r.mk.name, epsExplicit: hasEps };
   }
 
   // Z₀ витой пары (Лефферсон): Z0 = (120/√εeff)·arccosh(D/d),
@@ -1616,22 +1706,55 @@
     return null;
   }
 
+  // Пометка под полями свивки: источник ε_r (явный/fallback) + опц. предупреждение о недостижимом Z₀.
+  function updateTwistEpsNote_(g, warn) {
+    const el = document.getElementById('twistEpsNote');
+    if (!el) return;
+    if (!g) { el.innerHTML = ''; return; }
+    const base = g.epsExplicit
+      ? 'ε_r = ' + g.eps + ' (' + g.epsMark + ')'
+      : '⚠ ε_r = ' + g.eps + ' по умолчанию — марки «' + g.epsMark + '» нет в справочнике коэффициентов';
+    const baseColor = g.epsExplicit ? '#888' : '#c0392b';
+    el.innerHTML = '<span style="color:' + baseColor + '">' + base + '</span>'
+      + (warn ? '<br><span style="color:#c0392b">⚠ ' + warn + '</span>' : '');
+  }
+
+  // Достижимый диапазон Z₀ для геометрии g (по краям рабочего диапазона шага солвера).
+  function twistZ0Range_(g) {
+    return { min: twistZ0_(g.d, g.D, 2, g.eps), max: twistZ0_(g.d, g.D, 2000, g.eps) };
+  }
+  // Текст предупреждения, если целевое Z₀ недостижимо/шаг нереалистичен. '' если всё ок.
+  function twistZ0Warn_(g, z0, p) {
+    if (!(g && z0 > 0)) return '';
+    const r = twistZ0Range_(g);
+    if (z0 < r.min) return 'Z₀=' + Math.round(z0) + ' Ω недостижимо: для этого провода минимум ≈ '
+      + Math.round(r.min) + ' Ω (нужен другой провод/ε_r)';
+    if (z0 > r.max) return 'Z₀=' + Math.round(z0) + ' Ω недостижимо: для этого провода максимум ≈ '
+      + Math.round(r.max) + ' Ω';
+    if (p > 0 && p < g.D * 4) return 'шаг ' + String(p).replace('.', ',')
+      + ' мм нереалистично мал (< 4× Ø провода) — Z₀ требует слишком плотной свивки';
+    return '';
+  }
+
   // Шаг введён → пересчитать Z₀; Z₀ введён → пересчитать шаг.
   function onTwistPitchInput() {
     const g = twistGeom_();
     const p = parseDecimal_((document.getElementById('twistPitch') || {}).value);
     const z0El = document.getElementById('twistZ0');
     if (z0El && g && p > 0) { const z = twistZ0_(g.d, g.D, p, g.eps); z0El.value = z > 0 ? String(Math.round(z)) : ''; }
+    updateTwistEpsNote_(g, g ? twistZ0Warn_(g, parseDecimal_((z0El || {}).value), p) : '');
     refresh();
   }
   function onTwistZ0Input() {
     const g = twistGeom_();
     const z0 = parseDecimal_((document.getElementById('twistZ0') || {}).value);
     const pEl = document.getElementById('twistPitch');
+    let p = 0;
     if (pEl && g && z0 > 0) {
       const res = twistPitchForZ0_(g.d, g.D, z0, g.eps);
-      if (res) pEl.value = String(res.p).replace('.', ',');
+      if (res) { pEl.value = String(res.p).replace('.', ','); p = res.p; }
     }
+    updateTwistEpsNote_(g, g ? twistZ0Warn_(g, z0, p) : '');
     refresh();
   }
 
@@ -1643,6 +1766,7 @@
     const g = twistGeom_();
     const p = parseDecimal_((document.getElementById('twistPitch') || {}).value);
     if (z0El && g && p > 0) { const z = twistZ0_(g.d, g.D, p, g.eps); z0El.value = z > 0 ? String(Math.round(z)) : ''; }
+    updateTwistEpsNote_(g, g ? twistZ0Warn_(g, parseDecimal_((z0El || {}).value), p) : '');
     renderOpsCard();
   }
 
@@ -1661,6 +1785,15 @@
       if (advancedLengthMode && cfg.wires.some(w => !w.length)) {
         setStatus('Укажите длину для каждого кабеля.', true); return;
       }
+    }
+
+    // Проверка совместимости провод/терминал (по диапазону AWG/мм² из БД.ТЕР).
+    const fitWarns = checkTerminalFit_();
+    if (fitWarns.length && !window.confirm(
+      '⚠ Несовместимость провода и терминала:\n\n' + fitWarns.join('\n') +
+      '\n\nВсё равно создать техкарты?')) {
+      setStatus('Генерация отменена — проверьте подбор терминалов.', true);
+      return;
     }
 
     setStatus('Создаю техкарты…', false);

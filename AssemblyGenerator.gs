@@ -19,21 +19,42 @@ function showAssemblyGeneratorDialog() {
 
 function getAssemblyGeneratorData_() {
   ensureTechOperationsSnapshotReady_(); // быстро: синк только если кеш пуст/схема сменилась
-  const ss    = SpreadsheetApp.getActive();
-  const sheet = ss.getActiveSheet();
+  // ВАЖНО: при открытии генератора НИКАКИХ записей в таблицу — любая мутация запускает
+  // пересчёт всех =GET_NAME на существующих листах → таймаут сайдбара. Открытие = только чтение.
+  const ss  = SpreadsheetApp.getActive();
+  const src = findAssemblySourceData_(ss); // ищем таблицу на любом листе, не только активном
 
-  const sheetData = sheet.getLastRow() > 0
-    ? sheet.getRange(1, 1, sheet.getLastRow(), Math.max(sheet.getLastColumn(), 1)).getValues()
-    : [];
-
-  const assemblyInfo = scanForTable1_(sheetData);
-  const components   = scanForSpyTable_(sheetData);
   const templates    = readCatalog_().map(t => ({ id: t.id, title: t.title, category: t.category || '' }));
   const ops          = readOpRecordsForGenerator_();
   const terRecords   = readTerRecordsForGenerator_();
   const wireDia      = readWireDiaTable_();
 
-  return { assemblyInfo, components, templates, ops, terRecords, wireDia };
+  return { assemblyInfo: src.assemblyInfo, components: src.components,
+           sourceSheet: src.sourceSheet, templates, ops, terRecords, wireDia };
+}
+
+// Ищет лист с исходной таблицей сборки (СПЯ + изделие). Активный лист в приоритете,
+// затем остальные пользовательские (системные пропускаем). Предпочитаем лист, где есть
+// И СПЯ, И таблица изделия; иначе — первый с СПЯ. Чинит «данные не подтягиваются»,
+// когда активным оказался не тот лист (напр. после удаления созданных листов).
+function findAssemblySourceData_(ss) {
+  const active = ss.getActiveSheet();
+  const ordered = [active].concat(ss.getSheets().filter(s => s.getSheetId() !== active.getSheetId()));
+  let fallback = null;
+  for (let i = 0; i < ordered.length; i++) {
+    const sheet = ordered[i];
+    if (isSystemSheet_(sheet.getName())) continue;
+    if (sheet.getLastRow() < 1) continue;
+    const data = sheet.getRange(1, 1, sheet.getLastRow(), Math.max(sheet.getLastColumn(), 1)).getValues();
+    const components = scanForSpyTable_(data);
+    if (!components.length) continue;
+    const assemblyInfo = scanForTable1_(data);
+    if (Object.keys(assemblyInfo).length) {
+      return { assemblyInfo, components, sourceSheet: sheet.getName() }; // полное совпадение
+    }
+    if (!fallback) fallback = { assemblyInfo, components, sourceSheet: sheet.getName() };
+  }
+  return fallback || { assemblyInfo: {}, components: [], sourceSheet: '' };
 }
 
 // Читает справочник Ø изоляции проводов из листа справочника кабелей источника.
@@ -157,19 +178,37 @@ function readTerRecordsForGenerator_() {
       syncTechOperationsDatabase();
       snapshot = getTechOperationsSnapshot_();
     }
-    return (snapshot.records || [])
+    // Диапазон совместимого провода (От/До AWG, От/До мм²) лежит в exportValues —
+    // ищем по именам колонок (meta.columnHeadersByTab.ter), без отдельных extra-полей.
+    const terHeaders = ((snapshot.meta && snapshot.meta.columnHeadersByTab) || {}).ter || [];
+    const norm_ = h => String(h || '').toLowerCase().replace(/[\s.]/g, '');
+    const colIdx_ = pred => terHeaders.findIndex(h => pred(norm_(h)));
+    const awgFromC = colIdx_(h => h.indexOf('от') === 0 && h.indexOf('awg') >= 0);
+    const awgToC   = colIdx_(h => h.indexOf('до') === 0 && h.indexOf('awg') >= 0);
+    const mm2FromC = colIdx_(h => h.indexOf('от') === 0 && (h.indexOf('мм2') >= 0 || h.indexOf('мм²') >= 0));
+    const mm2ToC   = colIdx_(h => h.indexOf('до') === 0 && (h.indexOf('мм2') >= 0 || h.indexOf('мм²') >= 0));
+    const cell_ = (exp, i) => (i >= 0 ? String(exp[i] || '') : '');
+    const recs = (snapshot.records || [])
       .filter(r => r.tabKey === 'ter' && r.terArticle)
-      .map(r => ({
-        article:      r.terArticle    || '',
-        step:         r.terStep       || '',
-        strip:        r.terStrip      || '',
-        lPlus:        r.terLPlus      || '',
-        lMinus:       r.terLMinus     || '',
-        applicator:   r.terApplicator || '',
-        crimpHeight:  r.terCrimpHeight  || '',
-        pullForceMin: r.terPullForceMin || '',
-        pullForceMax: r.terPullForceMax || '',
-      }));
+      .map(r => {
+        const exp = r.exportValues || [];
+        return {
+          article:      r.terArticle    || '',
+          step:         r.terStep       || '',
+          strip:        r.terStrip      || '',
+          lPlus:        r.terLPlus      || '',
+          lMinus:       r.terLMinus     || '',
+          applicator:   r.terApplicator || '',
+          crimpHeight:  r.terCrimpHeight  || '',
+          pullForceMin: r.terPullForceMin || '',
+          pullForceMax: r.terPullForceMax || '',
+          awgFrom:      cell_(exp, awgFromC),
+          awgTo:        cell_(exp, awgToC),
+          mm2From:      cell_(exp, mm2FromC),
+          mm2To:        cell_(exp, mm2ToC),
+        };
+      });
+    return recs;
   } catch (e) { return []; }
 }
 
