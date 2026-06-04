@@ -199,16 +199,6 @@ function saveTerDataToSourceDbImpl_(article, fieldsJson) {
   return { ok: true, added: false };
 }
 
-function syncTechOperationsDatabaseMenu() {
-  const summary = syncTechOperationsDatabase();
-  SpreadsheetApp.getUi().alert(
-    'База техопераций обновлена.',
-    `Загружено строк: ${summary.recordCount}\nИсточник: ${summary.sourceSpreadsheetId}`,
-    SpreadsheetApp.getUi().ButtonSet.OK
-  );
-  return summary;
-}
-
 function syncTechOperationsDatabase() {
   return withDocumentLock_(function() {
     const ss = SpreadsheetApp.getActive();

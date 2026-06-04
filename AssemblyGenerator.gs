@@ -300,6 +300,12 @@ function generateAssemblyTechCards(config) {
   // Только операции с выбранным шаблоном; последняя из них — финальный лист (изделие).
   const ops = config.ops.filter(o => o.templateId);
 
+  // Регенерация = замена: сносим листы прошлого прогона (только свои, по списку в
+  // свойствах документа) ДО вставки — иначе createUniqueSheet_ плодит дубли «-2/-3»,
+  // а «Удалить созданные» видит лишь последнюю пачку. Ручные листы не трогаем.
+  const docProps = PropertiesService.getDocumentProperties();
+  purgeGeneratedSheets_(safeJsonParse_(docProps.getProperty('TECHMAP_LAST_GENERATED'), []));
+
   try {
     for (let i = 0; i < ops.length; i++) {
       const op = ops[i];
@@ -325,9 +331,9 @@ function generateAssemblyTechCards(config) {
       createdSheets.push(insertResult.sheetName);
     }
 
-    // Запоминаем созданные листы — кнопка «Удалить созданные» в диалоге их снесёт.
-    PropertiesService.getDocumentProperties()
-      .setProperty('TECHMAP_LAST_GENERATED', JSON.stringify(createdSheets));
+    // Запоминаем созданные листы — кнопка «Удалить созданные» в диалоге их снесёт
+    // (а следующая генерация авто-зачистит по этому же списку).
+    docProps.setProperty('TECHMAP_LAST_GENERATED', JSON.stringify(createdSheets));
     return { ok: true, sheets: createdSheets };
   } catch (e) {
     // Откат: удаляем все созданные листы при ошибке
@@ -346,13 +352,23 @@ function generateAssemblyTechCards(config) {
 function deleteLastGeneratedSheets() {
   const props = PropertiesService.getDocumentProperties();
   const names = safeJsonParse_(props.getProperty('TECHMAP_LAST_GENERATED'), []);
+  const deleted = purgeGeneratedSheets_(names || []);
+  props.deleteProperty('TECHMAP_LAST_GENERATED');
+  return { deleted: deleted, names: names || [] };
+}
+
+// Сносит перечисленные листы (только существующие; служебные/ручные не трогает),
+// затем возвращает фокус на рабочий лист и прячет служебные обратно. Возвращает
+// число удалённых. Общий путь для кнопки «Удалить созданные» и авто-зачистки перед
+// регенерацией.
+function purgeGeneratedSheets_(names) {
+  if (!Array.isArray(names) || !names.length) return 0;
   const ss = SpreadsheetApp.getActive();
   let deleted = 0;
-  (names || []).forEach((name) => {
+  names.forEach((name) => {
     const s = ss.getSheetByName(name);
-    if (s && ss.getSheets().length > 1) { ss.deleteSheet(s); deleted++; }
+    if (s && !isSystemSheet_(name) && ss.getSheets().length > 1) { ss.deleteSheet(s); deleted++; }
   });
-  props.deleteProperty('TECHMAP_LAST_GENERATED');
 
   // После удаления активного листа Sheets перескакивает на соседний и мог
   // открыть/показать служебный (_TC_TECHOPS_DB и т.п.) — возвращаем фокус на
@@ -367,7 +383,7 @@ function deleteLastGeneratedSheets() {
       if (isSystemSheet_(sh.getName()) && !sh.isSheetHidden()) sh.hideSheet();
     });
   }
-  return { deleted: deleted, names: names || [] };
+  return deleted;
 }
 
 // Combines multiple wire entries into a single data object for the CUT_WIRE tech card.
