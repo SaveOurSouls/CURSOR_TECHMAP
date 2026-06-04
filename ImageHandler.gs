@@ -34,6 +34,16 @@ function getOverGridImageBlob_(img, sourceSheet) {
   return null;
 }
 
+// blob over-grid картинки: сперва getBlob()/getUrl() (getOverGridImageBlob_), иначе
+// XLSX-карта листа. buildXlsxImageMap_ кешируется глобально на прогон, поэтому
+// повторные вызовы для того же листа бесплатны (локальный guard не нужен).
+function resolveOverGridBlob_(img, sheet, row, col) {
+  var blob = getOverGridImageBlob_(img, sheet);
+  if (blob) return blob;
+  var xm = buildXlsxImageMap_(sheet);
+  return (xm && xm[row + '_' + col]) || null;
+}
+
 // ── In-cell images (Sheets API) ──────────────────────────────
 
 /**
@@ -89,7 +99,6 @@ function copyInCellImageValues_(sourceRange, targetRange) {
  * Непомеченные — только строгие границы слота.
  */
 function insertOverGridImages_(sourceSheet, sourceRow, sourceCol, height, width, targetSheet, targetRow, targetCol) {
-  var xlsxImagesInsert = null;
   try {
     sourceSheet.getImages().forEach(function(img) {
       try {
@@ -121,11 +130,7 @@ function insertOverGridImages_(sourceSheet, sourceRow, sourceCol, height, width,
         }
         var destRow = Math.max(1, targetRow + relRow);
         var destCol = Math.max(1, targetCol + relCol);
-        var blob = getOverGridImageBlob_(img, sourceSheet);
-        if (!blob) {
-          if (!xlsxImagesInsert) xlsxImagesInsert = buildXlsxImageMap_(sourceSheet);
-          blob = (xlsxImagesInsert && xlsxImagesInsert[row + '_' + col]) || null;
-        }
+        var blob = resolveOverGridBlob_(img, sourceSheet, row, col);
         if (!blob) return;
         var inserted = targetSheet.insertImage(blob, destCol, destRow,
           img.getAnchorCellXOffset(), img.getAnchorCellYOffset());
@@ -363,7 +368,6 @@ function copySourceImagesToStore_(sourceSheet, range, storeSheet, storeRow, stor
 
   clearStoreSlotImages_(storeSheet, storeRow, storeCol, height, width);
 
-  var xlsxImages = null;
   var imagesData = [];
   var folder = null;
   var dbgInRange = 0;
@@ -380,11 +384,7 @@ function copySourceImagesToStore_(sourceSheet, range, storeSheet, storeRow, stor
         if (row < startRow - 2 || row > startRow + height + 1) return;
         if (col < startCol - 2 || col > startCol + width + 1) return;
         dbgInRange += 1;
-        var blob = getOverGridImageBlob_(img, sourceSheet);
-        if (!blob) {
-          if (!xlsxImages) xlsxImages = buildXlsxImageMap_(sourceSheet);
-          blob = (xlsxImages && xlsxImages[row + '_' + col]) || null;
-        }
+        var blob = resolveOverGridBlob_(img, sourceSheet, row, col);
         // Картинка реально потеряна (getBlob/getUrl/XLSX не дали blob) — логируем
         // позицию, чтобы «пропали картинки при сохранении» был диагностируем по clasp logs.
         if (!blob) { _lastImageCaptureSkipped += 1; Logger.log('IMG capture SKIP @' + row + ',' + col + ' — getBlob/getUrl/XLSX не дали blob'); return; }

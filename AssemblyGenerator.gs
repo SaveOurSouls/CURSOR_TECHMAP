@@ -30,10 +30,11 @@ function getAssemblyGeneratorData_() {
   const snapshot     = getTechOperationsSnapshot_();
   const ops          = readOpRecordsForGenerator_(snapshot);
   const terRecords   = readTerRecordsForGenerator_(snapshot);
+  const coaxRecords  = readCoaxRecordsForGenerator_(snapshot);
   const wireDia      = readWireDiaTable_();
 
   return { assemblyInfo: src.assemblyInfo, components: src.components,
-           sourceSheet: src.sourceSheet, templates, ops, terRecords, wireDia };
+           sourceSheet: src.sourceSheet, templates, ops, terRecords, coaxRecords, wireDia };
 }
 
 // Ищет лист с исходной таблицей сборки (СПЯ + изделие). Активный лист в приоритете,
@@ -237,6 +238,50 @@ function readOpRecordsForGenerator_(preloaded) {
   } catch (e) { return []; }
 }
 
+// Коакс-изделия из снапшота (вкладка coax). Доп-колонки (D1..D3, L1..L3, L+/L−,
+// «Тип пина», «Тип экрана») лежат в exportValues — читаем по именам заголовков
+// (meta.columnHeadersByTab.coax), без отдельных extra-полей и без бампа схемы (как ter-ридер).
+function readCoaxRecordsForGenerator_(preloaded) {
+  try {
+    const snapshot = preloaded || getTechOperationsSnapshot_();
+    const headers  = ((snapshot.meta && snapshot.meta.columnHeadersByTab) || {}).coax || [];
+    const norm_    = h => String(h || '').trim().toLowerCase();
+    const find_    = pred => headers.findIndex(h => pred(norm_(h)));
+    const col = {
+      article:    find_(h => h === 'артикул'),
+      type:       find_(h => h === 'тип/серия' || h === 'тип / серия' || h === 'тип серия'),
+      wire:       find_(h => h === 'провод'),
+      mfr:        find_(h => h === 'производитель' || h === 'бренд'),
+      program:    find_(h => h === 'программа'),
+      d1: find_(h => h === 'd1'), d2: find_(h => h === 'd2'), d3: find_(h => h === 'd3'),
+      l1: find_(h => h === 'l1'), l2: find_(h => h === 'l2'), l3: find_(h => h === 'l3'),
+      lPlus:      find_(h => h === 'l+'),
+      lMinus:     find_(h => h === 'l-' || h === 'l−'),
+      pinType:    find_(h => h === 'тип пина'),
+      shieldType: find_(h => h === 'тип экрана'),
+    };
+    const cell = (exp, i) => (i >= 0 ? String(exp[i] || '').trim() : '');
+    return (snapshot.records || [])
+      .filter(r => r.tabKey === 'coax')
+      .map(r => {
+        const e = r.exportValues || [];
+        return {
+          article:    r.coaxArticle || cell(e, col.article),
+          type:       r.coaxType    || cell(e, col.type),
+          wire:       r.coaxWire    || cell(e, col.wire),
+          mfr:        r.coaxMfr     || cell(e, col.mfr),
+          program:    cell(e, col.program),
+          d1: cell(e, col.d1), d2: cell(e, col.d2), d3: cell(e, col.d3),
+          l1: cell(e, col.l1), l2: cell(e, col.l2), l3: cell(e, col.l3),
+          lPlus:      cell(e, col.lPlus),
+          lMinus:     cell(e, col.lMinus),
+          pinType:    cell(e, col.pinType),
+          shieldType: cell(e, col.shieldType),
+        };
+      });
+  } catch (e) { return []; }
+}
+
 // ── Generator ─────────────────────────────────────────────────
 
 /**
@@ -292,10 +337,11 @@ function generateAssemblyTechCards(config) {
   }
 
   const ss = SpreadsheetApp.getActive();
+  const isCoax = config.mode === 'coax';
   const createdSheets = [];
   let prevResult = '';
   let prevResultNorm = ''; // норма выхода предыдущей операции → норма входа текущей
-  const terRecords = readTerRecordsForGenerator_();
+  const terRecords = isCoax ? [] : readTerRecordsForGenerator_();
 
   // Только операции с выбранным шаблоном; последняя из них — финальный лист (изделие).
   const ops = config.ops.filter(o => o.templateId);
@@ -311,7 +357,7 @@ function generateAssemblyTechCards(config) {
       const op = ops[i];
       const isLast = i === ops.length - 1;
 
-      const wireData = (op.type === 'cutWire' && Array.isArray(config.wires))
+      const wireData = (!isCoax && op.type === 'cutWire' && Array.isArray(config.wires))
         ? buildCombinedWireData_(config.wires)
         : null;
 
@@ -319,15 +365,19 @@ function generateAssemblyTechCards(config) {
       const sheet = ss.getSheetByName(insertResult.sheetName);
       if (!sheet) throw new Error(`Лист "${insertResult.sheetName}" не найден.`);
 
-      const thisResult = computeOperationResult_(op.type, config, prevResult, wireData);
-      const terData = buildTerData_(op.type, config, terRecords);
+      const thisResult = computeOperationResult_(op.type, config, prevResult, wireData, op.side);
+      const terData = isCoax ? null : buildTerData_(op.type, config, terRecords);
       const phMap = buildPlaceholderMap_(op, config, prevResult, thisResult, wireData, terData);
       const sheetState = replacePlaceholders_(sheet, phMap);
 
       fillTechCardStructurally_(sheet, op, op.type, config, prevResult, thisResult, wireData, terData, sheetState, prevResultNorm, isLast);
 
-      prevResult = thisResult;
-      prevResultNorm = computeOutputNorm_(op.type, config);
+      // CUT_TUT — параллельная заготовка (режет ТУТ), главный полуфабрикат-кабель не двигает:
+      // его результат НЕ перетекает в следующую операцию (STRIP берёт кабель от CUT_WIRE).
+      if (!isCoax || coaxAdvancesMain_(op.type)) {
+        prevResult = thisResult;
+        prevResultNorm = computeOutputNorm_(op.type, config);
+      }
       createdSheets.push(insertResult.sheetName);
     }
 
@@ -419,7 +469,45 @@ function twistCount_(config) {
   return 1;
 }
 
-function computeOperationResult_(opType, config, prevResult, wireData) {
+// ── Коакс-сборка ──────────────────────────────────────────────
+// Все коакс-опера­ции имеют тип с префиксом 'coax'. Перечень опкеев и их шаблонов —
+// в клиенте (getActiveOpsCoax_). Сторона: A = кириллица «А», B = латиница «B» (как в каталоге).
+function isCoaxOp_(opType)  { return typeof opType === 'string' && opType.indexOf('coax') === 0; }
+function coaxSideLabel_(side) { return side === 'B' ? 'B' : 'А'; }
+
+// Двигает ли операция «главный» полуфабрикат-кабель (результат перетекает дальше).
+// CUT_TUT — единственная параллельная заготовка (режет ТУТ), главный поток не трогает.
+function coaxAdvancesMain_(opType) { return isCoaxOp_(opType) && opType !== 'coaxCutTut'; }
+
+// Наименование результата коакс-операции (накопительное, перетекает в вход следующей).
+function computeCoaxResult_(opType, config, prevResult, side) {
+  const cx   = config.coax || {};
+  const sd   = side === 'B' ? (cx.sideB || {}) : (cx.sideA || {});
+  const S    = coaxSideLabel_(side);
+  const base = prevResult || '';
+  const add  = txt => base ? `${base}, ${txt}` : txt;
+  switch (opType) {
+    case 'coaxCut': {
+      const len = cx.cableLength ? `${cx.cableLength}мм` : '';
+      return [`Кабель ${cx.sideA && cx.sideA.wire || ''}`.trim(), len].filter(Boolean).join(', отрезок ');
+    }
+    case 'coaxCutTut':       return 'ТУТ, отрезок';                         // параллельная заготовка
+    case 'coaxStrip':        return add(`разделка стороны ${S}`);
+    case 'coaxPin':          return add(sd.pinType === 'внутри корпуса'
+                               ? `центр. контакт впаян в корпус (${S})`
+                               : `центр. контакт припаян (${S})`);
+    case 'coaxInsTut':       return add('ТУТ установлен');
+    case 'coaxInsSleeve':    return add('втулка экрана установлена');
+    case 'coaxHousing':      return add(`корпус разъёма ${sd.article || ''} смонтирован (${S})`.replace(/\s+\(/, ' ('));
+    case 'coaxShield':       return add('экран опрессован');
+    case 'coaxSolderShield': return add(`экран припаян (${S})`);
+    case 'coaxHeat':         return add('ТУТ усажен');
+    default:                 return base;
+  }
+}
+
+function computeOperationResult_(opType, config, prevResult, wireData, opSide) {
+  if (isCoaxOp_(opType)) return computeCoaxResult_(opType, config, prevResult, opSide);
   const wd    = wireData || {};
   const sA    = config.sideA || {};
   const sB    = config.sideB || {};
@@ -764,6 +852,8 @@ function findColByText_(values, pattern) {
 // Для пооперационных (cut/prsA) выход пооводной — одиночной нормы нет (следующая
 // операция берёт вход пооводно), возвращаем ''.
 function computeOutputNorm_(opType, config) {
+  // Коакс: один кабель → один полуфабрикат на изделие; норма входа след. карты = шт×партия.
+  if (isCoaxOp_(opType)) return String(partQty_(config));
   const wires = Array.isArray(config.wires) ? config.wires : [];
   const pQty = partQty_(config);
   if (['insTermA', 'insTermB', 'prsTermB'].includes(opType) && wires.length) {
@@ -838,6 +928,27 @@ function fillKompl_(sheet, ctx, colMap, op, config, wireData) {
   const cols  = resolveCols_(ctx, colMap, kompRow);
   const pQty  = partQty_(config);
   const opType = op.type;
+
+  // Коакс: кабель — на карте резки (норма в метрах), разъём — на пайке пина и монтаже корпуса.
+  if (isCoaxOp_(opType)) {
+    const cx   = config.coax || {};
+    const side = op.side === 'B' ? (cx.sideB || {}) : (cx.sideA || {});
+    let comp = null;
+    if (opType === 'coaxCut') {
+      const len = parseFloat(String(cx.cableLength || '').replace(',', '.')) || 0;
+      const wire = (cx.sideA && cx.sideA.wire) || '';
+      comp = { art: wire, name: wire, norm: len > 0 ? formatDecimalComma_(len * pQty / 1000, 4) : '' };
+    } else if ((opType === 'coaxPin' || opType === 'coaxHousing') && side.article) {
+      comp = { art: side.article || '', name: side.type || side.article || '', norm: String(pQty) };
+    }
+    if (comp) {
+      setCell_(ctx, kompRow, cols.art,  comp.art);
+      setCell_(ctx, kompRow, cols.name, comp.name);
+      setCell_(ctx, kompRow, cols.norm, comp.norm);
+    }
+    return;
+  }
+
   const sA = config.sideA || {};
   const sB = config.sideB || {};
   const wires = (opType === 'cutWire') && Array.isArray(config.wires) && config.wires.length > 0
@@ -979,8 +1090,8 @@ function fillSfOut_(sheet, ctx, colMap, config, thisResult, opType, isLast) {
     }
   } else if (nameC >= 0) {
     fillMergedCell_(sheet, fSfOut + 1, nameC + 1, singleName, ctx.mergeMap);
-    // Свивка/лужение: норма результата = шт на изделие (иначе в шаблоне остаётся #REF!).
-    if ((opType === 'twist' || opType === 'tin') && normC >= 0) fillMergedCell_(sheet, fSfOut + 1, normC + 1, String(pQty), ctx.mergeMap);
+    // Свивка/лужение/коакс: норма результата = шт на изделие (иначе в шаблоне остаётся ‹норма›/#REF!).
+    if ((opType === 'twist' || opType === 'tin' || isCoaxOp_(opType)) && normC >= 0) fillMergedCell_(sheet, fSfOut + 1, normC + 1, String(pQty), ctx.mergeMap);
   }
 
   if (isLast) relabelSemifinished_(sheet, ctx, fSfOut, 'Изделие');
@@ -1227,7 +1338,10 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
   if (ctx.sections.kompRow >= 0)
     fillKompl_(sheet, ctx, colMap, op, config, wireData);
   const isTermOp_ = ['prsTermA','insTermA','prsTermB','insTermB'].includes(opType);
-  if (ctx.sections.sfInRow >= 0 && (prevResult || isTermOp_))
+  // Коакс-резка (CUT_WIRE/CUT_TUT) — заготовка из сырья, входного полуфабриката нет:
+  // первый «Полуфабрикат» — это уже выход (его заполнит fillSfOut_), вход не трогаем.
+  const isCoaxCut_ = opType === 'coaxCut' || opType === 'coaxCutTut';
+  if (ctx.sections.sfInRow >= 0 && (prevResult || isTermOp_) && !isCoaxCut_)
     fillSfIn_(sheet, ctx, colMap, config, prevResult, opType, prevResultNorm);
   if (thisResult && (ctx.sections.sfOutRow >= 0 || ctx.sections.resultRow >= 0))
     fillSfOut_(sheet, ctx, colMap, config, thisResult, opType, isLast);
@@ -1241,6 +1355,24 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
     fillTwistFields_(sheet, ctx, config);
   if (opType === 'cutWire' && config.strip)
     fillStripFields_(sheet, ctx, config);
+  if (isCoaxOp_(opType))
+    fillCoaxHeader_(sheet, ctx, config);
+}
+
+// Шапка коакс-карты: коакс-шаблоны не содержат {{плейсхолдеров}} — наименование изделия
+// и код проекта зашиты как образец. Перезаписываем ячейку ПОД ярлыком-меткой.
+function fillCoaxHeader_(sheet, ctx, config) {
+  const name  = config.assemblyName  || '';
+  const index = config.assemblyIndex || '';
+  if (!name && !index) return;
+  const setBelow = (pattern, val) => {
+    if (!val) return;
+    const hit = findColByText_(ctx.values, pattern);
+    if (hit.row < 0 || hit.row + 1 >= ctx.values.length) return;
+    fillMergedCell_(sheet, hit.row + 2, hit.col + 1, val, ctx.mergeMap); // строка ниже (1-based +2)
+  };
+  setBelow(/наименование\s+издели/i, name);
+  setBelow(/номер\s+проекта|код\s+издели/i, index);
 }
 
 // ── Row insertion ─────────────────────────────────────────────

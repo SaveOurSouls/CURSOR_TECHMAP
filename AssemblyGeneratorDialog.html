@@ -211,9 +211,22 @@
     .f-ok    { border-color: #16A34A !important; background: #F0FDF4 !important; }
     .f-warn  { border-color: #CA8A04 !important; background: #FEFCE8 !important; }
     .f-empty { border-color: #DC2626 !important; background: #FEF2F2 !important; }
+    .gen-tabs { display: flex; gap: 6px; margin-bottom: 12px; border-bottom: 2px solid var(--brd); }
+    .gen-tab-btn {
+      padding: 8px 18px; border: none; background: none; cursor: pointer;
+      font-family: inherit; font-size: 13px; font-weight: 600; color: #6b7280;
+      border-bottom: 2px solid transparent; margin-bottom: -2px;
+    }
+    .gen-tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
   </style>
 </head>
 <body>
+
+<!-- ═══ ПЕРЕКЛЮЧАТЕЛЬ ВКЛАДОК ════════════════════════════════ -->
+<div class="gen-tabs">
+  <button type="button" class="gen-tab-btn active" data-tab="inter" onclick="switchGenTab('inter')">Межплатная</button>
+  <button type="button" class="gen-tab-btn" data-tab="coax" onclick="switchGenTab('coax')">КОАКС</button>
+</div>
 
 <!-- ═══ ДАННЫЕ ИЗ ЛИСТА ══════════════════════════════════════ -->
 <h3>Данные из листа</h3>
@@ -227,6 +240,9 @@
     <tbody id="spyBody"></tbody>
   </table>
 </div>
+
+<!-- ═══ ВКЛАДКА «МЕЖПЛАТНАЯ» ═════════════════════════════════ -->
+<div id="tabInter">
 
 <!-- ═══ КАБЕЛИ ═══════════════════════════════════════════════ -->
 <div class="section-hdr">
@@ -365,6 +381,70 @@
     </div>
   </div>
 </div>
+
+</div><!-- /tabInter -->
+
+<!-- ═══ ВКЛАДКА «КОАКС» ══════════════════════════════════════ -->
+<div id="tabCoax" style="display:none">
+
+  <h3>Коакс-кабель</h3>
+  <div class="card">
+    <div class="field-group">
+      <label class="field-label">Длина кабеля по чертежу, мм</label>
+      <input type="number" id="coaxLen" min="1" placeholder="—" oninput="renderOpsCard()" />
+    </div>
+  </div>
+
+  <h3>Сторона А — разъём</h3>
+  <div class="card">
+    <div class="field-group">
+      <label class="field-label">Разъём (БД.КОАКС)</label>
+      <select id="coaxConnA" onchange="onCoaxConnChange('A')"></select>
+    </div>
+    <div class="field-group" style="margin-top:8px">
+      <label class="field-label">Тип пина</label>
+      <select id="coaxPinA" onchange="onCoaxPinChange('A')">
+        <option value="пайка">пайка</option>
+        <option value="внутри корпуса">пайка внутри корпуса</option>
+      </select>
+    </div>
+    <div id="coaxInfoA" class="qty-hint" style="margin-top:6px"></div>
+  </div>
+
+  <div class="toggle-row">
+    <input type="checkbox" id="coaxSideBEnabled" onchange="onCoaxSideBToggle()" />
+    <label for="coaxSideBEnabled">Включить сторону B</label>
+  </div>
+  <div id="coaxSideBBlock" style="display:none">
+    <h3>Сторона B — разъём</h3>
+    <div class="card">
+      <div class="field-group">
+        <label class="field-label">Разъём (БД.КОАКС)</label>
+        <select id="coaxConnB" onchange="onCoaxConnChange('B')"></select>
+      </div>
+      <div class="field-group" style="margin-top:8px">
+        <label class="field-label">Тип пина</label>
+        <select id="coaxPinB" onchange="onCoaxPinChange('B')">
+          <option value="пайка">пайка</option>
+          <option value="внутри корпуса">пайка внутри корпуса</option>
+        </select>
+      </div>
+      <div id="coaxInfoB" class="qty-hint" style="margin-top:6px"></div>
+    </div>
+  </div>
+
+  <h3>Экран</h3>
+  <div class="card">
+    <div class="field-group">
+      <label class="field-label">Тип экрана (на сборку)</label>
+      <select id="coaxShield" onchange="renderOpsCard()">
+        <option value="обжим">обжим (опрессовка втулки)</option>
+        <option value="пайка">пайка экрана</option>
+      </select>
+    </div>
+  </div>
+
+</div><!-- /tabCoax -->
 
 <!-- ═══ ОПЕРАЦИИ ══════════════════════════════════════════════ -->
 <h3>Операции</h3>
