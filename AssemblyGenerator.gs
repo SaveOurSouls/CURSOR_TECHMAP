@@ -1204,8 +1204,14 @@ function fillKompl_(sheet, ctx, colMap, op, config, wireData) {
       const units = Math.max(1, Number(op.units) || 1);
       comp = { art: cx.tutArt || '', name: cx.tutName || cx.tutArt || '', norm: len > 0 ? formatDecimalComma_(len * units * pQty / 1000, 4) : '' };
     } else if ((opType === 'coaxPin' || opType === 'coaxHousing') && side.article) {
-      // ГРН — имя разъёма из BOM (connName); тип из БД.КОАКС — запасной вариант.
-      comp = { art: side.article || '', name: side.connName || side.type || side.article || '', norm: String(pQty) };
+      // Артикул разъёма + подпись подузла (пин/корпус); ГРН — имя разъёма из BOM (ОБЩИЙ
+      // для всех подузлов стороны: пин/гильза/корпус — один парт-номер разъёма).
+      const part = opType === 'coaxPin' ? ' (пин)' : ' (корпус)';
+      comp = { art: side.article + part, name: side.connName || side.type || side.article || '', norm: String(pQty) };
+    } else if (opType === 'coaxInsSleeve' && side.article) {
+      // Гильза экрана — из того же разъёма (артикул + «(гильза)»); норма = число концов × партия.
+      const units = Math.max(1, Number(op.units) || 1);
+      comp = { art: side.article + ' (гильза)', name: side.connName || side.type || side.article || '', norm: String(units * pQty) };
     }
     // Крышка (coaxCapCrimp/coaxCapScrew) — операция над полуфабрикатом, без отдельного
     // комплектующего: разъём (вместе с крышкой, один артикул) уже посчитан на coaxPin.
