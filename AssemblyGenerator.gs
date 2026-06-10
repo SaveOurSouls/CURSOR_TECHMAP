@@ -1188,30 +1188,30 @@ function fillKompl_(sheet, ctx, colMap, op, config, wireData) {
     const cx   = config.coax || {};
     const side = op.side === 'B' ? (cx.sideB || {}) : (cx.sideA || {});
     let comp = null;
-    // Кабель: артикул и ГРН РАЗДЕЛЬНО из BOM (не дублировать); норма = длина×партия/1000 (метры).
+    // ГРН берём из BOM КАК ЕСТЬ (если пусто — пусто, НЕ дублируем артикул).
     const cableArt  = cx.cableArt  || (cx.sideA && cx.sideA.wire) || '';
-    const cableName = cx.cableName || cableArt;
+    const connName  = side.connName || '';   // имя разъёма из BOM (общий ГРН подузлов стороны)
     if (opType === 'coaxCut') {
       const len = parseFloat(String(cx.cableLength || '').replace(',', '.')) || 0;
-      comp = { art: cableArt, name: cableName, norm: len > 0 ? formatDecimalComma_(len * pQty / 1000, 4) : '' };
-    } else if (opType === 'coaxStrip') {
-      // Разделка: комплектующее = кабель, под который делается зачистка (идентификация).
-      const len = parseFloat(String(cx.cableLength || '').replace(',', '.')) || 0;
-      comp = { art: cableArt, name: cableName, norm: len > 0 ? formatDecimalComma_(len * pQty / 1000, 4) : '' };
+      comp = { art: cableArt, name: cx.cableName || '', norm: len > 0 ? formatDecimalComma_(len * pQty / 1000, 4) : '' };
+    } else if (opType === 'coaxStrip' && side.article) {
+      // Разделка идёт ПОД разъём этой стороны — он и есть комплектующее (под что зачищаем).
+      comp = { art: side.article, name: connName, norm: String(pQty) };
     } else if (opType === 'coaxCutTut') {
       // Расход ТУТ = длина × число концов (op.units) × партия / 1000 (метры). Для 2 сторон — 2 отрезка.
+      // У CUT_TUT нет колонки «Артикул» — материал по «Наименованию», поэтому имя = арт как fallback.
       const len   = parseFloat(String(cx.tutLength || '').replace(',', '.')) || 0;
       const units = Math.max(1, Number(op.units) || 1);
       comp = { art: cx.tutArt || '', name: cx.tutName || cx.tutArt || '', norm: len > 0 ? formatDecimalComma_(len * units * pQty / 1000, 4) : '' };
     } else if ((opType === 'coaxPin' || opType === 'coaxHousing') && side.article) {
       // Артикул разъёма + подпись подузла (пин/корпус); ГРН — имя разъёма из BOM (ОБЩИЙ
-      // для всех подузлов стороны: пин/гильза/корпус — один парт-номер разъёма).
+      // для всех подузлов стороны), пусто если в BOM имени нет.
       const part = opType === 'coaxPin' ? ' (пин)' : ' (корпус)';
-      comp = { art: side.article + part, name: side.connName || side.type || side.article || '', norm: String(pQty) };
+      comp = { art: side.article + part, name: connName, norm: String(pQty) };
     } else if (opType === 'coaxInsSleeve' && side.article) {
       // Гильза экрана — из того же разъёма (артикул + «(гильза)»); норма = число концов × партия.
       const units = Math.max(1, Number(op.units) || 1);
-      comp = { art: side.article + ' (гильза)', name: side.connName || side.type || side.article || '', norm: String(units * pQty) };
+      comp = { art: side.article + ' (гильза)', name: connName, norm: String(units * pQty) };
     }
     // Крышка (coaxCapCrimp/coaxCapScrew) — операция над полуфабрикатом, без отдельного
     // комплектующего: разъём (вместе с крышкой, один артикул) уже посчитан на coaxPin.
