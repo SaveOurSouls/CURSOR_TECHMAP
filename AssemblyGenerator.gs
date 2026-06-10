@@ -32,9 +32,10 @@ function getAssemblyGeneratorData_() {
   const terRecords   = readTerRecordsForGenerator_(snapshot);
   const coaxRecords  = readCoaxRecordsForGenerator_(snapshot);
   const wireDia      = readWireDiaTable_();
+  const coaxCableDia = readCoaxCableDiaTable_();
 
   return { assemblyInfo: src.assemblyInfo, components: src.components,
-           sourceSheet: src.sourceSheet, templates, ops, terRecords, coaxRecords, wireDia };
+           sourceSheet: src.sourceSheet, templates, ops, terRecords, coaxRecords, wireDia, coaxCableDia };
 }
 
 // Ищет лист с исходной таблицей сборки (СПЯ + изделие). Активный лист в приоритете,
@@ -111,6 +112,34 @@ function readWireDiaTable_() {
   } catch (e) { return null; }
 }
 
+// Слоевые диаметры коакс-кабеля из СПР.КАБ (верхняя таблица: «Кабель | D1 | D2 | D3»).
+// Возвращает { byCable: { '<норм.марка>': {d1,d2,d3} } } — для авто-подстановки D1-D3 по проводу.
+function readCoaxCableDiaTable_() {
+  try {
+    const ss = SpreadsheetApp.openById(getSourceSpreadsheetId_());
+    const sh = ss.getSheetByName('СПР.КАБ') || ss.getSheetByName('СПР.КОАКС');
+    if (!sh || sh.getLastRow() < 2) return null;
+    const vals = sh.getDataRange().getValues();
+    let hr = -1;
+    for (let r = 0; r < vals.length; r++) {
+      const low = vals[r].map(c => String(c || '').trim().toLowerCase());
+      if (low[0] === 'кабель' && low.indexOf('d1') >= 0) { hr = r; break; }
+    }
+    if (hr < 0) return null;
+    const headers = vals[hr].map(c => String(c || '').trim().toLowerCase());
+    const d1 = headers.indexOf('d1'), d2 = headers.indexOf('d2'), d3 = headers.indexOf('d3');
+    const norm = s => String(s || '').toLowerCase().replace(/[\s-]/g, '');
+    const get  = (row, i) => (i >= 0 ? String(row[i] || '').trim() : '');
+    const byCable = {};
+    for (let r = hr + 1; r < vals.length; r++) {
+      const mark = String(vals[r][0] || '').trim();
+      if (!mark) break;                                  // пустая строка = конец коакс-таблицы
+      byCable[norm(mark)] = { d1: get(vals[r], d1), d2: get(vals[r], d2), d3: get(vals[r], d3) };
+    }
+    return { byCable };
+  } catch (e) { return null; }
+}
+
 // Find Таблица1: header row with BOTH "индекс" AND "наименование"
 function scanForTable1_(data) {
   for (let r = 0; r < data.length - 1; r++) {
@@ -163,12 +192,17 @@ function scanForSpyTable_(data) {
       const name = String(drow[nameIdx] || '').trim();
       if (!type && !name) continue;
       const art = artIdx >= 0 ? String(drow[artIdx] || '').trim() : name;
+      // Кол-во: пустая ячейка → 1 (по умолчанию); явный 0 → позиция НЕ используется (пропуск,
+      // «0 не выводить вообще»); число (в т.ч. дробная норма провода) — как есть.
+      const rawQty = qtyIdx >= 0 ? drow[qtyIdx] : '';
+      const qty = (rawQty === '' || rawQty == null) ? 1 : (Number(String(rawQty).replace(',', '.')) || 0);
+      if (qty === 0) continue;
       components.push({
         id:     `spy-${dr}`,
         type,
         name,
         art,
-        qty:    qtyIdx    >= 0 ? (Number(drow[qtyIdx])    || 1) : 1,
+        qty,
         side:   sideIdx   >= 0 ? String(drow[sideIdx]   || '').trim().toUpperCase() : '',
         length: lengthIdx >= 0 ? (Number(drow[lengthIdx]) || 0) : 0,
       });
@@ -259,6 +293,7 @@ function readCoaxRecordsForGenerator_(preloaded) {
       lMinus:     find_(h => h === 'l-' || h === 'l−'),
       pinType:    find_(h => h === 'тип пина'),
       shieldType: find_(h => h === 'тип экрана'),
+      connArticle: find_(h => h === 'артикул разъёма' || h === 'артикул разьёма' || h === 'артикул разъема'),
     };
     const cell = (exp, i) => (i >= 0 ? String(exp[i] || '').trim() : '');
     return (snapshot.records || [])
@@ -277,9 +312,59 @@ function readCoaxRecordsForGenerator_(preloaded) {
           lMinus:     cell(e, col.lMinus),
           pinType:    cell(e, col.pinType),
           shieldType: cell(e, col.shieldType),
+          connArticle: cell(e, col.connArticle),
         };
       });
   } catch (e) { return []; }
+}
+
+// Добавляет строку в БД.КОАКС из диалога генератора (когда BOM-разъёма нет в базе).
+// Пишет по ИМЕНАМ колонок в источник; инвалидирует кеш снапшота (подхватится при след.
+// открытии). Активную таблицу НЕ трогает (источник — отдельный документ). Возвращает
+// запись в формате readCoaxRecordsForGenerator_ для немедленного матча в диалоге.
+function addCoaxRecordToDb(payload) {
+  payload = payload || {};
+  const connArticle = String(payload.connArticle || '').trim();
+  if (!connArticle) throw new Error('Не задан артикул разъёма.');
+  const src   = SpreadsheetApp.openById(getSourceSpreadsheetId_());
+  const sheet = src.getSheetByName(TECHOPS_DB_APP.tabs.coax.sourceSheetName);
+  if (!sheet) throw new Error('Нет листа БД.КОАКС.');
+  const hr  = TECHOPS_DB_APP.tabs.coax.headerRowNumber || 2;
+  const lc  = sheet.getLastColumn();
+  const hdr = sheet.getRange(hr, 1, 1, lc).getDisplayValues()[0]
+    .map(h => String(h).replace(/\s+/g, ' ').trim().toLowerCase());
+  const row = new Array(lc).fill('');
+  const set = (name, val) => {
+    const i = hdr.indexOf(String(name).toLowerCase());
+    if (i >= 0 && val != null && String(val) !== '') row[i] = val;
+  };
+  const descr = [payload.type, payload.wire].filter(Boolean).join(' ');
+  // Колонка «Артикул» (col A) = part-номер разъёма (ключ матчинга); если его нет — описание.
+  // Колонка «Артикул разъёма» (col P) — рудимент: пишем для совместимости, если она ещё есть
+  // (set() безопасно no-op, когда колонку удалили).
+  const article = connArticle || descr;
+  set('артикул', article);
+  set('тип/серия', payload.type);
+  set('провод', payload.wire);
+  set('производитель', payload.mfr);
+  set('программа', payload.program);
+  set('d1', payload.d1); set('d2', payload.d2); set('d3', payload.d3);
+  set('l1', payload.l1); set('l2', payload.l2); set('l3', payload.l3);
+  set('l+', payload.lPlus); set('l-', payload.lMinus);
+  set('тип пина', payload.pinType);
+  set('тип экрана', payload.shieldType);
+  set('артикул разъёма', connArticle);
+  sheet.getRange(sheet.getLastRow() + 1, 1, 1, lc).setValues([row]);
+  try { getTechOpsCache_().clear(); } catch (e) {}   // следующее открытие пере-синкнет снапшот
+  return {
+    article: article, type: payload.type || '', wire: payload.wire || '',
+    mfr: payload.mfr || '', program: payload.program || '',
+    d1: payload.d1 || '', d2: payload.d2 || '', d3: payload.d3 || '',
+    l1: payload.l1 || '', l2: payload.l2 || '', l3: payload.l3 || '',
+    lPlus: payload.lPlus || '', lMinus: payload.lMinus || '',
+    pinType: payload.pinType || '', shieldType: payload.shieldType || '',
+    connArticle: connArticle,
+  };
 }
 
 // ── Generator ─────────────────────────────────────────────────
@@ -304,8 +389,10 @@ function readCoaxRecordsForGenerator_(preloaded) {
 
 /**
  * @typedef {Object} AssemblyOp   Одна операция в цепочке генерации.
- * @property {'cutWire'|'prsTermA'|'prsTermB'|'insTermA'|'insTermB'} type  Тип операции.
- * @property {number} wireIdx     Индекс провода в config.wires; -1 = все провода вместе (для CUT_WIRE).
+ * @property {'cutWire'|'prsTerm'|'insTerm'|'solderConn'|'twist'|'tin'} type  Тип операции.
+ * @property {'A'|'B'} [side]     Сторона эндпоинта (для term/solder-операций).
+ * @property {Object} [ep]        Снимок эндпоинта: {connArt, connName, termArt, termName, sdrTmpl, double}.
+ * @property {Array}  [wires]     Маршрутизированные провода операции (для term/solder).
  * @property {string} templateId  ID шаблона техкарты для вставки.
  * @property {string} [opNum]     Номер операции (CODE из БД.ОП) для поиска времени.
  * @property {string|number} [tPrep]     Подготовительное время.
@@ -341,6 +428,11 @@ function generateAssemblyTechCards(config) {
   const createdSheets = [];
   let prevResult = '';
   let prevResultNorm = ''; // норма выхода предыдущей операции → норма входа текущей
+  // Коакс: ПОСТОРОННЯЯ цепочка — pin A продолжает strip A, pin B продолжает strip B (а не
+  // последнюю по списку). Иначе вход «Пайка A» = «Разделка B» (две стороны режутся подряд).
+  const coaxBySide = {};      // 'A'|'B' → последний результат стороны
+  const coaxNormBySide = {};  // 'A'|'B' → норма выхода стороны
+  let tutResult = '', tutNorm = '';   // параллельная заготовка ТУТ (резка ТУТ) → 2-й вход «Монтаж ТУТ»
   const terRecords = isCoax ? [] : readTerRecordsForGenerator_();
 
   // Только операции с выбранным шаблоном; последняя из них — финальный лист (изделие).
@@ -357,26 +449,43 @@ function generateAssemblyTechCards(config) {
       const op = ops[i];
       const isLast = i === ops.length - 1;
 
-      const wireData = (!isCoax && op.type === 'cutWire' && Array.isArray(config.wires))
-        ? buildCombinedWireData_(config.wires)
+      const wireData = (!isCoax && isCutOp_(op.type))
+        ? buildCombinedWireData_(cutWiresOf_(op, config))
         : null;
 
-      const insertResult = insertTemplate(op.templateId);
+      // noReplace: при N разъёмах несколько операций используют один шаблон — замена по
+      // заголовку снесла бы лист предыдущего разъёма. Суффикс делает имя листа читаемым/уникальным.
+      const insertResult = insertTemplate(op.templateId, { noReplace: true, nameSuffix: sheetSuffix_(op) });
       const sheet = ss.getSheetByName(insertResult.sheetName);
       if (!sheet) throw new Error(`Лист "${insertResult.sheetName}" не найден.`);
 
-      const thisResult = computeOperationResult_(op.type, config, prevResult, wireData, op.side);
-      const terData = isCoax ? null : buildTerData_(op.type, config, terRecords);
-      const phMap = buildPlaceholderMap_(op, config, prevResult, thisResult, wireData, terData);
+      // Вход карты: для коакс-операции СО стороной — последний результат той же стороны
+      // (pin A ← strip A), иначе общий prevResult.
+      const sideKey  = isCoax && (op.side === 'A' || op.side === 'B') ? op.side : null;
+      const inResult = (sideKey && coaxBySide[sideKey] != null) ? coaxBySide[sideKey] : prevResult;
+      const inNorm   = (sideKey && coaxNormBySide[sideKey] != null) ? coaxNormBySide[sideKey] : prevResultNorm;
+
+      const thisResult = computeOperationResult_(op, config, inResult, wireData, op.side);
+
+      // Резка ТУТ — параллельная заготовка: запоминаем её результат и норму (отрезки),
+      // чтобы «Монтаж ТУТ» показал её во ВТОРОМ ряду входа «Полуфабрикат».
+      if (op.type === 'cutTut')          { tutResult = thisResult; tutNorm = String((op.tutCount || 0) * partQty_(config)); }
+      else if (op.type === 'coaxCutTut') { tutResult = thisResult; tutNorm = String(Math.max(1, Number(op.units) || 1) * partQty_(config)); }
+      if (op.type === 'insTut' || op.type === 'coaxInsTut') op._auxInput = { name: tutResult, norm: tutNorm };
+
+      const terData = isCoax ? null : buildTerData_(op, config, terRecords);
+      const phMap = buildPlaceholderMap_(op, config, inResult, thisResult, wireData, terData);
       const sheetState = replacePlaceholders_(sheet, phMap);
 
-      fillTechCardStructurally_(sheet, op, op.type, config, prevResult, thisResult, wireData, terData, sheetState, prevResultNorm, isLast);
+      fillTechCardStructurally_(sheet, op, op.type, config, inResult, thisResult, wireData, terData, sheetState, inNorm, isLast);
 
       // CUT_TUT — параллельная заготовка (режет ТУТ), главный полуфабрикат-кабель не двигает:
       // его результат НЕ перетекает в следующую операцию (STRIP берёт кабель от CUT_WIRE).
-      if (!isCoax || coaxAdvancesMain_(op.type)) {
+      // Резка/надевание ТУТ — параллельная подготовка (термоусадка), главную цепочку не двигают.
+      if ((!isCoax || coaxAdvancesMain_(op.type)) && op.type !== 'cutTut' && op.type !== 'insTut') {
         prevResult = thisResult;
-        prevResultNorm = computeOutputNorm_(op.type, config);
+        prevResultNorm = computeOutputNorm_(op, config);
+        if (sideKey) { coaxBySide[sideKey] = thisResult; coaxNormBySide[sideKey] = prevResultNorm; }
       }
       createdSheets.push(insertResult.sheetName);
     }
@@ -480,73 +589,172 @@ function coaxSideLabel_(side) { return side === 'B' ? 'B' : 'А'; }
 function coaxAdvancesMain_(opType) { return isCoaxOp_(opType) && opType !== 'coaxCutTut'; }
 
 // Наименование результата коакс-операции (накопительное, перетекает в вход следующей).
+// Топология жгута: «Разъём ‹артА› — кабель ‹арт› — разъём ‹артВ›» (В — если двусторонний).
+// Единая база наименований всех СБОРОЧНЫХ коакс-операций (после пайки) — чтобы везде однотипно.
+// Кабель с длиной: «LMR-100 600мм» (длина — если задана).
+function coaxCableRef_(cx) {
+  const cable = cx.cableArt || cx.cableName || (cx.sideA && cx.sideA.wire) || 'кабель';
+  return cx.cableLength ? `${cable} ${cx.cableLength}мм` : cable;
+}
+function coaxHarness_(cx) {
+  cx = cx || {};
+  const cA = (cx.sideA && (cx.sideA.article || cx.sideA.connName)) || 'разъём';
+  let s = `Разъём ${cA} — кабель ${coaxCableRef_(cx)}`;
+  const cB = cx.sideB && (cx.sideB.article || cx.sideB.connName);
+  if (cB) s += ` — разъём ${cB}`;
+  return s;
+}
+
+// Наименование коакс-полуфабриката. Заготовки (резка/разделка) — описание этапа; сборочные
+// операции (пайка→…→усадка) — единая база «топология жгута» + что сделали (однотипно).
 function computeCoaxResult_(opType, config, prevResult, side) {
-  const cx   = config.coax || {};
-  const sd   = side === 'B' ? (cx.sideB || {}) : (cx.sideA || {});
-  const S    = coaxSideLabel_(side);
-  const base = prevResult || '';
-  const add  = txt => base ? `${base}, ${txt}` : txt;
+  const cx    = config.coax || {};
+  const sd    = side === 'B' ? (cx.sideB || {}) : (cx.sideA || {});
+  const S     = coaxSideLabel_(side);                      // 'А'/'B' (коакс латиница B, как каталог)
+  // Артикул кабеля приоритетнее ГРН (BOM-имя бывает мусорным, напр. «2»).
+  const cable = cx.cableArt || cx.cableName || (cx.sideA && cx.sideA.wire) || 'кабель';
+  const conn  = sd.article || 'разъём';
   switch (opType) {
-    case 'coaxCut': {
-      const len = cx.cableLength ? `${cx.cableLength}мм` : '';
-      return [`Кабель ${cx.sideA && cx.sideA.wire || ''}`.trim(), len].filter(Boolean).join(', отрезок ');
+    case 'coaxCut':                                                         // заготовка: «артикул Lмм»
+      return [cable, cx.cableLength ? `${cx.cableLength}мм` : ''].filter(Boolean).join(' ');
+    case 'coaxCutTut': {                                                    // параллельная заготовка
+      const tlen = cx.tutLength ? `${cx.tutLength}мм` : '';
+      const mat  = cx.tutArt || cx.tutName || 'ТУТ';
+      return [mat, tlen].filter(Boolean).join(', отрезок ');
     }
-    case 'coaxCutTut':       return 'ТУТ, отрезок';                         // параллельная заготовка
-    case 'coaxStrip':        return add(`разделка стороны ${S}`);
-    case 'coaxPin':          return add(sd.pinType === 'внутри корпуса'
-                               ? `центр. контакт впаян в корпус (${S})`
-                               : `центр. контакт припаян (${S})`);
-    case 'coaxInsTut':       return add('ТУТ установлен');
-    case 'coaxInsSleeve':    return add('втулка экрана установлена');
-    case 'coaxHousing':      return add(`корпус разъёма ${sd.article || ''} смонтирован (${S})`.replace(/\s+\(/, ' ('));
-    case 'coaxShield':       return add('экран опрессован');
-    case 'coaxSolderShield': return add(`экран припаян (${S})`);
-    case 'coaxHeat':         return add('ТУТ усажен');
-    default:                 return base;
+    // Привязка к кабелю/разъёму; без «П/ф:» (по требованию — убрать приписку во всём генераторе).
+    case 'coaxStrip':        return `Разделка ${S} под ${conn} на кабеле: ${cable}`;
+    case 'coaxPin': {
+      // Топология жгута появляется здесь. Сторона A — частичная (разъём А + кабель);
+      // сторона B — полная (разъём А — кабель — разъём В).
+      if (side === 'B') return coaxHarness_(cx);
+      const cA = (cx.sideA && (cx.sideA.article || cx.sideA.connName)) || 'разъём';
+      return `Разъём ${cA} — кабель ${coaxCableRef_(cx)}`;
+    }
+    case 'coaxInsTut':       return `Кабель ${coaxCableRef_(cx)} с надетыми ТУТ`;
+    case 'coaxInsSleeve':    return `Кабель ${coaxCableRef_(cx)} с надетыми гильзами`;
+    // После топологии — однотипно: «топология (что сделали)».
+    case 'coaxHousing':      return `${coaxHarness_(cx)} (корпус смонтирован, ст. ${S})`;
+    case 'coaxShield':       return `${coaxHarness_(cx)} (экран опрессован)`;
+    case 'coaxSolderShield': return `${coaxHarness_(cx)} (экран припаян, ст. ${S})`;
+    case 'coaxCapCrimp':     return `${coaxHarness_(cx)} (крышка обжата)`;
+    case 'coaxCapScrew':     return `${coaxHarness_(cx)} (крышка закреплена винтами)`;
+    case 'coaxHeat':         return `${coaxHarness_(cx)} (ТУТ усажен)`;
+    default:                 return prevResult || '';
   }
 }
 
-function computeOperationResult_(opType, config, prevResult, wireData, opSide) {
-  if (isCoaxOp_(opType)) return computeCoaxResult_(opType, config, prevResult, opSide);
+// ── Endpoint-aware op helpers (N разъёмов на сторону + роутинг) ──
+// Новый контракт: term/solder-операции несут op.ep (снимок эндпоинта:
+// {connArt, connName, termArt, termName, sdrTmpl, double}) и op.wires (маршрутизированные
+// провода). Коакс (opType 'coax*') и его config.coax.sideA/B — отдельная ветка, не трогаем.
+function termKind_(op) {
+  var t = op && op.type;
+  if (t === 'prsTerm') return 'prs';
+  if (t === 'insTerm') return 'ins';
+  if (t === 'solderConn') return 'sdr';
+  return null;
+}
+function opEndpoint_(op) { return (op && op.ep) || {}; }
+function opSideLabel_(op) { return (op && op.side === 'B') ? 'В' : 'А'; }
+// Локация в наименовании п/ф: для сложных сборок (>2 разъёмов) — наименование разъёма по
+// чертежу (ep.label), иначе «ст. А/В». Сторона неоднозначна, когда на ней несколько разъёмов.
+function opLoc_(op, config) {
+  var ep = opEndpoint_(op);
+  var label = ep.label || ep.connName || '';
+  if (config && config.bigAssembly && label) return label;
+  return 'ст. ' + opSideLabel_(op);
+}
+function opRoutedWires_(op, config) {
+  if (op && Array.isArray(op.wires)) return op.wires;
+  return Array.isArray(config.wires) ? config.wires : [];
+}
+// Число терминалов операции: контакты на маршрут-провода; двойной обжим = пары (2 провода
+// в 1 терминал).
+function opTermCount_(op, config) {
+  var w = opRoutedWires_(op, config);
+  var n = w.reduce(function (s, x) { return s + (Number(x.qty) || 1); }, 0);
+  return (op.ep && op.ep.double) ? Math.ceil(n / 2) : n;
+}
+// Сторона A строится из НАРЕЗАННЫХ проводов (по строке: опрессовка/монтаж каждого).
+// Сторона B продолжается из готовой заготовки стороны A (вход/выход одной строкой).
+function opIsBuildSide_(op) { return !op || op.side !== 'B'; }
+// Резка провода: обычная (cutWire) и с разделкой (cutWireStrip — пред-зачистка концов под
+// пайку/двойной обжим). cutTut (резка ТУТ) — отдельный тип, не провод.
+function isCutOp_(t) { return t === 'cutWire' || t === 'cutWireStrip'; }
+function cutWiresOf_(op, config) {
+  return (op && Array.isArray(op.wires)) ? op.wires : (Array.isArray(config.wires) ? config.wires : []);
+}
+// Суффикс имени листа: для term/solder — разъём; для резки под двойной обжим — пометка
+// (чтобы два листа резки с одним шаблоном не схлопнулись).
+function sheetSuffix_(op) {
+  if (op && op.type === 'cutWireStrip') return ' — разделка';
+  if (op && op.type === 'cutTut') return ' — ТУТ';
+  if (!termKind_(op)) return '';
+  var ep = opEndpoint_(op);
+  var conn = ep.connName || ep.connArt || '';
+  return conn ? (' — ' + conn) : '';
+}
+
+function computeOperationResult_(opOrType, config, prevResult, wireData, opSide) {
+  var op = (opOrType && typeof opOrType === 'object') ? opOrType : { type: opOrType, side: opSide };
+  var opType = op.type;
+  if (isCoaxOp_(opType)) return computeCoaxResult_(opType, config, prevResult, op.side);
   const wd    = wireData || {};
-  const sA    = config.sideA || {};
-  const sB    = config.sideB || {};
-  const wires = Array.isArray(config.wires) ? config.wires : [];
+  const kind  = termKind_(op);
+
+  // Наименование полуфабриката — КРАТКОЕ описание этапа (без перечисления всех проводов и
+  // без накопления всей истории — иначе ячейка превращается в нечитаемую простыню).
+  if (kind === 'prs') {
+    const ep  = opEndpoint_(op);
+    const t   = ep.termArt || ep.termName || '';
+    const n   = opRoutedWires_(op, config).length;
+    const dbl = ep.double ? ', двойной обжим' : '';
+    return `Заготовка: ${n} пров. с обжатым терм. ${t}${dbl} (${opLoc_(op, config)})`;
+  }
+  if (kind === 'ins') {
+    const ep   = opEndpoint_(op);
+    const n    = opRoutedWires_(op, config).length;
+    const conn = ep.connArt || ep.connName || '';
+    return `Разъём ${conn} смонтирован (${opLoc_(op, config)}, ${n} пров.)`;
+  }
+  if (kind === 'sdr') {
+    const ep   = opEndpoint_(op);
+    const conn = ep.connArt || ep.connName || '';
+    return `Разъём ${conn} припаян (${opLoc_(op, config)})`;
+  }
+
+  if (opType === 'cutTut') {
+    const mat  = op.tutArt || op.tutName || 'ТУТ';
+    const segs = Array.isArray(op.tutSegs) ? op.tutSegs : [];
+    if (segs.some(s => s.len)) {
+      const parts = segs.map(s => s.len ? `${s.count}×${s.len}мм` : `${s.count} шт`);
+      return `${mat}: ${parts.join(' + ')}`;
+    }
+    const c = op.tutCount || 0;
+    return `${mat}${c ? ', ' + c + ' отрезков' : ''}`.trim();
+  }
+  if (opType === 'insTut') {
+    const c = op.tutCount || 0;
+    return `ТУТ надет на провода${c ? ' (' + c + ' конц.)' : ''}`;
+  }
+
+  if (isCutOp_(opType)) {
+    const cw  = cutWiresOf_(op, config);
+    const src = cw.length > 0 ? cw : (function() {
+      const arts    = String(wd.art || wd.name || '').split('\n').filter(Boolean);
+      const lengths = String(wd.length || '').split('\n').filter(Boolean);
+      return arts.map((a, i) => ({ art: a, length: lengths[i] || '' }));
+    })();
+    const parts = src.map(w => {
+      const a = (w.art || w.name || '').trim();
+      const l = w.length ? `${w.length}мм` : '';
+      return [a, l].filter(Boolean).join(' ');
+    }).filter(Boolean);
+    return parts.join('; ') || (wd.art || wd.name || '');
+  }
 
   switch (opType) {
-    case 'cutWire': {
-      const src = wires.length > 0 ? wires : (function() {
-        const arts    = String(wd.art || wd.name || '').split('\n').filter(Boolean);
-        const lengths = String(wd.length || '').split('\n').filter(Boolean);
-        return arts.map((a, i) => ({ art: a, length: lengths[i] || '' }));
-      })();
-      const parts = src.map(w => {
-        const a = (w.art || w.name || '').trim();
-        const l = w.length ? `${w.length}мм` : '';
-        return [a, l].filter(Boolean).join(' ');
-      }).filter(Boolean);
-      return parts.join('; ') || (wd.art || wd.name || '');
-    }
-    case 'prsTermA': {
-      const tA = sA.termArt || sA.termName || '';
-      return prevResult ? prevResult + ', обжатый терминал ' + tA : tA;
-    }
-    case 'insTermA': {
-      const ws = Array.isArray(config.wires) ? config.wires : [];
-      const tA = sA.termArt || sA.termName || '';
-      const connLabel = sA.connArt || sA.connName || '';
-      return `${connLabel} сторона А в сборе с ${ws.length} проводами обжатыми терминалом ${tA}`.trim();
-    }
-    case 'prsTermB': {
-      const tB = sB.termArt || sB.termName || '';
-      return tB ? `Заготовка с обжатыми терминалами ${tB} сторона В` : 'Заготовка';
-    }
-    case 'insTermB': {
-      const ws = Array.isArray(config.wires) ? config.wires : [];
-      const tB = sB.termArt || sB.termName || '';
-      const connLabel = sB.connArt || sB.connName || '';
-      return `${connLabel} сторона В в сборе с ${ws.length} проводами обжатыми терминалом ${tB}`.trim();
-    }
     case 'twist': {
       // Свивка не меняет наименование полуфабриката — просто помечаем «(со свивкой)».
       // Детали (пары проводов + шаг) выводятся в маркер-ячейки шаблона, не в результат.
@@ -556,16 +764,19 @@ function computeOperationResult_(opType, config, prevResult, wireData, opSide) {
       // Лужение не меняет наименование полуфабриката — помечаем «(с лужением)».
       return prevResult ? `${prevResult} (с лужением)` : 'Лужение';
     }
+    case 'heatTut': {
+      // Усадка ТУТ — финишная операция, помечаем «(ТУТ усажен)».
+      return prevResult ? `${prevResult} (ТУТ усажен)` : 'Усадка ТУТ';
+    }
     default:         return prevResult;
   }
 }
 
 // Resolves ter record for terminal operations and builds terData object.
-function buildTerData_(opType, config, terRecords) {
-  const isTermA  = ['prsTermA', 'insTermA'].includes(opType);
-  const isTermB  = ['prsTermB', 'insTermB'].includes(opType);
-  if (!isTermA && !isTermB) return null;
-  const side     = isTermA ? (config.sideA || {}) : (config.sideB || {});
+function buildTerData_(op, config, terRecords) {
+  const kind = termKind_(op);
+  if (kind !== 'prs' && kind !== 'ins') return null;
+  const side = opEndpoint_(op);
   if (!side.termArt) return null;
   const termArt   = side.termArt || '';
   const termExact = termArt.toLowerCase().trim();
@@ -591,9 +802,15 @@ function buildTerData_(opType, config, terRecords) {
 
 function buildPlaceholderMap_(op, config, prevResult, thisResult, wireData, terData) {
   const p  = ASSEMBLY_GEN.placeholders;
-  const sA = config.sideA || {};
-  const sB = config.sideB || {};
   const wd = wireData || {};
+  // Плейсхолдеры стороны (легаси): для endpoint-операции берём op.ep в слот её стороны.
+  const ep = op && op.ep;
+  const epSide = ep ? {
+    termName: ep.termName || '', termArt: ep.termArt || '', termQty: opTermCount_(op, config),
+    connName: ep.connName || '', connArt: ep.connArt || '', connQty: opTermCount_(op, config),
+  } : null;
+  const sA = (epSide && op.side !== 'B') ? epSide : (config.sideA || {});
+  const sB = (epSide && op.side === 'B') ? epSide : (config.sideB || {});
 
   return {
     [p.index]:        config.assemblyIndex || '',
@@ -786,7 +1003,7 @@ function makeSheetCtx_(sheet, seed) {
 
 // Scans ctx.values for global column header positions.
 function detectGlobalColumns_(values) {
-  let artCol = -1, grnCol = -1, normCol = -1, seqCol = -1;
+  let artCol = -1, grnCol = -1, normCol = -1, seqCol = -1, unitCol = -1;
   for (let r = 0; r < values.length; r++) {
     for (let c = 0; c < values[r].length; c++) {
       const cell = String(values[r][c] || '').toLowerCase().trim();
@@ -796,10 +1013,11 @@ function detectGlobalColumns_(values) {
       if (normCol < 0 && (cell === 'норма'     || cell === 'кол-во' || cell === 'qty'
                           || (cell.includes('норма') && cell.length < 10)))                          normCol = c;
       if (seqCol  < 0 && cell === '№')                                                               seqCol  = c;
+      if (unitCol < 0 && (cell.indexOf('ед.изм') === 0 || cell === 'ед' || cell === 'единица'))      unitCol = c;
     }
     if (artCol >= 0 && grnCol >= 0 && normCol >= 0) break;
   }
-  return { artCol, grnCol, normCol, seqCol };
+  return { artCol, grnCol, normCol, seqCol, unitCol };
 }
 
 // Writes a value to a cell, skipping real formulas and resolving merges.
@@ -817,11 +1035,13 @@ function setCell_(ctx, r, col, val) {
 // Resolves art/name/norm column indices for a data row (looks for header above, falls back to globals).
 function resolveCols_(ctx, colMap, dataRow) {
   const loc = findColHeadersAbove_(ctx.values, dataRow);
-  return {
-    art:  loc.art  >= 0 ? loc.art  : colMap.artCol,
-    name: loc.name >= 0 ? loc.name : colMap.grnCol,
-    norm: loc.norm >= 0 ? loc.norm : colMap.normCol,
-  };
+  // Нашли локальную шапку секции (есть «Наименование/ГРН») → доверяем ей ЦЕЛИКОМ, включая
+  // отсутствие «Артикул» (art=-1). Иначе откат к global artCol ловит «Обозначение» из шапки
+  // операций и пишет комплектующее в колонку-ярлык (затирая «Комплектующие»).
+  if (loc.name >= 0) {
+    return { art: loc.art, name: loc.name, norm: loc.norm >= 0 ? loc.norm : colMap.normCol };
+  }
+  return { art: colMap.artCol, name: colMap.grnCol, norm: colMap.normCol };
 }
 
 // Quantity multiplier per assembly; defaults to 1 when not specified/invalid.
@@ -851,16 +1071,22 @@ function findColByText_(values, pattern) {
 // Для одиночной заготовки (ins/prsB) — (кол-во контактов на провод × кол-во сборок).
 // Для пооперационных (cut/prsA) выход пооводной — одиночной нормы нет (следующая
 // операция берёт вход пооводно), возвращаем ''.
-function computeOutputNorm_(opType, config) {
+function computeOutputNorm_(opOrType, config) {
+  const op = (opOrType && typeof opOrType === 'object') ? opOrType : { type: opOrType };
+  const opType = op.type;
   // Коакс: один кабель → один полуфабрикат на изделие; норма входа след. карты = шт×партия.
   if (isCoaxOp_(opType)) return String(partQty_(config));
-  const wires = Array.isArray(config.wires) ? config.wires : [];
   const pQty = partQty_(config);
-  if (['insTermA', 'insTermB', 'prsTermB'].includes(opType) && wires.length) {
-    return String((wires[0].qty || 1) * pQty);
+  // Монтаж = собранный полуфабрикат (норма = контактов×партия). Опрессовка стороны A —
+  // пооводный выход (нормы нет); стороны B — единая заготовка (норма = партия).
+  const kind = termKind_(op);
+  if (kind === 'ins' || kind === 'sdr') {
+    const w = opRoutedWires_(op, config);
+    return w.length ? String((w[0].qty || 1) * pQty) : '';
   }
-  // Свивка/лужение дают один полуфабрикат на изделие → норма в шт.
-  if (opType === 'twist' || opType === 'tin') return String(pQty);
+  if (kind === 'prs') return opIsBuildSide_(op) ? '' : String(pQty);
+  // Свивка/лужение/усадка дают один полуфабрикат на изделие → норма в шт.
+  if (opType === 'twist' || opType === 'tin' || opType === 'heatTut') return String(pQty);
   return '';
 }
 
@@ -883,11 +1109,39 @@ function isPlaceholderOrEmpty_(value) {
   return s === '' || /^‹.*›$/.test(s);
 }
 
+// Группирует провода резки по артикулу, суммируя метраж (одинаковые провода = одна строка).
+function groupCutKompl_(wires, pQty) {
+  const map = {}, order = [];
+  (wires || []).forEach(function (w) {
+    const key = String(w.art || w.name || '').trim();
+    const meters = (w.qty > 0 && w.length > 0) ? (w.qty * w.length * pQty / 1000)
+                 : (w.length > 0 ? (w.length * pQty / 1000) : 0);
+    if (!map[key]) { map[key] = { art: w.art || w.name || '', name: w.name || '', meters: 0 }; order.push(key); }
+    map[key].meters += meters;
+  });
+  return order.map(function (k) {
+    return { art: map[k].art, name: map[k].name, norm: map[k].meters > 0 ? formatDecimalComma_(map[k].meters, 4) : '' };
+  });
+}
+
 // Builds the wire result name for terminal operations (used in Результат and Время sections).
 function buildWireResultName_(w, termArt, connArt, sideLabel) {
   const base = wireBaseName_(w);
   const withTerm = termArt ? base + ', обжатый терминал ' + termArt : base;
   return connArt ? withTerm + ' → ' + connArt + ' сторона ' + sideLabel : withTerm;
+}
+
+// Двойной обжим: маршрут-провода группируются ПО ПАРАМ (2 провода в 1 терминал, соседние в
+// порядке роутинга). Возвращает по строке на терминал: «{пров1} + {пров2}, обж. терм. {арт}».
+function doubleCrimpRows_(wires, termArt, loc) {
+  const rows = [];
+  for (let i = 0; i < wires.length; i += 2) {
+    const a = wireBaseName_(wires[i]);
+    const b = wires[i + 1] ? wireBaseName_(wires[i + 1]) : '';
+    const pair = b ? (a + ' + ' + b) : a;
+    rows.push(pair + ', обж. терм. ' + termArt + ' (двойной обжим, ' + loc + ')');
+  }
+  return rows;
 }
 
 // Finds empty slots starting at anchorRow up to bound; expands by inserting rows if needed.
@@ -934,13 +1188,28 @@ function fillKompl_(sheet, ctx, colMap, op, config, wireData) {
     const cx   = config.coax || {};
     const side = op.side === 'B' ? (cx.sideB || {}) : (cx.sideA || {});
     let comp = null;
+    // Кабель: артикул и ГРН РАЗДЕЛЬНО из BOM (не дублировать); норма = длина×партия/1000 (метры).
+    const cableArt  = cx.cableArt  || (cx.sideA && cx.sideA.wire) || '';
+    const cableName = cx.cableName || cableArt;
     if (opType === 'coaxCut') {
       const len = parseFloat(String(cx.cableLength || '').replace(',', '.')) || 0;
-      const wire = (cx.sideA && cx.sideA.wire) || '';
-      comp = { art: wire, name: wire, norm: len > 0 ? formatDecimalComma_(len * pQty / 1000, 4) : '' };
+      comp = { art: cableArt, name: cableName, norm: len > 0 ? formatDecimalComma_(len * pQty / 1000, 4) : '' };
+    } else if (opType === 'coaxStrip') {
+      // Разделка: комплектующее = кабель, под который делается зачистка (идентификация).
+      const len = parseFloat(String(cx.cableLength || '').replace(',', '.')) || 0;
+      comp = { art: cableArt, name: cableName, norm: len > 0 ? formatDecimalComma_(len * pQty / 1000, 4) : '' };
+    } else if (opType === 'coaxCutTut') {
+      // Расход ТУТ = длина × число концов (op.units) × партия / 1000 (метры). Для 2 сторон — 2 отрезка.
+      const len   = parseFloat(String(cx.tutLength || '').replace(',', '.')) || 0;
+      const units = Math.max(1, Number(op.units) || 1);
+      comp = { art: cx.tutArt || '', name: cx.tutName || cx.tutArt || '', norm: len > 0 ? formatDecimalComma_(len * units * pQty / 1000, 4) : '' };
     } else if ((opType === 'coaxPin' || opType === 'coaxHousing') && side.article) {
-      comp = { art: side.article || '', name: side.type || side.article || '', norm: String(pQty) };
+      // ГРН — имя разъёма из BOM (connName); тип из БД.КОАКС — запасной вариант.
+      comp = { art: side.article || '', name: side.connName || side.type || side.article || '', norm: String(pQty) };
     }
+    // Крышка (coaxCapCrimp/coaxCapScrew) — операция над полуфабрикатом, без отдельного
+    // комплектующего: разъём (вместе с крышкой, один артикул) уже посчитан на coaxPin.
+    // Артикул разъёма виден в наименовании результата. Двойной учёт не нужен.
     if (comp) {
       setCell_(ctx, kompRow, cols.art,  comp.art);
       setCell_(ctx, kompRow, cols.name, comp.name);
@@ -949,15 +1218,34 @@ function fillKompl_(sheet, ctx, colMap, op, config, wireData) {
     return;
   }
 
-  const sA = config.sideA || {};
-  const sB = config.sideB || {};
-  const wires = (opType === 'cutWire') && Array.isArray(config.wires) && config.wires.length > 0
-    ? config.wires : null;
+  // Резка ТУТ: комплектующее = материал ТУТ. Задана длина отрезков → норма в МЕТРАХ
+  // (Σ длина×кол-во × партия / 1000, как коакс); длины нет → fallback в штуках.
+  if (opType === 'cutTut') {
+    const segs = Array.isArray(op.tutSegs) ? op.tutSegs : [];
+    const totalMm = segs.reduce((s, x) =>
+      s + (parseFloat(String(x.len || '').replace(',', '.')) || 0) * (Number(x.count) || 0), 0);
+    setCell_(ctx, kompRow, cols.art,  op.tutArt || '');
+    setCell_(ctx, kompRow, cols.name, op.tutName || op.tutArt || '');
+    if (totalMm > 0) {
+      setCell_(ctx, kompRow, cols.norm, formatDecimalComma_(totalMm * pQty / 1000, 4));
+      if (colMap.unitCol >= 0) setCell_(ctx, kompRow, colMap.unitCol, 'М.');
+    } else {
+      setCell_(ctx, kompRow, cols.norm, String((op.tutCount || 0) * pQty));
+      if (colMap.unitCol >= 0) setCell_(ctx, kompRow, colMap.unitCol, 'Шт.');
+    }
+    return;
+  }
+
+  // Резка: одинаковые провода (один артикул) складываем в одну строку с суммой метража.
+  const _cutW = isCutOp_(opType) ? cutWiresOf_(op, config) : [];
+  const wires = (_cutW.length > 0) ? groupCutKompl_(_cutW, pQty) : null;
+  // Опрессовка → комплектующее = ТЕРМИНАЛ, норма = число терминалов (двойной обжим = пары).
+  // Монтаж/пайка → комплектующее = РАЗЪЁМ (корпус), норма = 1 корпус × партия.
+  const ep   = opEndpoint_(op);
+  const kind = termKind_(op);
   const comp =
-      opType === 'prsTermA' ? { art: sA.termArt || sA.termName || '', name: sA.termName || '', norm: String((sA.termQty || 0) * pQty) }
-    : opType === 'insTermA' ? { art: sA.connArt  || sA.connName  || '', name: sA.connName  || '', norm: String((sA.connQty || 0) * pQty) }
-    : opType === 'prsTermB' ? { art: sB.termArt || sB.termName || '', name: sB.termName || '', norm: String((sB.termQty || 0) * pQty) }
-    : opType === 'insTermB' ? { art: sB.connArt  || sB.connName  || '', name: sB.connName  || '', norm: String((sB.connQty || 0) * pQty) }
+      kind === 'prs' ? { art: ep.termArt || ep.termName || '', name: ep.termName || ep.termArt || '', norm: String(opTermCount_(op, config) * pQty) }
+    : (kind === 'ins' || kind === 'sdr') ? { art: ep.connArt || ep.connName || '', name: ep.connName || ep.connArt || '', norm: String(pQty) }
     : null;
 
   if (wires) {
@@ -980,44 +1268,59 @@ function fillKompl_(sheet, ctx, colMap, op, config, wireData) {
       }
     }
     for (let i = 0; i < Math.min(wires.length, slots.length); i++) {
-      const w = wires[i];
+      const w = wires[i];   // {art, name, norm} — уже сгруппировано/суммировано
       const r = slots[i];
-      // Норма расхода в метрах; округление до 4 знаков убирает float-мусор.
-      let normVal = '';
-      if (w.qty > 0 && w.length > 0) {
-        normVal = formatDecimalComma_(w.qty * w.length * pQty / 1000, 4);
-      } else if (w.length > 0) {
-        normVal = formatDecimalComma_(w.length * pQty / 1000, 4);
-      }
       writeSeqNum_(sheet, r + 1, colMap.seqCol, i, ctx.mergeMap);
       setCell_(ctx, r, cols.art,  w.art  || w.name || '');
       setCell_(ctx, r, cols.name, w.name || '');
-      setCell_(ctx, r, cols.norm, normVal);
+      setCell_(ctx, r, cols.norm, w.norm);
     }
   } else if (comp) {
     setCell_(ctx, kompRow, cols.art,  comp.art);
     setCell_(ctx, kompRow, cols.name, comp.name);
     setCell_(ctx, kompRow, cols.norm, comp.norm);
+    // Терминал/разъём считаются в штуках — перетираем шаблонную «М.» (метры провода).
+    if (colMap.unitCol >= 0) setCell_(ctx, kompRow, colMap.unitCol, 'Шт.');
   }
 }
 
-function fillSfIn_(sheet, ctx, colMap, config, prevResult, opType, prevResultNorm) {
+function fillSfIn_(sheet, ctx, colMap, config, prevResult, op, prevResultNorm) {
   const { sfInRow, resultRow } = ctx.sections;
   const cols  = resolveCols_(ctx, colMap, sfInRow);
   const nameC = cols.name >= 0 ? cols.name : cols.art;
   const normC = cols.norm >= 0 ? cols.norm : colMap.normCol;
   if (nameC < 0) return;
 
-  const wires = Array.isArray(config.wires) ? config.wires : [];
-  const sA    = config.sideA || {};
+  const wires = opRoutedWires_(op, config);   // маршрут-провода эндпоинта (или все, легаси)
+  const ep    = opEndpoint_(op);
+  const kind  = termKind_(op);
   const pQty  = partQty_(config);
 
-  let wireNames = null;
-  if (opType === 'prsTermA' && wires.length > 0) {
+  // Уникальные ветви-источники (собранные ранее заготовки, приходящие на этот разъём).
+  const branches = [];
+  (Array.isArray(op.wireSources) ? op.wireSources : []).forEach(s => {
+    if (s && branches.indexOf(s) < 0) branches.push(s);
+  });
+
+  // Имена и нормы строк входа (параллельные массивы). Приоритет:
+  //   опрессовка разъёма-слияния → по ВЕТВЯМ (входящие заготовки);
+  //   монтаж с двойным обжимом → по спаренным терминалам;
+  //   сторона A → провода ПОСТРОЧНО (опрессовка нарезанные / монтаж с терминалом);
+  //   иначе → одна заготовка стороны (prevResult).
+  let wireNames = null, wireNorms = null;
+  if (kind === 'prs' && branches.length > 0) {
+    wireNames = branches.map(b => 'Заготовка ветви ' + b);
+    wireNorms = branches.map(() => String(pQty));
+  } else if (kind === 'ins' && ep.double && wires.length >= 2) {
+    wireNames = doubleCrimpRows_(wires, ep.termArt || ep.termName || '', opLoc_(op, config));
+    wireNorms = wireNames.map(() => String(pQty));
+  } else if (opIsBuildSide_(op) && kind === 'prs' && wires.length > 0) {
     wireNames = wires.map(wireBaseName_);
-  } else if (opType === 'insTermA' && wires.length > 0) {
-    const tA = sA.termArt || sA.termName || '';
-    wireNames = wires.map(w => buildWireResultName_(w, tA, '', 'А'));
+    wireNorms = wires.map(w => formatDecimalComma_(w.qty * pQty, 4));
+  } else if (opIsBuildSide_(op) && (kind === 'ins' || kind === 'sdr') && wires.length > 0) {
+    const t = ep.termArt || ep.termName || '';   // пайка → терминала нет, имя = провод
+    wireNames = wires.map(w => buildWireResultName_(w, t, '', opSideLabel_(op)));
+    wireNorms = wires.map(w => formatDecimalComma_(w.qty * pQty, 4));
   }
 
   if (wireNames && wireNames.length > 0) {
@@ -1027,25 +1330,39 @@ function fillSfIn_(sheet, ctx, colMap, config, prevResult, opType, prevResultNor
       const rowNum = slots[i] + 1;
       writeSeqNum_(sheet, rowNum, colMap.seqCol, i, ctx.mergeMap);
       fillMergedCell_(sheet, rowNum, nameC + 1, wireNames[i], ctx.mergeMap);
-      if (normC >= 0) fillMergedCell_(sheet, rowNum, normC + 1, formatDecimalComma_(wires[i].qty * pQty, 4), ctx.mergeMap);
+      if (normC >= 0 && wireNorms) fillMergedCell_(sheet, rowNum, normC + 1, wireNorms[i], ctx.mergeMap);
     }
   } else {
     setCell_(ctx, sfInRow, nameC, prevResult);
     // Норма входа = норма выхода предыдущей операции (тянется с прошлого листа).
     if (normC >= 0 && prevResultNorm) setCell_(ctx, sfInRow, normC, prevResultNorm);
+    // Параллельный вход (нарезанный ТУТ) → СЛЕДУЮЩИЙ ряд «Полуфабрикат» секции входа.
+    const aux = op && op._auxInput;
+    if (aux && aux.name) {
+      const bound = resultRow > sfInRow ? resultRow : ctx.values.length;
+      for (let r = sfInRow + 1; r < bound; r++) {
+        const isSf = (ctx.values[r] || []).some(c => /полуфабрикат|^п\/ф/i.test(String(c || '').trim()));
+        if (!isSf) continue;
+        writeSeqNum_(sheet, r + 1, colMap.seqCol, 1, ctx.mergeMap);
+        setCell_(ctx, r, nameC, aux.name);
+        if (normC >= 0 && aux.norm) setCell_(ctx, r, normC, aux.norm);
+        break;
+      }
+    }
   }
 }
 
-function fillSfOut_(sheet, ctx, colMap, config, thisResult, opType, isLast) {
+function fillSfOut_(sheet, ctx, colMap, config, thisResult, op, isLast) {
   // На последнем листе результат — это готовое ИЗДЕЛИЕ: имя берём из наименования
   // изделия, а ярлык «Полуфабрикат» меняем на «Изделие».
+  const opType   = op && op.type;
   const singleName = (isLast && config.assemblyName) ? config.assemblyName : thisResult;
-  const wires    = Array.isArray(config.wires) ? config.wires : [];
-  const sA       = config.sideA || {};
-  const sB       = config.sideB || {};
+  const wires    = opRoutedWires_(op, config);   // маршрут-провода (или все, легаси)
+  const ep       = opEndpoint_(op);
+  const kind     = termKind_(op);
   const pQty     = partQty_(config);
-  const isCutWire = opType === 'cutWire';
-  const isTermOp  = ['prsTermA','insTermA','prsTermB','insTermB'].includes(opType);
+  const isCutWire = isCutOp_(opType);
+  const isTermOp  = kind === 'prs' || kind === 'ins';
 
   let fRes = -1, fSfOut = -1;
   for (let r = 0; r < ctx.values.length; r++) {
@@ -1062,22 +1379,38 @@ function fillSfOut_(sheet, ctx, colMap, config, thisResult, opType, isLast) {
   const nameC = hdr.name >= 0 ? hdr.name : (hdr.art >= 0 ? hdr.art : colMap.grnCol);
   const normC = hdr.norm >= 0 ? hdr.norm : colMap.normCol;
 
-  const isIns = opType === 'insTermA' || opType === 'insTermB' || opType === 'prsTermB';
+  // Двойной обжим (опрессовка) → по терминалам-парам (2 провода в 1 терминал).
+  const isDouble = kind === 'prs' && ep.double && wires.length >= 2 && nameC >= 0;
+  // Одной строкой: монтаж/пайка и опрессовка стороны B (единая заготовка). Резка и
+  // опрессовка стороны A — по проводу.
+  const isSingle = kind === 'ins' || kind === 'sdr' || (kind === 'prs' && !opIsBuildSide_(op));
 
-  if (isIns && wires.length > 0 && nameC >= 0) {
+  if (isDouble) {
+    let resTimeBound = ctx.values.length;
+    for (let r = fSfOut + 1; r < ctx.values.length; r++) {
+      if ((ctx.values[r] || []).some(c => /расс?ч[её]?тное\s*врем/i.test(String(c || '')))) { resTimeBound = r; break; }
+    }
+    const rows  = doubleCrimpRows_(wires, ep.termArt || ep.termName || '', opLoc_(op, config));
+    const slots = findAndExpandSlots_(sheet, ctx, fSfOut, resTimeBound, nameC, rows.length, fSfOut + 1);
+    for (let i = 0; i < Math.min(rows.length, slots.length); i++) {
+      const rowNum = slots[i] + 1;
+      writeSeqNum_(sheet, rowNum, colMap.seqCol, i, ctx.mergeMap);
+      fillMergedCell_(sheet, rowNum, nameC + 1, rows[i], ctx.mergeMap);
+      if (normC >= 0) fillMergedCell_(sheet, rowNum, normC + 1, String(pQty), ctx.mergeMap);
+    }
+  } else if (isSingle && wires.length > 0 && nameC >= 0) {
     const insNorm = String((wires[0].qty || 1) * pQty);
     writeSeqNum_(sheet, fSfOut + 1, colMap.seqCol, 0, ctx.mergeMap);
     fillMergedCell_(sheet, fSfOut + 1, nameC + 1, singleName, ctx.mergeMap);
     if (normC >= 0) fillMergedCell_(sheet, fSfOut + 1, normC + 1, insNorm, ctx.mergeMap);
-  } else if ((isCutWire || opType === 'prsTermA') && wires.length > 0 && nameC >= 0) {
+  } else if ((isCutWire || (kind === 'prs' && opIsBuildSide_(op))) && wires.length > 0 && nameC >= 0) {
     let resTimeBound = ctx.values.length;
     for (let r = fSfOut + 1; r < ctx.values.length; r++) {
       if ((ctx.values[r] || []).some(c => /расс?ч[её]?тное\s*врем/i.test(String(c || '')))) { resTimeBound = r; break; }
     }
     const slots    = findAndExpandSlots_(sheet, ctx, fSfOut, resTimeBound, nameC, wires.length, fSfOut + 1);
-    const side     = (opType === 'prsTermA') ? sA : sB;
-    const termArt  = side.termArt || side.termName || '';
-    const sideLbl  = (opType === 'prsTermA') ? 'А' : 'В';
+    const termArt  = ep.termArt || ep.termName || '';
+    const sideLbl  = opSideLabel_(op);
     for (let i = 0; i < Math.min(wires.length, slots.length); i++) {
       const w      = wires[i];
       const rowNum = slots[i] + 1;
@@ -1090,8 +1423,11 @@ function fillSfOut_(sheet, ctx, colMap, config, thisResult, opType, isLast) {
     }
   } else if (nameC >= 0) {
     fillMergedCell_(sheet, fSfOut + 1, nameC + 1, singleName, ctx.mergeMap);
-    // Свивка/лужение/коакс: норма результата = шт на изделие (иначе в шаблоне остаётся ‹норма›/#REF!).
-    if ((opType === 'twist' || opType === 'tin' || isCoaxOp_(opType)) && normC >= 0) fillMergedCell_(sheet, fSfOut + 1, normC + 1, String(pQty), ctx.mergeMap);
+    // Один полуфабрикат на изделие → норма результата = шт (иначе в шаблоне останется ‹норма›/#REF!).
+    if ((opType === 'twist' || opType === 'tin' || opType === 'heatTut' || isCoaxOp_(opType)) && normC >= 0)
+      fillMergedCell_(sheet, fSfOut + 1, normC + 1, String(pQty), ctx.mergeMap);
+    if ((opType === 'cutTut' || opType === 'insTut') && normC >= 0)
+      fillMergedCell_(sheet, fSfOut + 1, normC + 1, String((op.tutCount || 0) * pQty), ctx.mergeMap);
   }
 
   if (isLast) relabelSemifinished_(sheet, ctx, fSfOut, 'Изделие');
@@ -1101,11 +1437,14 @@ function fillTime_(sheet, ctx, colMap, op, config, thisResult, opType, isLast) {
   // На последнем листе наименование в Рассч. времени — это изделие, ярлык → «Изделие».
   const singleName = (isLast && config.assemblyName) ? config.assemblyName : thisResult;
   const { timeRow } = ctx.sections;
-  const isCutWire  = opType === 'cutWire';
-  const isTermOp   = ['prsTermA','insTermA','prsTermB','insTermB'].includes(opType);
-  const wires      = Array.isArray(config.wires) ? config.wires : [];
-  const sA         = config.sideA || {};
-  const sB         = config.sideB || {};
+  const kind       = termKind_(op);
+  const isCutWire  = isCutOp_(opType);
+  // Пайка (sdr) считается как монтаж: одной строкой, норма = время × число паяных
+  // соединений × партия. Без sdr она проваливалась в else и писала сырое tOp без
+  // множителя (0,4 мин на 200 шт).
+  const isTermOp   = kind === 'prs' || kind === 'ins' || kind === 'sdr';
+  const wires      = opRoutedWires_(op, config);
+  const ep         = opEndpoint_(op);
   const pQty       = partQty_(config);
 
   const timeDataRows = [];
@@ -1126,7 +1465,8 @@ function fillTime_(sheet, ctx, colMap, op, config, thisResult, opType, isLast) {
     const tPrepSec = parseFloat(String(op.tPrep || '').replace(',', '.')) || 0;
     const tOpMin   = tOpSec  / 60;
     const tPrepMin = tPrepSec / 60;
-    const isIns    = opType === 'insTermA' || opType === 'insTermB' || opType === 'prsTermB';
+    // Одной строкой: монтаж/пайка и опрессовка стороны B. Резка/опрессовка A — по проводу.
+    const isIns    = kind === 'ins' || kind === 'sdr' || (kind === 'prs' && !opIsBuildSide_(op));
 
     if (isIns) {
       // INS: одна строка — суммарное время на все провода
@@ -1154,9 +1494,8 @@ function fillTime_(sheet, ctx, colMap, op, config, thisResult, opType, isLast) {
           ctx.applyInsert(lastSlot + 1, insertCount);
         }
       }
-      const side     = (opType === 'prsTermA') ? sA : sB;
-      const termArt  = isTermOp ? (side.termArt || side.termName || '') : '';
-      const sideLbl  = (opType === 'prsTermA') ? 'А' : 'В';
+      const termArt  = isTermOp ? (ep.termArt || ep.termName || '') : '';
+      const sideLbl  = opSideLabel_(op);
       const tPrepPerWire = wires.length > 1 ? tPrepMin / wires.length : tPrepMin;
       for (let i = 0; i < Math.min(wires.length, timeSlots.length); i++) {
         const w       = wires[i];
@@ -1189,6 +1528,27 @@ function fillTime_(sheet, ctx, colMap, op, config, thisResult, opType, isLast) {
     const tinned   = (tinIdx && tinIdx.length) ? tinIdx.map(i => wires[i]).filter(Boolean) : wires;
     const ends     = tinned.reduce((s, w) => s + (w.qty || 1), 0) || 1;
     const norm     = formatDecimalComma_(tOpMin * ends * pQty + tPrepMin, 2);
+    writeSeqNum_(sheet, timeDataRows[0] + 1, colMap.seqCol, 0, ctx.mergeMap);
+    fillMergedCell_(sheet, timeDataRows[0] + 1, tNameCol + 1, singleName, ctx.mergeMap);
+    if (tNormCol >= 0) fillMergedCell_(sheet, timeDataRows[0] + 1, tNormCol + 1, norm, ctx.mergeMap);
+  } else if (opType === 'cutTut' || opType === 'insTut' || opType === 'heatTut') {
+    // ТУТ-операции: норма = время × число отрезков (паяных концов) × партия + подгот.
+    // Без этой ветки уходили в else и писали сырое tOp без множителя.
+    const tOpMin   = (parseFloat(String(op.tOp   || '').replace(',', '.')) || 0) / 60;
+    const tPrepMin = (parseFloat(String(op.tPrep || '').replace(',', '.')) || 0) / 60;
+    const cnt      = (op.tutCount || 0) || 1;
+    const norm     = formatDecimalComma_(tOpMin * cnt * pQty + tPrepMin, 2);
+    writeSeqNum_(sheet, timeDataRows[0] + 1, colMap.seqCol, 0, ctx.mergeMap);
+    fillMergedCell_(sheet, timeDataRows[0] + 1, tNameCol + 1, singleName, ctx.mergeMap);
+    if (tNormCol >= 0) fillMergedCell_(sheet, timeDataRows[0] + 1, tNormCol + 1, norm, ctx.mergeMap);
+  } else if (isCoaxOp_(opType)) {
+    // Коакс: норма = время × число концов (op.units) × партия + подгот. Однолистовые
+    // операции (ТУТ/втулка/крышка/усадка) идут на оба конца за один лист → units=число
+    // сторон; по-сторонние (резка/разделка/пайка/корпус) — units=1.
+    const tOpMin   = (parseFloat(String(op.tOp   || '').replace(',', '.')) || 0) / 60;
+    const tPrepMin = (parseFloat(String(op.tPrep || '').replace(',', '.')) || 0) / 60;
+    const units    = Math.max(1, Number(op.units) || 1);
+    const norm     = formatDecimalComma_(tOpMin * units * pQty + tPrepMin, 2);
     writeSeqNum_(sheet, timeDataRows[0] + 1, colMap.seqCol, 0, ctx.mergeMap);
     fillMergedCell_(sheet, timeDataRows[0] + 1, tNameCol + 1, singleName, ctx.mergeMap);
     if (tNormCol >= 0) fillMergedCell_(sheet, timeDataRows[0] + 1, tNormCol + 1, norm, ctx.mergeMap);
@@ -1281,10 +1641,10 @@ function fillTwistFields_(sheet, ctx, config) {
 }
 
 // Заполняет маркеры «Зачистка А/B: Внести данные» длиной зачистки соответствующей
-// стороны (config.strip.lenA/lenB). Только реально зачищаемые стороны (strip.a/strip.b).
+// стороны (st.lenA/lenB). Только реально зачищаемые стороны (st.a/st.b).
 // Цель — ячейки с «зачистка» И «внести» (узко, чтобы не задеть описания/дефекты).
-function fillStripFields_(sheet, ctx, config) {
-  const st = config.strip || {};
+function fillStripFields_(sheet, ctx, st) {
+  st = st || {};
   for (let r = 0; r < ctx.values.length; r++) {
     const row = ctx.values[r] || [];
     for (let c = 0; c < row.length; c++) {
@@ -1332,31 +1692,57 @@ function fillTechCardStructurally_(sheet, op, opType, config, prevResult, thisRe
   const ctx    = makeSheetCtx_(sheet, sheetState);
   if (ctx.lastRow < 1) return;
   const colMap = detectGlobalColumns_(ctx.values);
-  const isCutWire = opType === 'cutWire';
-  const wires = isCutWire && Array.isArray(config.wires) && config.wires.length > 0 ? config.wires : null;
+  const isCutWire = isCutOp_(opType);
+  const wires = isCutWire && cutWiresOf_(op, config).length > 0 ? cutWiresOf_(op, config) : null;
 
   if (ctx.sections.kompRow >= 0)
     fillKompl_(sheet, ctx, colMap, op, config, wireData);
-  const isTermOp_ = ['prsTermA','insTermA','prsTermB','insTermB'].includes(opType);
+  const isTermOp_ = !!termKind_(op);
   // Коакс-резка (CUT_WIRE/CUT_TUT) — заготовка из сырья, входного полуфабриката нет:
   // первый «Полуфабрикат» — это уже выход (его заполнит fillSfOut_), вход не трогаем.
   const isCoaxCut_ = opType === 'coaxCut' || opType === 'coaxCutTut';
   if (ctx.sections.sfInRow >= 0 && (prevResult || isTermOp_) && !isCoaxCut_)
-    fillSfIn_(sheet, ctx, colMap, config, prevResult, opType, prevResultNorm);
+    fillSfIn_(sheet, ctx, colMap, config, prevResult, op, prevResultNorm);
   if (thisResult && (ctx.sections.sfOutRow >= 0 || ctx.sections.resultRow >= 0))
-    fillSfOut_(sheet, ctx, colMap, config, thisResult, opType, isLast);
+    fillSfOut_(sheet, ctx, colMap, config, thisResult, op, isLast);
   if (ctx.sections.timeRow >= 0)
     fillTime_(sheet, ctx, colMap, op, config, thisResult, opType, isLast);
   if (isCutWire && wires)
     fillDopusk_(sheet, ctx, wireData);
-  if (['prsTermA','insTermA','prsTermB','insTermB'].includes(opType) && terData)
+  if (termKind_(op) && terData)
     fillTerminalFields_(sheet, ctx, terData);
   if (opType === 'twist')
     fillTwistFields_(sheet, ctx, config);
   if (opType === 'cutWire' && config.strip)
-    fillStripFields_(sheet, ctx, config);
+    fillStripFields_(sheet, ctx, config.strip);
+  // Резка под двойной обжим — зачистка одного конца (CUT_WIRE+1strip), длина из БД.ТЕР.
+  if (opType === 'cutWireStrip' && op.strip)
+    fillStripFields_(sheet, ctx, op.strip);
   if (isCoaxOp_(opType))
     fillCoaxHeader_(sheet, ctx, config);
+  if (opType === 'coaxStrip')
+    fillCoaxDims_(sheet, ctx, config, op);
+}
+
+// Размеры разделки коакса в STRIP-карте: ячейка-метка D1-D3/L1-L3/L+/L- → значение из
+// матч-записи СТОРОНЫ операции (config.coax.sideA/sideB). «D1» → «1,3» (что есть что —
+// показывает диаграмма). Нет данных по метке → оставляем метку как есть.
+function fillCoaxDims_(sheet, ctx, config, op) {
+  const cx   = config.coax || {};
+  const side = op.side === 'B' ? (cx.sideB || {}) : (cx.sideA || {});
+  const map  = { 'D1': side.d1, 'D2': side.d2, 'D3': side.d3,
+                 'L1': side.l1, 'L2': side.l2, 'L3': side.l3,
+                 'L+': side.lPlus, 'L-': side.lMinus, 'L−': side.lMinus };
+  const vals = ctx.values;
+  for (let r = 0; r < vals.length; r++) {
+    for (let c = 0; c < vals[r].length; c++) {
+      const key = String(vals[r][c] || '').trim();
+      if (!Object.prototype.hasOwnProperty.call(map, key)) continue;
+      const val = map[key];
+      if (val == null || String(val).trim() === '') continue;
+      fillMergedCell_(sheet, r + 1, c + 1, String(val).replace('.', ','), ctx.mergeMap);
+    }
+  }
 }
 
 // Шапка коакс-карты: коакс-шаблоны не содержат {{плейсхолдеров}} — наименование изделия

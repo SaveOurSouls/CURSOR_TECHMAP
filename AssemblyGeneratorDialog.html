@@ -191,6 +191,34 @@
     }
     .qty-hint:empty { display: none; }
 
+    /* ── Endpoints (сторона = список разъёмов) ── */
+    .ep-card {
+      background: #fff; border: 1px solid #e2e8f0; border-left: 3px solid #2563EB;
+      border-radius: 8px; padding: 8px 10px; margin-bottom: 8px;
+    }
+    .ep-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+    .ep-badge {
+      display: inline-block; background: #eff6ff; color: #1d4ed8;
+      font-size: 12px; font-weight: 700; padding: 1px 9px; border-radius: 10px;
+    }
+    .ep-method { display: flex; align-items: center; gap: 14px; margin: 5px 0 6px; font-size: 12px; font-weight: 600; }
+    .ep-method label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+    .ep-method input { width: auto; }
+    .ep-auto {
+      font-size: 10px; font-weight: 700; color: #64748b; background: #f1f5f9;
+      padding: 1px 6px; border-radius: 8px; text-transform: uppercase; letter-spacing: .04em;
+    }
+    .ep-sdr { font-size: 12px; color: #065f46; background: #ecfdf5; border: 1px solid #a7f3d0;
+              border-radius: 6px; padding: 6px 8px; margin: 2px 0; }
+    .ep-sdr-warn { color: #b45309; background: #fffbeb; border-color: #fcd34d; }
+    .ep-otp { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 12px; font-weight: 500; cursor: pointer; }
+    .ep-otp input { width: auto; }
+    .ep-route { display: flex; flex-wrap: wrap; gap: 5px 12px; margin-top: 3px; }
+    .ep-chip { display: flex; align-items: center; gap: 4px; font-size: 12px; cursor: pointer;
+               background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 2px 9px; }
+    .ep-chip input { width: auto; }
+    .ep-chip:has(input:checked) { background: #eff6ff; border-color: #93c5fd; color: #1d4ed8; font-weight: 600; }
+
     .wire-entry-simple {
       grid-template-columns: 1fr 60px 28px;
     }
@@ -277,64 +305,24 @@
   <button class="btn-add" onclick="addWire()">+ Добавить кабель</button>
 </div>
 
-<!-- ═══ СТОРОНА А ════════════════════════════════════════════ -->
-<h3>Сторона А — компоненты</h3>
-<div class="card">
-  <div class="row2">
-    <div class="field-group">
-      <label class="field-label">Терминал</label>
-      <select id="termSelectA"></select>
-      <div id="termQtyHintA" class="qty-hint"></div>
-    </div>
-    <div class="field-group">
-      <label class="field-label">Разъём / Корпус</label>
-      <select id="connSelectA"></select>
-      <div id="connQtyHintA" class="qty-hint"></div>
-    </div>
-  </div>
-  <div id="terPanelA" class="ter-panel" style="display:none">
-    <div class="ter-row">
-      <div class="ter-f"><label>L+, мм</label><input id="terLPlusA"  class="ter-inp" type="text" placeholder="—" oninput="onTerInput('A')" /></div>
-      <div class="ter-f"><label>L−, мм</label><input id="terLMinusA" class="ter-inp" type="text" placeholder="—" oninput="onTerInput('A')" /></div>
-      <div class="ter-f"><label>Шаг</label>   <input id="terStepA"   class="ter-inp" type="text" placeholder="—" oninput="onTerInput('A')" /></div>
-      <div class="ter-f wide"><label>Аппликатор</label><input id="terApplA" class="ter-inp" type="text" placeholder="—" oninput="onTerInput('A')" /></div>
-      <button id="terSaveA" class="btn-ter-save" style="display:none" onclick="saveTerPanel('A')">Записать в БД</button>
-    </div>
-  </div>
-  <label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:12px;font-weight:500;cursor:pointer"><input type="checkbox" id="otpA" onchange="refresh()" /> OTP — обжим без зачистки (провод даётся зачищенным)</label>
-</div>
+<!-- ═══ СТОРОНА А — РАЗЪЁМЫ ═══════════════════════════════════ -->
+<h3>Сторона А — разъёмы</h3>
+<div id="endpointsA"></div>
+<button class="btn-add" onclick="addEndpoint('A')">+ Разъём (сторона А)</button>
 
-<!-- ═══ СТОРОНА В (ОПЦИОНАЛЬНО) ══════════════════════════════ -->
-<div class="toggle-row">
+<!-- ═══ СТОРОНА В — РАЗЪЁМЫ (ОПЦИОНАЛЬНО) ═════════════════════ -->
+<h3 style="margin-top:14px">Сторона В — разъёмы</h3>
+<div id="endpointsB"></div>
+<button class="btn-add" onclick="addEndpoint('B')">+ Разъём (сторона В)</button>
+
+<!-- Скрытый мост в старую модель sideA/sideB: значения зеркалят первый обжимной
+     эндпоинт стороны; читаются getActiveOps/buildConfig/computeStripSides_ (стадии 3-4
+     перепишут цепочку напрямую и мост уйдёт). -->
+<div style="display:none" aria-hidden="true">
+  <select id="termSelectA"></select><select id="connSelectA"></select>
+  <select id="termSelectB"></select><select id="connSelectB"></select>
   <input type="checkbox" id="sideBEnabled" />
-  <label for="sideBEnabled">Включить сторону В</label>
-</div>
-<div id="sideBBlock" style="display:none">
-  <h3>Сторона В — компоненты</h3>
-  <div class="card">
-    <div class="row2">
-      <div class="field-group">
-        <label class="field-label">Терминал</label>
-        <select id="termSelectB"></select>
-        <div id="termQtyHintB" class="qty-hint"></div>
-      </div>
-      <div class="field-group">
-        <label class="field-label">Разъём / Корпус</label>
-        <select id="connSelectB"></select>
-        <div id="connQtyHintB" class="qty-hint"></div>
-      </div>
-    </div>
-    <div id="terPanelB" class="ter-panel" style="display:none">
-      <div class="ter-row">
-        <div class="ter-f"><label>L+, мм</label><input id="terLPlusB"  class="ter-inp" type="text" placeholder="—" oninput="onTerInput('B')" /></div>
-        <div class="ter-f"><label>L−, мм</label><input id="terLMinusB" class="ter-inp" type="text" placeholder="—" oninput="onTerInput('B')" /></div>
-        <div class="ter-f"><label>Шаг</label>   <input id="terStepB"   class="ter-inp" type="text" placeholder="—" oninput="onTerInput('B')" /></div>
-        <div class="ter-f wide"><label>Аппликатор</label><input id="terApplB" class="ter-inp" type="text" placeholder="—" oninput="onTerInput('B')" /></div>
-        <button id="terSaveB" class="btn-ter-save" style="display:none" onclick="saveTerPanel('B')">Записать в БД</button>
-      </div>
-    </div>
-    <label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:12px;font-weight:500;cursor:pointer"><input type="checkbox" id="otpB" onchange="refresh()" /> OTP — обжим без зачистки (провод даётся зачищенным)</label>
-  </div>
+  <input type="checkbox" id="otpA" /><input type="checkbox" id="otpB" />
 </div>
 
 <!-- ═══ СВИВКА (TWIST, ОПЦИОНАЛЬНО) ══════════════════════════ -->
@@ -393,13 +381,17 @@
       <label class="field-label">Длина кабеля по чертежу, мм</label>
       <input type="number" id="coaxLen" min="1" placeholder="—" oninput="renderOpsCard()" />
     </div>
+    <div class="field-group" style="margin-top:8px">
+      <label class="field-label">Длина ТУТ, мм</label>
+      <input type="number" id="coaxTutLen" min="1" placeholder="—" oninput="renderOpsCard()" />
+    </div>
   </div>
 
-  <h3>Сторона А — разъём</h3>
+  <h3>Сторона А — разъём (из BOM)</h3>
   <div class="card">
     <div class="field-group">
-      <label class="field-label">Разъём (БД.КОАКС)</label>
-      <select id="coaxConnA" onchange="onCoaxConnChange('A')"></select>
+      <label class="field-label">Разъём (из BOM)</label>
+      <div id="coaxConnALabel" style="font-weight:600;padding:6px 0">—</div>
     </div>
     <div class="field-group" style="margin-top:8px">
       <label class="field-label">Тип пина</label>
@@ -408,19 +400,34 @@
         <option value="внутри корпуса">пайка внутри корпуса</option>
       </select>
     </div>
+    <div class="field-group" id="coaxCoverRowA" style="margin-top:8px;display:none">
+      <label class="field-label">Крышка (угловой разъём)</label>
+      <select id="coaxCoverA" onchange="renderOpsCard()">
+        <option value="">без крышки</option>
+        <option value="обжим">крышка обжим</option>
+        <option value="винт">крышка винт</option>
+      </select>
+    </div>
     <div id="coaxInfoA" class="qty-hint" style="margin-top:6px"></div>
+    <div id="coaxAddDbA" style="display:none;margin-top:8px;padding:8px;border:1px dashed #e0a800;border-radius:6px;background:#fff8e1">
+      <div class="qty-hint" style="margin-bottom:6px">Нет в БД.КОАКС — введите размеры и добавьте:</div>
+      <div class="field-group"><label class="field-label">Тип/Серия</label><input id="addType_A" placeholder="напр. SMA-male R/A" /></div>
+      <div class="field-group" style="margin-top:6px"><label class="field-label">Провод</label><input id="addWire_A" /></div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:6px">
+        <input id="addD1_A" placeholder="D1" /><input id="addD2_A" placeholder="D2" /><input id="addD3_A" placeholder="D3" />
+        <input id="addL1_A" placeholder="L1" /><input id="addL2_A" placeholder="L2" /><input id="addL3_A" placeholder="L3" />
+        <input id="addLp_A" placeholder="L+" /><input id="addLm_A" placeholder="L-" />
+      </div>
+      <button type="button" onclick="saveCoaxToDb('A', this)" style="margin-top:8px">➕ Добавить в БД.КОАКС</button>
+    </div>
   </div>
 
-  <div class="toggle-row">
-    <input type="checkbox" id="coaxSideBEnabled" onchange="onCoaxSideBToggle()" />
-    <label for="coaxSideBEnabled">Включить сторону B</label>
-  </div>
   <div id="coaxSideBBlock" style="display:none">
-    <h3>Сторона B — разъём</h3>
+    <h3>Сторона B — разъём (из BOM)</h3>
     <div class="card">
       <div class="field-group">
-        <label class="field-label">Разъём (БД.КОАКС)</label>
-        <select id="coaxConnB" onchange="onCoaxConnChange('B')"></select>
+        <label class="field-label">Разъём (из BOM)</label>
+        <div id="coaxConnBLabel" style="font-weight:600;padding:6px 0">—</div>
       </div>
       <div class="field-group" style="margin-top:8px">
         <label class="field-label">Тип пина</label>
@@ -429,15 +436,39 @@
           <option value="внутри корпуса">пайка внутри корпуса</option>
         </select>
       </div>
+      <div class="field-group" id="coaxCoverRowB" style="margin-top:8px;display:none">
+        <label class="field-label">Крышка (угловой разъём)</label>
+        <select id="coaxCoverB" onchange="renderOpsCard()">
+          <option value="">без крышки</option>
+          <option value="обжим">крышка обжим</option>
+          <option value="винт">крышка винт</option>
+        </select>
+      </div>
       <div id="coaxInfoB" class="qty-hint" style="margin-top:6px"></div>
+      <div id="coaxAddDbB" style="display:none;margin-top:8px;padding:8px;border:1px dashed #e0a800;border-radius:6px;background:#fff8e1">
+        <div class="qty-hint" style="margin-bottom:6px">Нет в БД.КОАКС — введите размеры и добавьте:</div>
+        <div class="field-group"><label class="field-label">Тип/Серия</label><input id="addType_B" placeholder="напр. SMA-male R/A" /></div>
+        <div class="field-group" style="margin-top:6px"><label class="field-label">Провод</label><input id="addWire_B" /></div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:6px">
+          <input id="addD1_B" placeholder="D1" /><input id="addD2_B" placeholder="D2" /><input id="addD3_B" placeholder="D3" />
+          <input id="addL1_B" placeholder="L1" /><input id="addL2_B" placeholder="L2" /><input id="addL3_B" placeholder="L3" />
+          <input id="addLp_B" placeholder="L+" /><input id="addLm_B" placeholder="L-" />
+        </div>
+        <button type="button" onclick="saveCoaxToDb('B', this)" style="margin-top:8px">➕ Добавить в БД.КОАКС</button>
+      </div>
     </div>
+  </div>
+
+  <div id="coaxStripBRow" class="toggle-row" style="display:none">
+    <input type="checkbox" id="coaxStripBEnabled" onchange="renderOpsCard()" />
+    <label for="coaxStripBEnabled">Зачистка стороны B (голый конец кабеля)</label>
   </div>
 
   <h3>Экран</h3>
   <div class="card">
     <div class="field-group">
       <label class="field-label">Тип экрана (на сборку)</label>
-      <select id="coaxShield" onchange="renderOpsCard()">
+      <select id="coaxShield" onchange="onCoaxShieldChange()">
         <option value="обжим">обжим (опрессовка втулки)</option>
         <option value="пайка">пайка экрана</option>
       </select>
@@ -466,10 +497,10 @@
   const selectedTemplates = {}; // opKey → templateId (persists across re-renders)
   const manualTemplates   = new Set(); // opKeys where user manually picked a template
 
-  // ── TER panel state ──────────────────────────────────────────
-  const _terOrig       = { A: {}, B: {} }; // values from DB
-  const _terDirty      = { A: false, B: false };
-  const _terCurrentArt = { A: '', B: '' };  // article currently shown
+  // ── TER panel state (keyed by endpoint id) ───────────────────
+  const _terOrig       = {}; // epId → values from DB
+  const _terDirty      = {}; // epId → user is editing
+  const _terCurrentArt = {}; // epId → article currently shown
 
   // ── Article normalization ─────────────────────────────────────
   // Strips separators so "SSHL-002T-P0.2", "SSHL 002T P0.2", "SSHL002TP02" all match.
@@ -514,6 +545,19 @@
   // Wire entries state
   let wireEntries = [];   // [{idx, compId, length, qty}]
   let nextWireIdx = 0;
+
+  // BOM-списки терминалов/разъёмов (для селектов эндпоинтов и моста). Заполняются в
+  // populateComponentSelects.
+  let _bomTerms = [];
+  let _bomConns = [];
+
+  // Endpoints state (межплатная, новая модель: сторона = список разъёмов).
+  // Эндпоинт = разъём на стороне A/B: { id, side, connId, method:'crimp'|'solder',
+  //   methodAuto, sdrTmpl, termId, wireIdxs:[активные индексы кабелей], otp }.
+  // Единый источник правды; старые getActiveOps/buildConfig читают через мост
+  // firstCrimpEndpoint_ пока стадии 3-4 не перепишут цепочку напрямую.
+  let endpoints = [];
+  let nextEndpointId = 0;
   let advancedLengthMode = false;
   let activeTab = 'inter';   // 'inter' (межплатная) | 'coax' (коакс)
   let sharedLength = 0;   // actual cut length used in buildConfig
@@ -526,17 +570,7 @@
     renderAssemblyInfo();
     renderSpyTable();
     populateComponentSelects();
-    populateCoaxSelects();
-
-    document.getElementById('sideBEnabled').addEventListener('change', () => {
-      const on = document.getElementById('sideBEnabled').checked;
-      document.getElementById('sideBBlock').style.display = on ? '' : 'none';
-      // Лужение предлагаем только когда стороны В нет — прячем и снимаем при включении В.
-      const tinCb = document.getElementById('tinEnabled');
-      if (on && tinCb.checked) tinCb.checked = false;
-      document.getElementById('tinToggleRow').style.display = on ? 'none' : '';
-      refresh();
-    });
+    setupCoaxFromBom();
 
     document.getElementById('tinEnabled').addEventListener('change', () => {
       document.getElementById('tinBlock').style.display =
@@ -554,27 +588,32 @@
       refresh();
     });
 
-    ['termSelectA','connSelectA','termSelectB','connSelectB'].forEach(id => {
-      document.getElementById(id).addEventListener('change', () => {
-        // При смене терминала сбрасываем только авто-выбранные шаблоны (не ручные),
-        // чтобы autoPickTemplate пересчитал шаг для нового терминала.
-        if (id === 'termSelectA') {
-          ['prsTermA','insTermA'].forEach(k => { if (!manualTemplates.has(k)) delete selectedTemplates[k]; });
-        }
-        if (id === 'termSelectB') {
-          ['prsTermB','insTermB'].forEach(k => { if (!manualTemplates.has(k)) delete selectedTemplates[k]; });
-        }
-        refresh();
-      });
-    });
-
     autoFillAllWires();
     maybeAutoEnableTwist();
+
+    // Автодетект коакса: если в BOM коаксиал — сразу открываем вкладку КОАКС.
+    if (isCoaxAssembly_()) switchGenTab('coax');
+  }
+
+  // Сборка коаксиальная? Сильный сигнал — BOM-разъём найден в БД.КОАКС; иначе кабель с
+  // коакс-маркерами (коакс/coax/RG-…) или совпадающий с проводом записи БД.КОАКС.
+  function isCoaxAssembly_() {
+    if (coaxSides.A && matchCoaxRec_(coaxSides.A.art, '', '')) return true;
+    if (coaxSides.B && matchCoaxRec_(coaxSides.B.art, '', '')) return true;
+    const recWires = new Set((D.coaxRecords || []).map(r => coaxNorm_(r.wire)).filter(Boolean));
+    const coaxRe = /коакс|coax|\bRG[\s-]?\d/i;
+    return (D.components || []).some(c => {
+      const blob = `${c.type || ''} ${c.name || ''} ${c.art || ''}`;
+      if (coaxRe.test(blob)) return true;
+      const n = coaxNorm_(c.art) || coaxNorm_(c.name);
+      return n && recWires.has(n);
+    });
   }
 
   function refresh() {
+    renderEndpoints();
+    syncLegacyBridge_();
     updateCutLength_();
-    renderQtyHints();
     renderTwistWires();
     renderTwistPairs();
     autofillTwistDia();
@@ -777,28 +816,204 @@
     refresh();
   }
 
-  function renderQtyHints() {
-    const numWires = wireEntries.filter(w => w.compId).length;
-    ['A','B'].forEach(side => {
-      const th      = document.getElementById(`termQtyHint${side}`);
-      const ch      = document.getElementById(`connQtyHint${side}`);
-      const termSel = document.getElementById(`termSelect${side}`);
-      const connSel = document.getElementById(`connSelect${side}`);
-      if (ch) { ch.textContent = (connSel && connSel.value) ? '1 шт (на сторону)' : ''; }
-      if (th) {
-        if (!termSel || !termSel.value) { th.textContent = ''; }
-        else {
-          const comp = getCompById(termSel.value);
-          const found = comp ? !!findTerRecord_(comp.art) : false;
-          th.textContent  = numWires > 0 ? `${numWires} шт` : '—';
-          th.style.color  = found ? '#065f46' : '#b45309';
-        }
-      }
-      updateTerPanel(side);
-    });
+  // ── Endpoints (сторона = список разъёмов) ────────────────────
+  const sideRu_ = s => (s === 'B' ? 'В' : 'А');
+  function activeWires_() { return wireEntries.filter(w => w.compId); }
+  function epById_(id) { return endpoints.find(e => e.id === id) || null; }
+
+  // Стабильные wire.idx, маршрутизированные в эндпоинт (пусто = все активные).
+  function routedWireIdxs_(ep) {
+    const allIdx = activeWires_().map(w => w.idx);
+    if (!ep.wireIdxs || !ep.wireIdxs.length) return allIdx.slice();
+    const set = new Set(ep.wireIdxs);
+    return allIdx.filter(i => set.has(i));
   }
 
-  // ── TER panel ────────────────────────────────────────────────
+  function renderEndpoints() {
+    ['A','B'].forEach(side => {
+      const host = document.getElementById('endpoints' + side);
+      if (!host) return;
+      const eps = endpointsOnSide_(side);
+      host.innerHTML = eps.length
+        ? eps.map(buildEndpointCard_).join('')
+        : '<div style="color:#a0aec0;font-size:12px;padding:2px 0 6px">Разъёмов нет — добавьте кнопкой ниже</div>';
+    });
+    // terPanel обжимных эндпоинтов — после вставки разметки (грузит данные из БД.ТЕР).
+    endpoints.forEach(ep => { if (ep.method === 'crimp' && ep.termId) updateEpTerPanel(ep.id); });
+  }
+
+  function buildEndpointCard_(ep) {
+    const ord  = endpointOrdinal_(ep);
+    const tag  = sideRu_(ep.side) + ord;
+    const crimp = ep.method === 'crimp';
+    const sdr  = ep.sdrTmpl;
+    const numRouted = routedWireIdxs_(ep).length;
+    const termComp = ep.termId ? getCompById(ep.termId) : null;
+    const terFound = termComp ? !!findTerRecord_(termComp.art) : false;
+
+    const methodHtml = `
+      <div class="ep-method">
+        <label><input type="radio" name="m_${ep.id}" value="crimp" ${crimp ? 'checked' : ''}
+                 onchange="onEndpointMethod('${ep.id}','crimp')"> Обжим</label>
+        <label><input type="radio" name="m_${ep.id}" value="solder" ${crimp ? '' : 'checked'}
+                 onchange="onEndpointMethod('${ep.id}','solder')"> Пайка</label>
+        ${ep.methodAuto ? '<span class="ep-auto">авто</span>' : ''}
+      </div>`;
+
+    const crimpHtml = `
+      <div class="field-group">
+        <label class="field-label">Терминал</label>
+        <select onchange="onEndpointTermChange('${ep.id}', this.value)">${compOptions_(_bomTerms, ep.termId)}</select>
+        <div class="qty-hint" style="color:${terFound ? '#065f46' : '#b45309'}">${termComp ? numRouted + ' шт' : ''}</div>
+      </div>
+      <div class="ter-panel" id="terPanel_${ep.id}" style="display:none">
+        <div class="ter-row">
+          <div class="ter-f"><label>L+, мм</label><input id="terLPlus_${ep.id}"  class="ter-inp" type="text" placeholder="—" oninput="onEpTerInput('${ep.id}')" /></div>
+          <div class="ter-f"><label>L−, мм</label><input id="terLMinus_${ep.id}" class="ter-inp" type="text" placeholder="—" oninput="onEpTerInput('${ep.id}')" /></div>
+          <div class="ter-f"><label>Шаг</label>   <input id="terStep_${ep.id}"   class="ter-inp" type="text" placeholder="—" oninput="onEpTerInput('${ep.id}')" /></div>
+          <div class="ter-f wide"><label>Аппликатор</label><input id="terAppl_${ep.id}" class="ter-inp" type="text" placeholder="—" oninput="onEpTerInput('${ep.id}')" /></div>
+          <button id="terSave_${ep.id}" class="btn-ter-save" style="display:none" onclick="saveEpTerPanel('${ep.id}')">Записать в БД</button>
+        </div>
+      </div>
+      <label class="ep-otp"><input type="checkbox" ${ep.otp ? 'checked' : ''}
+        onchange="onEndpointOtp('${ep.id}', this.checked)" /> OTP — обжим без зачистки (провод даётся зачищенным)</label>
+      <label class="ep-otp"><input type="checkbox" ${ep.double ? 'checked' : ''}
+        onchange="onEndpointDouble('${ep.id}', this.checked)" /> Двойной обжим — 2 провода в 1 терминал (норма терминалов = пары)</label>`;
+
+    const solderHtml = (sdr
+      ? `<div class="ep-sdr">Паяльный разъём → шаблон <strong>${esc(sdr)}</strong></div>`
+      : `<div class="ep-sdr ep-sdr-warn">Тип не распознан — пайка без авто-шаблона (выберите вручную на стадии операций)</div>`)
+      + `<div class="ter-row">
+           <div class="ter-f"><label>Зачистка под пайку, мм</label>
+             <input type="text" value="${esc(ep.solderStrip || '')}" placeholder="напр. 5"
+                    oninput="onEndpointSolderStrip('${ep.id}', this.value)" /></div>
+           <div class="ter-f"><label>Длина ТУТ, мм</label>
+             <input type="text" value="${esc(ep.tutLen || '')}" placeholder="напр. 20"
+                    oninput="onEndpointTutLen('${ep.id}', this.value)" /></div>
+         </div>`;
+
+    return `
+      <div class="ep-card" id="epCard_${ep.id}">
+        <div class="ep-head">
+          <span class="ep-badge">${tag}</span>
+          <button class="btn-remove" title="Удалить разъём" onclick="removeEndpoint('${ep.id}')">×</button>
+        </div>
+        <div class="field-group">
+          <label class="field-label">Разъём / Корпус</label>
+          <select onchange="onEndpointConnChange('${ep.id}', this.value)">${compOptions_(_bomConns, ep.connId)}</select>
+        </div>
+        <div class="field-group">
+          <label class="field-label">Наименование по чертежу (для сложных сборок)</label>
+          <input type="text" value="${esc(ep.label || '')}" placeholder="напр. GIMBAL, NODE, PWR…"
+                 oninput="onEndpointLabel('${ep.id}', this.value)" />
+        </div>
+        ${methodHtml}
+        ${crimp ? crimpHtml : solderHtml}
+        ${routingChipsHtml_(ep)}
+      </div>`;
+  }
+
+  // Чипы роутинга — только когда на стороне ≥2 разъёмов (иначе все провода идут в один).
+  function routingChipsHtml_(ep) {
+    if (endpointsOnSide_(ep.side).length < 2) return '';
+    const active = activeWires_();
+    if (!active.length) return '';
+    const routed = new Set(routedWireIdxs_(ep));
+    const chips = active.map((w, pos) => {
+      const c   = getCompById(w.compId);
+      const lbl = `Кабель ${pos + 1}` + (c ? ` (${esc(c.art || c.name)})` : '');
+      return `<label class="ep-chip"><input type="checkbox" ${routed.has(w.idx) ? 'checked' : ''}
+        onchange="onRouteToggle('${ep.id}', ${w.idx})" /> ${lbl}</label>`;
+    }).join('');
+    return `<div class="field-group"><label class="field-label">Провода в этот разъём</label>
+      <div class="ep-route">${chips}</div></div>`;
+  }
+
+  function addEndpoint(side) {
+    endpoints.push({ id: 'e' + (nextEndpointId++), side, connId: '', method: 'crimp',
+                     methodAuto: true, sdrTmpl: null, termId: '', wireIdxs: [], otp: false, double: false, label: '', solderStrip: '', tutLen: '' });
+    refresh();
+  }
+  function removeEndpoint(id) {
+    endpoints = endpoints.filter(e => e.id !== id);
+    delete _terOrig[id]; delete _terDirty[id]; delete _terCurrentArt[id];
+    refresh();
+  }
+  function onEndpointConnChange(id, val) {
+    const ep = epById_(id); if (!ep) return;
+    ep.connId = val;
+    if (ep.methodAuto) {                      // авто-режим переопределяет способ по артикулу
+      const comp = val ? getCompById(val) : null;
+      const sdr  = comp ? detectSolderConn_(comp.art) : null;
+      ep.method  = sdr ? 'solder' : 'crimp';
+      ep.sdrTmpl = sdr;
+    }
+    refresh();
+  }
+  function onEndpointMethod(id, method) {
+    const ep = epById_(id); if (!ep) return;
+    ep.method = method; ep.methodAuto = false;
+    if (method === 'solder' && !ep.sdrTmpl) {
+      const comp = ep.connId ? getCompById(ep.connId) : null;
+      ep.sdrTmpl = comp ? detectSolderConn_(comp.art) : null;
+    }
+    refresh();
+  }
+  function onEndpointTermChange(id, val) {
+    const ep = epById_(id); if (!ep) return;
+    ep.termId = val;
+    // Смена терминала → сброс авто-выбранных шаблонов опрессовки/монтажа этого разъёма (пересчёт шага).
+    const ord = endpointOrdinal_(ep);
+    ['prs', 'ins'].forEach(k => { const ok = endpointOpKey_(ep.side, ord, k); if (!manualTemplates.has(ok)) delete selectedTemplates[ok]; });
+    refresh();
+  }
+  function onEndpointOtp(id, checked)    { const ep = epById_(id); if (ep) { ep.otp = checked; refresh(); } }
+  function onEndpointDouble(id, checked) { const ep = epById_(id); if (ep) { ep.double = checked; refresh(); } }
+  // Наименование по чертежу — без refresh (не терять фокус ввода); читается в buildConfig.
+  function onEndpointLabel(id, val)      { const ep = epById_(id); if (ep) ep.label = val; }
+  // Длина зачистки под пайку — с refresh (влияет на резку с разделкой), но через бридж без потери
+  // фокуса: обновляем стейт и пересобираем только карту операций.
+  function onEndpointSolderStrip(id, val) { const ep = epById_(id); if (ep) { ep.solderStrip = val; renderOpsCard(); } }
+  // Длина отрезка ТУТ на паяный конец — влияет на резку ТУТ (расход/размер); без потери фокуса.
+  function onEndpointTutLen(id, val) { const ep = epById_(id); if (ep) { ep.tutLen = val; renderOpsCard(); } }
+  function onRouteToggle(id, wIdx) {
+    const ep = epById_(id); if (!ep) return;
+    const routed = new Set(routedWireIdxs_(ep));
+    if (routed.has(wIdx)) routed.delete(wIdx); else routed.add(wIdx);
+    const allIdx = activeWires_().map(w => w.idx);
+    const allOn  = allIdx.length === routed.size && allIdx.every(i => routed.has(i));
+    ep.wireIdxs  = allOn ? [] : allIdx.filter(i => routed.has(i));   // [] = sentinel «все»
+    // Без ререндера: класс/состояние уже в DOM; bridge роутинг не читает (стадия 3+).
+  }
+
+  // ── Мост в старую модель sideA/sideB ─────────────────────────
+  // Первый обжимной эндпоинт стороны зеркалится в скрытые селекты, которые читают
+  // getActiveOps/buildConfig/computeStripSides_. Стадии 3-4 перепишут цепочку под N
+  // эндпоинтов и мост уйдёт.
+  function syncLegacyBridge_() {
+    // Зеркалим первый обжимной эндпоинт стороны в скрытые селекты — их читают
+    // computeStripSides_/getLengthAdjustment_ (пред-зачистка/длина реза). Авто-шаблоны
+    // сбрасываются по-эндпоинтно в onEndpointTermChange, здесь — только значения.
+    ['A','B'].forEach(side => {
+      const ep   = firstCrimpEndpoint_(side);
+      const ts = document.getElementById('termSelect' + side);
+      const cs = document.getElementById('connSelect' + side);
+      if (ts) ts.value = ep ? ep.termId : '';
+      if (cs) cs.value = ep ? ep.connId : '';
+      const otp = document.getElementById('otp' + side);
+      if (otp) otp.checked = !!(ep && ep.otp);
+    });
+    // sideBEnabled = есть ли разъёмы на стороне B; лужение доступно только без стороны B.
+    const hasB = endpointsOnSide_('B').length > 0;
+    const cb = document.getElementById('sideBEnabled');
+    if (cb) cb.checked = hasB;
+    const tinCb = document.getElementById('tinEnabled');
+    if (hasB && tinCb && tinCb.checked) { tinCb.checked = false; document.getElementById('tinBlock').style.display = 'none'; }
+    const tinRow = document.getElementById('tinToggleRow');
+    if (tinRow) tinRow.style.display = hasB ? 'none' : '';
+  }
+
+  // ── TER panel (per-endpoint) ─────────────────────────────────
   const _TER_FIELDS = [
     { key: 'lPlus',      sfx: 'LPlus'  },
     { key: 'lMinus',     sfx: 'LMinus' },
@@ -806,18 +1021,18 @@
     { key: 'applicator', sfx: 'Appl'   },
   ];
 
-  function updateTerPanel(side) {
-    const panel   = document.getElementById(`terPanel${side}`);
-    const termSel = document.getElementById(`termSelect${side}`);
+  function updateEpTerPanel(epId) {
+    const panel = document.getElementById(`terPanel_${epId}`);
     if (!panel) return;
-    const comp = termSel ? getCompById(termSel.value) : null;
-    if (!comp) { panel.style.display = 'none'; _terCurrentArt[side] = ''; return; }
+    const ep   = epById_(epId);
+    const comp = ep && ep.termId ? getCompById(ep.termId) : null;
+    if (!comp) { panel.style.display = 'none'; _terCurrentArt[epId] = ''; return; }
 
-    const artChanged = _terCurrentArt[side] !== (comp.art || '');
-    if (!artChanged && _terDirty[side]) return; // user is editing — don't reset
+    const artChanged = _terCurrentArt[epId] !== (comp.art || '');
+    if (!artChanged && _terDirty[epId]) return; // user is editing — don't reset
 
-    _terCurrentArt[side] = comp.art || '';
-    _terDirty[side] = false;
+    _terCurrentArt[epId] = comp.art || '';
+    _terDirty[epId] = false;
 
     const terRec = findTerRecord_(comp.art);
     const vals = {
@@ -826,44 +1041,44 @@
       step:       terRec ? (terRec.step       || '') : '',
       applicator: terRec ? (terRec.applicator || '') : '',
     };
-    _terOrig[side] = { ...vals };
+    _terOrig[epId] = { ...vals };
 
     _TER_FIELDS.forEach(({ key, sfx }) => {
-      const inp = document.getElementById(`ter${sfx}${side}`);
+      const inp = document.getElementById(`ter${sfx}_${epId}`);
       if (!inp) return;
       inp.value = vals[key];
       inp.className = 'ter-inp ' + (vals[key] ? 'ter-inp-found' : 'ter-inp-missing');
     });
 
     panel.style.display = '';
-    document.getElementById(`terSave${side}`).style.display = 'none';
+    document.getElementById(`terSave_${epId}`).style.display = 'none';
   }
 
-  function onTerInput(side) {
-    _terDirty[side] = true;
+  function onEpTerInput(epId) {
+    _terDirty[epId] = true;
     let hasChange = false;
+    const orig = _terOrig[epId] || {};
     _TER_FIELDS.forEach(({ key, sfx }) => {
-      const inp = document.getElementById(`ter${sfx}${side}`);
+      const inp = document.getElementById(`ter${sfx}_${epId}`);
       if (!inp) return;
-      const cur  = inp.value.trim();
-      const orig = _terOrig[side][key] || '';
-      if (cur !== orig) hasChange = true;
-      inp.className = 'ter-inp ' + (cur !== orig ? 'ter-inp-dirty' : cur ? 'ter-inp-found' : 'ter-inp-missing');
+      const cur = inp.value.trim();
+      if (cur !== (orig[key] || '')) hasChange = true;
+      inp.className = 'ter-inp ' + (cur !== (orig[key] || '') ? 'ter-inp-dirty' : cur ? 'ter-inp-found' : 'ter-inp-missing');
     });
-    const btn = document.getElementById(`terSave${side}`);
+    const btn = document.getElementById(`terSave_${epId}`);
     if (btn) btn.style.display = hasChange ? '' : 'none';
   }
 
-  function saveTerPanel(side) {
-    const termSel = document.getElementById(`termSelect${side}`);
-    const comp = termSel ? getCompById(termSel.value) : null;
+  function saveEpTerPanel(epId) {
+    const ep   = epById_(epId);
+    const comp = ep && ep.termId ? getCompById(ep.termId) : null;
     if (!comp) return;
     const data = {};
     _TER_FIELDS.forEach(({ key, sfx }) => {
-      const inp = document.getElementById(`ter${sfx}${side}`);
+      const inp = document.getElementById(`ter${sfx}_${epId}`);
       if (inp) data[key] = inp.value.trim();
     });
-    const btn = document.getElementById(`terSave${side}`);
+    const btn = document.getElementById(`terSave_${epId}`);
     btn.textContent = 'Сохраняю…'; btn.disabled = true;
     const doSave = (extra) => {
       const payload = extra ? { ...data, ...extra } : data;
@@ -877,7 +1092,7 @@
             }
             return;
           }
-          // S3: сервер нашёл строку только по неточному совпадению — подтверждаем,
+          // Сервер нашёл строку только по неточному совпадению — подтверждаем,
           // в какую именно строку пишем, прежде чем затирать данные источника.
           if (result && result.needsConfirm) {
             btn.textContent = 'Записать в БД'; btn.disabled = false;
@@ -892,9 +1107,9 @@
           }
           btn.textContent = result && result.added ? '✓ Добавлено в БД' : '✓ Готово';
           setTimeout(() => { btn.style.display = 'none'; btn.textContent = 'Записать в БД'; btn.disabled = false; }, 2500);
-          _terOrig[side] = { ...data }; _terDirty[side] = false;
-          _terCurrentArt[side] = ''; // force re-render from fresh DB
-          updateTerPanel(side);
+          _terOrig[epId] = { ...data }; _terDirty[epId] = false;
+          _terCurrentArt[epId] = ''; // force re-render from fresh DB
+          updateEpTerPanel(epId);
         })
         .withFailureHandler(err => {
           btn.textContent = '⚠ ' + (err.message || 'Ошибка'); btn.disabled = false;
@@ -952,38 +1167,30 @@
     return 'badge-other';
   }
 
-  // ── Component selects (side A & B) ───────────────────────────
+  // ── Component selects + endpoint seeding ─────────────────────
   function populateComponentSelects() {
-    const terms = getByTypes(['терминал', 'terminal', 'контакт']);
-    const conns = getByTypes(['соед', 'conn', 'разъ', 'корпус', 'housing']);
+    _bomTerms = getByTypes(['терминал', 'terminal', 'контакт']);
+    _bomConns = getByTypes(['соед', 'conn', 'разъ', 'корпус', 'housing']);
 
+    // Скрытый мост: наполняем опции старых селектов (значения проставит syncLegacyBridge_).
     const noneOpt  = '<option value="">— нет —</option>';
-    // Артикул + кол-во без ГРН-префикса (название/ГРН — бесполезный номер вроде «2»).
     const optHtml = c => `<option value="${c.id}">${esc(c.art || c.name)}</option>`;
-    const termOpts = noneOpt + terms.map(optHtml).join('');
-    const connOpts = noneOpt + conns.map(optHtml).join('');
-
+    const termOpts = noneOpt + _bomTerms.map(optHtml).join('');
+    const connOpts = noneOpt + _bomConns.map(optHtml).join('');
     ['termSelectA','termSelectB'].forEach(id => document.getElementById(id).innerHTML = termOpts);
     ['connSelectA','connSelectB'].forEach(id => document.getElementById(id).innerHTML = connOpts);
 
-    // ── Авто-определение сторон из BOM ──────────────────────────
-    // Число сторон определяется по заложенным разъёмам: один разъём с кол-вом
-    // ×2 ЛИБО два разных разъёма → две стороны. Порядок компонентов в
-    // спецификации не важен. Чекбокс «Сторона В» остаётся ручным override.
-    const totalConnQty = conns.reduce((s, c) => s + (Number(c.qty) || 1), 0);
-    const twoSides = conns.length >= 2 || totalConnQty >= 2;
+    // Сидинг эндпоинтов из BOM (правило сторон — внутри seedEndpointsFromBom_).
+    const seeded = seedEndpointsFromBom_(_bomConns, _bomTerms);
+    endpoints = seeded.endpoints;
+    nextEndpointId = endpoints.length;   // далее addEndpoint берёт уникальные id
+  }
 
-    const setSel = (id, comp) => { if (comp) document.getElementById(id).value = comp.id; };
-    setSel('termSelectA', terms[0]);
-    setSel('connSelectA', conns[0]);
-    // Сторона B: второй разъём если он есть, иначе тот же (зеркало для ×2);
-    // терминал — второй если есть, иначе тот же.
-    setSel('termSelectB', terms[1] || terms[0]);
-    setSel('connSelectB', conns[1] || conns[0]);
-
-    const cb = document.getElementById('sideBEnabled');
-    cb.checked = twoSides;
-    document.getElementById('sideBBlock').style.display = twoSides ? '' : 'none';
+  // Опции <select> терминала/разъёма для карты эндпоинта.
+  function compOptions_(list, selId) {
+    return '<option value="">— нет —</option>' + list.map(c =>
+      `<option value="${c.id}"${c.id === selId ? ' selected' : ''}>${esc(c.art || c.name)}</option>`
+    ).join('');
   }
 
   // ── Wire list ─────────────────────────────────────────────────
@@ -1181,9 +1388,10 @@
     const normas   = wires.map(w => Number(w.qty) || 0).filter(v => v > 0);
     const baseNorma = normas.length ? Math.min.apply(null, normas) : 0;
     wires.forEach(wire => {
+      const normaM = Number(wire.qty) || 0;
+      if (normaM <= 0) return;   // норма 0 → позиция не используется, не выводим
       const idx    = nextWireIdx++;
       const length = wire.length > 0 ? wire.length : asmLen;
-      const normaM = Number(wire.qty) || 0;
       const qty    = wireQtyFromNorma_(normaM, baseNorma);
       wireEntries.push({ idx, compId: wire.id, length, qty });
     });
@@ -1218,7 +1426,7 @@
       const hit = (D.templates || []).find(t => re.test(String(t.title || '').split('|')[0]));
       if (hit) return hit.id;
     }
-    return autoPickTemplate(opSpec.opKey);
+    return autoPickTemplate(opSpec);
   }
 
   // ── КОАКС ─────────────────────────────────────────────────────
@@ -1231,86 +1439,243 @@
     renderOpsCard();
   }
 
-  function coaxRecByIdx(v) {
-    const i = parseInt(v, 10);
-    return (D.coaxRecords || [])[i] || null;
-  }
+  // ── КОАКС: разъёмы берутся из BOM, запись БД.КОАКС матчится по «Артикул разъёма» ──
+  let coaxSides = { A: null, B: null };   // {art} на сторону, выведено из BOM
 
-  function coaxOptionLabel_(r) {
-    return r.article || [r.type, r.wire].filter(Boolean).join(' ') || '—';
-  }
+  function coaxNorm_(s) { return String(s || '').toLowerCase().replace(/\s+/g, ''); }
 
-  function populateCoaxSelects() {
-    const recs = D.coaxRecords || [];
-    const opts = '<option value="">— выбрать —</option>' +
-      recs.map((r, i) => `<option value="${i}">${esc(coaxOptionLabel_(r))}</option>`).join('');
-    ['coaxConnA', 'coaxConnB'].forEach(id => {
-      const sel = document.getElementById(id);
-      if (sel) sel.innerHTML = opts;
+  // Разъёмы из BOM (тип содержит «разъём»), развёрнутые по количеству.
+  function coaxBomConnectors_() {
+    const list = [];
+    (D.components || []).forEach(c => {
+      if (!/разъ[её]м/i.test(c.type || '')) return;
+      const q = Math.max(1, parseInt(c.qty, 10) || 1);
+      for (let i = 0; i < q; i++) list.push({ art: c.art || c.name || '', name: c.name || c.art || '' });
     });
+    return list;
   }
 
-  // Префилл «Тип пина»/«Тип экрана» из записи БД (если заполнено) + сводка размеров.
-  function onCoaxConnChange(side) {
-    const rec = coaxRecByIdx(document.getElementById('coaxConn' + side).value);
+  // Кабель из BOM (компонент целиком — для артикула И наименования).
+  function coaxBomCableComp_() {
+    return (D.components || []).find(x => /кабель|провод/i.test(x.type || '')) || null;
+  }
+  // Кабель из BOM — уточняет матч по проводу (строка art|name).
+  function coaxBomCable_() {
+    const c = coaxBomCableComp_();
+    return c ? (c.art || c.name || '') : '';
+  }
+
+  // ТУТ из BOM (для карты резки ТУТ).
+  function coaxBomTut_() {
+    return (D.components || []).find(x => /тут/i.test(x.type || '')) || null;
+  }
+
+  // Слоевые диаметры коакс-кабеля по проводу BOM из СПР.КАБ (автоподстановка D1-D3 в форму).
+  function coaxCableDiaLookup_() {
+    const t = (D.coaxCableDia && D.coaxCableDia.byCable) || {};
+    const key = String(coaxBomCable_()).toLowerCase().replace(/[\s-]/g, '');
+    return t[key] || null;
+  }
+
+  // Запись БД.КОАКС: артикул разъёма из BOM == колонка «Артикул разъёма» ИЛИ «Артикул»
+  // (юзер заполняет любую из двух — обе считаются ключом). + провод/pin/экран как фильтры.
+  function matchCoaxRec_(art, pin, shield) {
+    if (!art) return null;
+    const a = coaxNorm_(art);
+    let cands = (D.coaxRecords || []).filter(r => coaxNorm_(r.connArticle) === a || coaxNorm_(r.article) === a);
+    if (!cands.length) return null;
+    const cable = coaxBomCable_();
+    if (cable) { const w = cands.filter(r => coaxNorm_(r.wire) === coaxNorm_(cable)); if (w.length) cands = w; }
+    if (pin) { const p = cands.filter(r => r.pinType && coaxNorm_(r.pinType).indexOf(coaxNorm_(pin)) >= 0); if (p.length) cands = p; }
+    if (shield) { const sf = cands.filter(r => r.shieldType && coaxNorm_(r.shieldType).indexOf(coaxNorm_(shield)) >= 0); if (sf.length) cands = sf; }
+    return cands[0] || null;
+  }
+
+  // Запись стороны с учётом выбранного pin (сторона) + экран (общий).
+  function coaxRecForSide_(side) {
+    if (!coaxSides[side]) return null;
+    const pin = (document.getElementById('coaxPin' + side) || {}).value || '';
+    const shield = (document.getElementById('coaxShield') || {}).value || '';
+    return matchCoaxRec_(coaxSides[side].art, pin, shield);
+  }
+
+  // Авто-настройка сторон из BOM: 1 разъём → A; ≥2 → A+B.
+  function setupCoaxFromBom() {
+    const conns = coaxBomConnectors_();
+    coaxSides.A = conns[0] ? { art: conns[0].art, name: conns[0].name } : null;
+    coaxSides.B = conns.length >= 2 ? { art: conns[1].art, name: conns[1].name } : null;
+    const la = document.getElementById('coaxConnALabel');
+    if (la) la.textContent = coaxSides.A ? coaxSides.A.art : '— в BOM нет разъёма —';
+    const bBlock = document.getElementById('coaxSideBBlock');
+    if (bBlock) bBlock.style.display = coaxSides.B ? '' : 'none';
+    const lb = document.getElementById('coaxConnBLabel');
+    if (lb && coaxSides.B) lb.textContent = coaxSides.B.art;
+    // Опц. зачистка голого конца B — только при односторонней сборке.
+    const stripBRow = document.getElementById('coaxStripBRow');
+    if (stripBRow) stripBRow.style.display = coaxSides.B ? 'none' : '';
+    if (coaxSides.B) { const cb = document.getElementById('coaxStripBEnabled'); if (cb) cb.checked = false; }
+    onCoaxConnChange('A');
+    if (coaxSides.B) onCoaxConnChange('B');
+  }
+
+  // Статус матча + размеры для стороны; форма добавления в БД — когда разъёма нет.
+  function refreshCoaxInfo_(side) {
     const info = document.getElementById('coaxInfo' + side);
-    if (rec) {
-      const pinSel = document.getElementById('coaxPin' + side);
-      if (rec.pinType && /внутри/i.test(rec.pinType)) pinSel.value = 'внутри корпуса';
-      else if (rec.pinType) pinSel.value = 'пайка';
-      if (side === 'A' && rec.shieldType) {
-        const sh = document.getElementById('coaxShield');
-        sh.value = /пайк/i.test(rec.shieldType) ? 'пайка' : 'обжим';
+    const addForm = document.getElementById('coaxAddDb' + side);
+    const s = coaxSides[side];
+    const rec = s ? coaxRecForSide_(side) : null;
+    if (info) {
+      if (!s) info.textContent = '';
+      else if (rec) {
+        const dims = ['D1:' + (rec.d1 || '—'), 'D2:' + (rec.d2 || '—'), 'D3:' + (rec.d3 || '—'),
+                      'L1:' + (rec.l1 || '—'), 'L2:' + (rec.l2 || '—'), 'L3:' + (rec.l3 || '—')];
+        info.textContent = `✓ ${rec.type || ''} · ${rec.wire || ''} · ${dims.join(' ')}`;
+      } else {
+        info.textContent = `⚠ «${s.art}» нет в БД.КОАКС — добавьте ниже`;
       }
-      const dims = ['D1:' + (rec.d1 || '—'), 'D2:' + (rec.d2 || '—'), 'D3:' + (rec.d3 || '—'),
-                    'L1:' + (rec.l1 || '—'), 'L2:' + (rec.l2 || '—'), 'L3:' + (rec.l3 || '—')];
-      info.textContent = `${rec.wire || ''} · ${dims.join(' ')}`;
-    } else {
-      info.textContent = '';
     }
+    if (addForm) {
+      const show = !!s && !rec;
+      addForm.style.display = show ? '' : 'none';
+      if (show) {
+        const w = document.getElementById('addWire_' + side); if (w && !w.value) w.value = coaxBomCable_();
+        const dia = coaxCableDiaLookup_();   // D1-D3 из СПР.КАБ по проводу BOM
+        if (dia) ['1', '2', '3'].forEach(n => {
+          const el = document.getElementById('addD' + n + '_' + side);
+          if (el && !el.value && dia['d' + n]) el.value = String(dia['d' + n]).replace('.', ',');
+        });
+      }
+    }
+  }
+
+  // Сохранить введённый разъём в БД.КОАКС (когда BOM-разъёма нет в базе) → сразу матчится.
+  function saveCoaxToDb(side, btn) {
+    const s = coaxSides[side];
+    if (!s || !s.art) return;
+    const v = id => ((document.getElementById(id + '_' + side) || {}).value || '').trim();
+    const payload = {
+      connArticle: s.art,
+      type: v('addType'), wire: v('addWire') || coaxBomCable_(),
+      d1: v('addD1'), d2: v('addD2'), d3: v('addD3'),
+      l1: v('addL1'), l2: v('addL2'), l3: v('addL3'),
+      lPlus: v('addLp'), lMinus: v('addLm'),
+      pinType: (document.getElementById('coaxPin' + side) || {}).value || '',
+      shieldType: (document.getElementById('coaxShield') || {}).value || '',
+    };
+    if (btn) { btn.disabled = true; btn.textContent = 'Сохранение…'; }
+    google.script.run
+      .withSuccessHandler(rec => {
+        D.coaxRecords = (D.coaxRecords || []).concat([rec]);
+        if (btn) { btn.disabled = false; btn.textContent = '➕ Добавить в БД.КОАКС'; }
+        onCoaxConnChange(side);   // пере-матч → теперь найдётся
+      })
+      .withFailureHandler(e => {
+        if (btn) { btn.disabled = false; btn.textContent = '➕ Добавить в БД.КОАКС'; }
+        alert('Ошибка сохранения: ' + (e && e.message ? e.message : e));
+      })
+      .addCoaxRecordToDb(payload);
+  }
+
+  // Префилл pin/экран из записи (на авто-настройке) + статус.
+  function onCoaxConnChange(side) {
+    const s = coaxSides[side];
+    if (s) {
+      const rec = matchCoaxRec_(s.art, '', '');
+      if (rec) {
+        const pinSel = document.getElementById('coaxPin' + side);
+        if (pinSel && rec.pinType) pinSel.value = /внутри/i.test(rec.pinType) ? 'внутри корпуса' : 'пайка';
+        if (side === 'A' && rec.shieldType) {
+          const sh = document.getElementById('coaxShield');
+          if (sh) sh.value = /пайк/i.test(rec.shieldType) ? 'пайка' : 'обжим';
+        }
+      }
+    }
+    syncCoverRow_(side);
+    refreshCoaxInfo_(side);
     renderOpsCard();
   }
 
-  function onCoaxPinChange() { renderOpsCard(); }
-
-  function onCoaxSideBToggle() {
-    const on = document.getElementById('coaxSideBEnabled').checked;
-    document.getElementById('coaxSideBBlock').style.display = on ? '' : 'none';
-    renderOpsCard();
+  // Крышка — только для углового разъёма (пин «внутри корпуса», R/A). Иначе скрываем и сбрасываем.
+  function syncCoverRow_(side) {
+    const angled = (document.getElementById('coaxPin' + side) || {}).value === 'внутри корпуса';
+    const row = document.getElementById('coaxCoverRow' + side);
+    if (row) row.style.display = angled ? '' : 'none';
+    if (!angled) { const cov = document.getElementById('coaxCover' + side); if (cov) cov.value = ''; }
   }
+
+  function onCoaxPinChange(side) {
+    side = side || 'A';
+    syncCoverRow_(side);
+    refreshCoaxInfo_(side); renderOpsCard();
+  }
+
+  function onCoaxShieldChange() { refreshCoaxInfo_('A'); refreshCoaxInfo_('B'); renderOpsCard(); }
 
   // Цепочка коакс-операций: скелет + слоты ПИН (по стороне) и ЭКРАН (на сборку).
   // Сторона A = кириллица «А», B = латиница «B» (как в каталоге шаблонов).
   function getActiveOpsCoax_() {
-    const connA = coaxRecByIdx((document.getElementById('coaxConnA') || {}).value);
-    if (!connA) return [];
-    const sideB = document.getElementById('coaxSideBEnabled').checked;
-    const connB = sideB ? coaxRecByIdx(document.getElementById('coaxConnB').value) : null;
+    if (!coaxSides.A) return [];
+    const sideB = !!coaxSides.B;
     const pinA  = document.getElementById('coaxPinA').value;
     const pinB  = sideB ? document.getElementById('coaxPinB').value : '';
     const shield = document.getElementById('coaxShield').value;
     const pinHint = p => p === 'внутри корпуса' ? 'SDR_COAX_pin_R/A' : 'SDR_COAX_pin';
     const ops = [];
+    // Однолистовые операции (ТУТ/втулка/крышка/усадка) делаются на ОБА конца за один лист;
+    // время = время×число концов×партия. Число концов = число сторон (1 или 2).
+    const nSides = sideB ? 2 : 1;
+    const x = n => n > 1 ? ` ×${n}` : '';
 
     ops.push({ type: 'coaxCut',    opKey: 'coaxCut',    label: 'Резка кабеля', tmplHint: 'CUT_WIRE_auto' });
-    ops.push({ type: 'coaxCutTut', opKey: 'coaxCutTut', label: 'Резка ТУТ',    tmplHint: 'CUT_TUT_short' });
+    ops.push({ type: 'coaxCutTut', opKey: 'coaxCutTut', label: `Резка ТУТ${x(nSides)}`, units: nSides, tmplHint: 'CUT_TUT_short' });
     ops.push({ type: 'coaxStrip', side: 'A', opKey: 'coaxStripA', label: 'Разделка коаксиала (А)', tmplHint: 'STRIP_COAX_auto' });
-    if (sideB && connB) ops.push({ type: 'coaxStrip', side: 'B', opKey: 'coaxStripB', label: 'Разделка коаксиала (B)', tmplHint: 'STRIP_COAX_auto' });
-    ops.push({ type: 'coaxPin', side: 'A', opKey: 'coaxPinA', label: 'Пайка центрального контакта (А)', tmplHint: pinHint(pinA) });
-    if (sideB && connB) ops.push({ type: 'coaxPin', side: 'B', opKey: 'coaxPinB', label: 'Пайка центрального контакта (B)', tmplHint: pinHint(pinB) });
-    ops.push({ type: 'coaxInsTut',    opKey: 'coaxInsTut',    label: 'Монтаж ТУТ',           tmplHint: 'INS_TUT' });
-    ops.push({ type: 'coaxInsSleeve', opKey: 'coaxInsSleeve', label: 'Монтаж втулки экрана', tmplHint: 'INS_SLEEVE_coax' });
-    // Корпус — кроме сторон, где пин паяется внутри корпуса (R/A).
-    if (pinA !== 'внутри корпуса') ops.push({ type: 'coaxHousing', side: 'A', opKey: 'coaxHousingA', label: 'Монтаж корпуса (А)', tmplHint: 'INS_housing_COAX' });
-    if (sideB && connB && pinB !== 'внутри корпуса') ops.push({ type: 'coaxHousing', side: 'B', opKey: 'coaxHousingB', label: 'Монтаж корпуса (B)', tmplHint: 'INS_housing_COAX' });
+    if (sideB) ops.push({ type: 'coaxStrip', side: 'B', opKey: 'coaxStripB', label: 'Разделка коаксиала (B)', tmplHint: 'STRIP_COAX_auto' });
+    else if ((document.getElementById('coaxStripBEnabled') || {}).checked)
+      ops.push({ type: 'coaxStrip', side: 'B', opKey: 'coaxStripB', label: 'Зачистка стороны B (голый конец)', tmplHint: 'STRIP_COAX_auto' });
+    const pinOp    = (sd, pin) => ({ type: 'coaxPin', side: sd, opKey: 'coaxPin' + sd, label: `Пайка центрального контакта (${sd === 'B' ? 'B' : 'А'})`, tmplHint: pinHint(pin) });
+    const insTutOp = () => ({ type: 'coaxInsTut',    opKey: 'coaxInsTut',    label: `Монтаж ТУТ${x(nSides)}`,           units: nSides, tmplHint: 'INS_TUT' });
+    const sleeveOp = () => ({ type: 'coaxInsSleeve', opKey: 'coaxInsSleeve', label: `Монтаж втулки экрана${x(nSides)}`, units: nSides, tmplHint: 'INS_SLEEVE_coax' });
+    // Угловые двусторонние (оба пина «внутри корпуса»): ТУТ и втулку надеваем ПОКА вторая
+    // сторона открыта — иначе трубку через запаянный конец не продеть. Порядок:
+    //   пайка A → одеть ТУТ+втулку → пайка B → (обжать крышку/экран ниже).
+    // Втулка экрана (ферул) нужна ТОЛЬКО при обжимном экране — её и опрессовывают.
+    // При паяном экране (shield='пайка') экран паяется напрямую, ферула нет.
+    const hasSleeve = shield === 'обжим';
+    const bothAngled = sideB && pinA === 'внутри корпуса' && pinB === 'внутри корпуса';
+    if (bothAngled) {
+      ops.push(pinOp('A', pinA), insTutOp());
+      if (hasSleeve) ops.push(sleeveOp());
+      ops.push(pinOp('B', pinB));
+    } else {
+      ops.push(pinOp('A', pinA));
+      if (sideB) ops.push(pinOp('B', pinB));
+      ops.push(insTutOp());
+      if (hasSleeve) ops.push(sleeveOp());
+      // Корпус — для прямых разъёмов (у R/A пин паяется внутри корпуса, отдельного монтажа нет).
+      if (pinA !== 'внутри корпуса') ops.push({ type: 'coaxHousing', side: 'A', opKey: 'coaxHousingA', label: 'Монтаж корпуса (А)', tmplHint: 'INS_housing_COAX' });
+      if (sideB && pinB !== 'внутри корпуса') ops.push({ type: 'coaxHousing', side: 'B', opKey: 'coaxHousingB', label: 'Монтаж корпуса (B)', tmplHint: 'INS_housing_COAX' });
+    }
     // Экран (на сборку): пайка → SDR_COAX_housing по сторонам; обжим → один PRS_SLEEVE_coax.
     if (shield === 'пайка') {
       ops.push({ type: 'coaxSolderShield', side: 'A', opKey: 'coaxSolderShieldA', label: 'Пайка экрана (А)', tmplHint: 'SDR_COAX_housing' });
-      if (sideB && connB) ops.push({ type: 'coaxSolderShield', side: 'B', opKey: 'coaxSolderShieldB', label: 'Пайка экрана (B)', tmplHint: 'SDR_COAX_housing' });
+      if (sideB) ops.push({ type: 'coaxSolderShield', side: 'B', opKey: 'coaxSolderShieldB', label: 'Пайка экрана (B)', tmplHint: 'SDR_COAX_housing' });
     } else {
-      ops.push({ type: 'coaxShield', opKey: 'coaxShield', label: 'Опрессовка втулки экрана', tmplHint: 'PRS_SLEEVE_coax' });
+      ops.push({ type: 'coaxShield', opKey: 'coaxShield', label: `Опрессовка втулки экрана${x(nSides)}`, units: nSides, tmplHint: 'PRS_SLEEVE_coax' });
     }
-    ops.push({ type: 'coaxHeat', opKey: 'coaxHeat', label: 'Усадка ТУТ', tmplHint: 'HEAT_TYT_short' });
+    ops.push({ type: 'coaxHeat', opKey: 'coaxHeat', label: `Усадка ТУТ${x(nSides)}`, units: nSides, tmplHint: 'HEAT_TYT_short' });
+    // Крышка углового разъёма (пин «внутри корпуса») — ПОСЛЕДНЕЙ, после усадки ТУТ.
+    // Один лист на ТИП крышки (как ТУТ/втулка), время = ×число угловых сторон с этой крышкой.
+    // обжим → PRS_CAP, винт → INS_CAP.
+    const caps = {};   // 'обжим'|'винт' → число угловых сторон
+    [['A', pinA], ['B', sideB ? pinB : '']].forEach(([sd, pin]) => {
+      if (pin !== 'внутри корпуса') return;
+      const cover = (document.getElementById('coaxCover' + sd) || {}).value || '';
+      if (cover) caps[cover] = (caps[cover] || 0) + 1;
+    });
+    if (caps['обжим']) ops.push({ type: 'coaxCapCrimp', opKey: 'coaxCapCrimp', units: caps['обжим'],
+                                  label: `Монтаж крышки (обжим)${x(caps['обжим'])}`, tmplHint: 'PRS_CAP' });
+    if (caps['винт'])  ops.push({ type: 'coaxCapScrew', opKey: 'coaxCapScrew', units: caps['винт'],
+                                  label: `Монтаж крышки (винт)${x(caps['винт'])}`, tmplHint: 'INS_CAP' });
     return ops;
   }
 
@@ -1333,13 +1698,16 @@
       const e = entries.find(([k]) => pattern.test(k));
       return e ? String(e[1] ?? '') : '';
     };
-    const sideB = document.getElementById('coaxSideBEnabled').checked;
-    const connA = coaxRecByIdx(document.getElementById('coaxConnA').value);
-    const connB = sideB ? coaxRecByIdx(document.getElementById('coaxConnB').value) : null;
-    const mkSide = (rec, pinType) => rec ? {
-      article: rec.article, type: rec.type, wire: rec.wire, mfr: rec.mfr, program: rec.program,
-      d1: rec.d1, d2: rec.d2, d3: rec.d3, l1: rec.l1, l2: rec.l2, l3: rec.l3,
-      lPlus: rec.lPlus, lMinus: rec.lMinus, pinType: pinType,
+    const sideB = !!coaxSides.B;
+    const recA = coaxRecForSide_('A');
+    const recB = sideB ? coaxRecForSide_('B') : null;
+    // article = парт-номер из BOM; connName = ГРН из BOM; размеры/тип/провод — из БД.КОАКС.
+    const mkSide = (rec, art, pinType, connName) => art ? {
+      article: art, connName: connName || '',
+      type:  rec ? rec.type : '', wire: rec ? rec.wire : '', mfr: rec ? rec.mfr : '', program: rec ? rec.program : '',
+      d1: rec ? rec.d1 : '', d2: rec ? rec.d2 : '', d3: rec ? rec.d3 : '',
+      l1: rec ? rec.l1 : '', l2: rec ? rec.l2 : '', l3: rec ? rec.l3 : '',
+      lPlus: rec ? rec.lPlus : '', lMinus: rec ? rec.lMinus : '', pinType: pinType,
     } : null;
 
     const ops = getActiveOpsCoax_().map(opSpec => {
@@ -1347,6 +1715,7 @@
       return {
         type:       opSpec.type,
         side:       opSpec.side || '',
+        units:      opSpec.units || 1,   // число концов (ТУТ/втулка/крышка/усадка) → множитель времени
         templateId: (document.getElementById(`tmplSel_${opSpec.opKey}`) || {}).value || '',
         opNum:      matched ? (matched.opNumber || '') : '',
         tPrep:      (document.getElementById(`tPrep_${opSpec.opKey}`)    || {}).value || '',
@@ -1362,56 +1731,210 @@
       partQty:       parseDecimal_(findKey(/кол[- ]?во|количеств/i)) || 1,
       coax: {
         cableLength: parseDecimal_((document.getElementById('coaxLen') || {}).value) || '',
+        // Длина ТУТ: ручное поле, иначе авто 20 мм (типовой отрезок на коакс-разъём).
+        tutLength:   parseDecimal_((document.getElementById('coaxTutLen') || {}).value) || 20,
+        tutArt:      (coaxBomTut_() || {}).art || '',
+        tutName:     (coaxBomTut_() || {}).name || '',
+        cableArt:    (coaxBomCableComp_() || {}).art  || '',
+        cableName:   (coaxBomCableComp_() || {}).name || '',
         shieldType:  document.getElementById('coaxShield').value,
-        sideA:       mkSide(connA, document.getElementById('coaxPinA').value),
-        sideB:       mkSide(connB, sideB ? document.getElementById('coaxPinB').value : ''),
+        sideA:       mkSide(recA, coaxSides.A ? coaxSides.A.art : '', document.getElementById('coaxPinA').value, coaxSides.A ? coaxSides.A.name : ''),
+        sideB:       mkSide(recB, coaxSides.B ? coaxSides.B.art : '', sideB ? document.getElementById('coaxPinB').value : '', coaxSides.B ? coaxSides.B.name : ''),
       },
       ops,
     };
+  }
+
+  // Паяльные разъёмы: артикул/тип → код SDR-шаблона. null = обжимной (через терминал).
+  // Порядок важен: более специфичные паттерны выше (XT90 до XT60; USB-C 3.2 до USB-C).
+  const SOLDER_CONN_MAP = [
+    [/xt[\s-]*90/i, 'SDR_XT90'], [/xt[\s-]*60/i, 'SDR_XT60'], [/xt[\s-]*30/i, 'SDR_XT30'],
+    [/gx[\s-]*12/i, 'SDR_GX12'], [/gx[\s-]*16/i, 'SDR_GX16'],
+    [/lemo/i, 'SDR_LEMO'], [/mr[\s-]*10/i, 'SDR_MR10'], [/\brca\b/i, 'SDR_RCA'],
+    [/usb[\s-]*c.*3[.,]2|type[\s-]*c.*3[.,]2/i, 'SDR_USB_C_3.2'], [/usb[\s-]*c|type[\s-]*c/i, 'SDR_USB_C_2.0'],
+    [/usb[\s-]*a.*3[.,]2/i, 'SDR_USB_A_3.2'], [/usb[\s-]*a/i, 'SDR_USB_A_2.0'],
+    [/aux|jack\s*3[.,]5|3[.,]5\s*mm/i, 'SDR_AUX'],
+    [/крокодил|crocodile|alligator/i, 'SDR_крокодилы'],
+    [/\bd[-\s]?sub\b|\bdb[-\s]?\d|db9|db15|db25/i, 'SDR_DB'], [/\bdh[-\s]?\d|\bdhr\b/i, 'SDR_DH'],
+    [/lemo/i, 'SDR_LEMO'],
+  ];
+  function detectSolderConn_(art) {
+    const s = String(art || '');
+    for (let i = 0; i < SOLDER_CONN_MAP.length; i++) if (SOLDER_CONN_MAP[i][0].test(s)) return SOLDER_CONN_MAP[i][1];
+    return null;   // обжимной разъём (присоединяется через терминал)
+  }
+
+  // ТУТ (термоусадочная трубка) из BOM — для резки ТУТ на паяные концы.
+  function bomTut_() {
+    return (D.components || []).find(c =>
+      /тут|термоусад|трубк|shrink/i.test(`${c.type || ''} ${c.name || ''} ${c.art || ''}`)) || null;
+  }
+
+  // opKey операции эндпоинта: сторона + порядковый (1-based) + вид операции.
+  // kind: 'prs'→prsTermA1, 'ins'→insTermA1, 'solder'→solderConnA1.
+  function endpointOpKey_(side, ordinal, kind) {
+    const base = side + ordinal;
+    if (kind === 'solder') return 'solderConn' + base;
+    if (kind === 'ins')    return 'insTerm' + base;
+    return 'prsTerm' + base;
+  }
+
+  // Чистый сидинг эндпоинтов из BOM. Правило сторон как в старой модели:
+  // ≥2 разъёма ИЛИ суммарное кол-во разъёмов ≥2 → две стороны. По одному
+  // эндпоинту на сторону (юзер добавит ещё). Способ — авто detectSolderConn_.
+  // wireIdxs:[] = sentinel «все активные кабели» (роутинг по стабильным wire.idx,
+  // задаётся в UI; сидинг идёт до наполнения кабелей, поэтому пусто).
+  function seedEndpointsFromBom_(conns, terms) {
+    conns = conns || []; terms = terms || [];
+    const totalConnQty = conns.reduce((s, c) => s + (Number(c.qty) || 1), 0);
+    const twoSides = conns.length >= 2 || totalConnQty >= 2;
+    const mk = (side, conn, term, n) => {
+      const sdr = conn ? detectSolderConn_(conn.art) : null;
+      return {
+        id: side.toLowerCase() + n,
+        side, connId: conn ? conn.id : '',
+        method: sdr ? 'solder' : 'crimp', methodAuto: true, sdrTmpl: sdr,
+        termId: term ? term.id : '',
+        wireIdxs: [], otp: false, double: false, label: '', solderStrip: '', tutLen: '',
+      };
+    };
+    const eps = [];
+    if (conns[0] || terms[0]) eps.push(mk('A', conns[0] || null, terms[0] || null, 1));
+    if (twoSides) eps.push(mk('B', conns[1] || conns[0] || null, terms[1] || terms[0] || null, 1));
+    return { endpoints: eps, sideB: twoSides };
+  }
+
+  // Эндпоинты одной стороны в порядке добавления.
+  function endpointsOnSide_(side) { return endpoints.filter(e => e.side === side); }
+  // Порядковый (1-based) эндпоинта на его стороне.
+  function endpointOrdinal_(ep) { return endpointsOnSide_(ep.side).indexOf(ep) + 1; }
+  // Мост в старую модель: первый обжимной эндпоинт стороны (для getActiveOps/buildConfig).
+  function firstCrimpEndpoint_(side) {
+    return endpointsOnSide_(side).find(e => e.method === 'crimp') || null;
   }
 
   function getActiveOps() {
     if (activeTab === 'coax') return getActiveOpsCoax_();
     const ops = [];
     const activeWires = wireEntries.filter(w => w.compId);
+    // Паяные концы (= число ТУТ): 1 на каждый провод, идущий в паяльный эндпоинт.
+    let solderEnds = 0;
+    const tutByLen = {};   // длина ТУТ → число отрезков (1 на паяный конец); группируем по длине
+    endpoints.forEach(e => {
+      if (e.method !== 'solder') return;
+      const n = routedWireIdxs_(e).length;
+      if (!n) return;
+      solderEnds += n;
+      const len = (e.tutLen || '').trim();
+      tutByLen[len] = (tutByLen[len] || 0) + n;
+    });
+    const tutSegs = Object.keys(tutByLen).map(len => ({ len, count: tutByLen[len] }));
 
-    // All wires go into ONE CUT_WIRE operation
+    // Резка. Концы под ПАЙКУ и ДВОЙНОЙ обжим зачищаются при резке (резка с разделкой):
+    //   пайка → длина зачистки из ручного поля эндпоинта; двойной обжим → из БД.ТЕР.
+    // Обычный обжим зачистки при резке не требует (зачистка в обжиме). Группируем провода
+    // по сигнатуре зачистки сторон → CUT_WIRE / CUT_WIRE+1strip / CUT_WIRE+2strip.
     if (activeWires.length > 0) {
-      const names = activeWires.map(w => {
-        const c = getCompById(w.compId);
-        return c ? (c.name || c.art) : '?';
+      const nameOf = w => { const c = getCompById(w.compId); return c ? (c.name || c.art) : '?'; };
+      const cutLabel = (ws, pfx) => {
+        const ns = ws.map(nameOf);
+        return ns.length === 1 ? `${pfx} — ${ns[0]}` : `${pfx} — ${ns.length} кабелей`;
+      };
+      // Длина зачистки провода по сторонам (A/B) от его паяльных/двойных эндпоинтов.
+      const stripOf = w => {
+        let a = '', b = '';
+        endpoints.forEach(e => {
+          if (!routedWireIdxs_(e).includes(w.idx)) return;
+          let len = null;
+          if (e.method === 'solder') len = (e.solderStrip || '').trim() || '—';
+          else if (e.method === 'crimp' && e.double) {
+            const t = e.termId ? getCompById(e.termId) : null;
+            const r = t ? findTerRecord_(t.art) : null;
+            len = (r && r.strip) ? r.strip : '—';
+          }
+          if (len === null) return;
+          if (e.side === 'A') a = len; else b = len;
+        });
+        return { a, b };
+      };
+      const groups = {};
+      activeWires.forEach(w => {
+        const s = stripOf(w);
+        const sig = `${s.a}|${s.b}`;
+        (groups[sig] || (groups[sig] = { wires: [], a: s.a, b: s.b })).wires.push(w);
       });
-      const label = names.length === 1
-        ? `Резка — ${names[0]}`
-        : `Резка — ${names.length} кабелей (${names.join(', ')})`;
-      const _strip = computeStripSides_();
-      ops.push({ type: 'cutWire', opKey: 'cutWire', wireArrayIdx: -1, label,
-                 stripCount: (_strip.a ? 1 : 0) + (_strip.b ? 1 : 0) });
+      let ci = 0;
+      Object.keys(groups).forEach(sig => {
+        const g = groups[sig], ws = g.wires;
+        const hasA = g.a !== '', hasB = g.b !== '', n = (hasA ? 1 : 0) + (hasB ? 1 : 0);
+        const key = ci === 0 ? 'cutWire' : 'cutWire' + ci; ci++;
+        if (n === 0) {
+          ops.push({ type: 'cutWire', opKey: key, label: cutLabel(ws, 'Резка'),
+                     wireIdxs: ws.map(w => w.idx), tmplHint: 'CUT_WIRE_auto', cat: 'Резка' });
+        } else {
+          ops.push({ type: 'cutWireStrip', opKey: key, label: cutLabel(ws, `Резка с разделкой (${n} ст.)`),
+                     wireIdxs: ws.map(w => w.idx), tmplHint: `CUT_WIRE+${n}strip`,
+                     strip: { a: hasA, lenA: g.a === '—' ? '' : g.a, b: hasB, lenB: g.b === '—' ? '' : g.b } });
+        }
+      });
+
+      // Резка ТУТ — 1 отрезок на каждый паяный конец (термоусадка на пайку, ТУТ из BOM).
+      if (solderEnds > 0) {
+        const tut = bomTut_();
+        const segLbl = tutSegs.map(s => s.len ? `${s.count}×${s.len}мм` : `${s.count} шт`).join(' + ');
+        ops.push({ type: 'cutTut', opKey: 'cutTut', label: `Резка ТУТ — ${segLbl} (на пайку)`,
+                   tmplHint: 'CUT_TUT_short', cat: 'Резка',
+                   tutArt: tut ? (tut.art || tut.name || '') : '', tutName: tut ? (tut.name || tut.art || '') : '',
+                   tutCount: solderEnds, tutSegs });
+        // Надеть ТУТ на провод ДО пайки (потом сдвинуть на соединение и усадить).
+        ops.push({ type: 'insTut', opKey: 'insTut', label: `Надеть ТУТ на провод — ${solderEnds} шт`,
+                   tmplHint: 'INS_TUT', cat: 'Монтаж', tutCount: solderEnds });
+      }
     }
 
-    const termA = getCompById(document.getElementById('termSelectA').value);
-    const connA = getCompById(document.getElementById('connSelectA').value);
-    const sideB = document.getElementById('sideBEnabled').checked;
-    const termB = sideB ? getCompById(document.getElementById('termSelectB').value) : null;
-    const connB = sideB ? getCompById(document.getElementById('connSelectB').value) : null;
+    // По эндпоинтам сторон A,B (в порядке добавления). Обжимной → опрессовка+монтаж;
+    // паяльный → solderConn. Уникальный opKey на разъём (prsTermA1/insTermA1/solderConnA1).
+    let firstTermSeen = false;
+    ['A', 'B'].forEach(side => endpointsOnSide_(side).forEach(ep => {
+      const ord  = endpointOrdinal_(ep);
+      const conn = ep.connId ? getCompById(ep.connId) : null;
+      const term = ep.termId ? getCompById(ep.termId) : null;
+      const tag  = sideRu_(side) + ord;
+      if (ep.method === 'solder') {
+        if (!conn) return;
+        ops.push({ type: 'solderConn', opKey: endpointOpKey_(side, ord, 'solder'), side, ord, epId: ep.id,
+                   label: `Пайка разъёма ${tag} — ${conn.art || conn.name}`,
+                   tmplHint: ep.sdrTmpl || detectSolderConn_(conn.art) });
+      } else {
+        if (term) {
+          ops.push({ type: 'prsTerm', opKey: endpointOpKey_(side, ord, 'prs'), side, ord, epId: ep.id,
+                     label: `Опрессовка терминалов ${tag}` + (ep.double ? ' (двойной обжим)' : ''),
+                     cat: `Опрессовка терминалов (${sideRu_(side)})`,
+                     termArt: term.art || term.name || '', firstTerm: !firstTermSeen });
+          firstTermSeen = true;
+        }
+        if (conn) {
+          ops.push({ type: 'insTerm', opKey: endpointOpKey_(side, ord, 'ins'), side, ord, epId: ep.id,
+                     label: `Монтаж в разъём ${tag} — ${conn.art || conn.name}`,
+                     cat: `Монтаж терминалов (${sideRu_(side)})`,
+                     termArt: term ? (term.art || term.name || '') : '' });
+        }
+      }
+    }));
 
-    if (termA) ops.push({ type: 'prsTermA', opKey: 'prsTermA', label: 'Опрессовка терминалов (А)' });
-    if (connA) ops.push({ type: 'insTermA', opKey: 'insTermA', label: 'Монтаж терминалов (А)'     });
-    if (sideB && termB) ops.push({ type: 'prsTermB', opKey: 'prsTermB', label: 'Опрессовка терминалов (В)' });
-    if (sideB && connB) ops.push({ type: 'insTermB', opKey: 'insTermB', label: 'Монтаж терминалов (В)'     });
+    // Усадка ТУТ — после пайки (термоусадку на паяных соединениях усаживают).
+    if (solderEnds > 0) {
+      ops.push({ type: 'heatTut', opKey: 'heatTut', label: `Усадка ТУТ — ${solderEnds} шт`,
+                 tmplHint: 'HEAT_TYT_short', cat: 'Усадка', tutCount: solderEnds });
+    }
 
-    // Свивка (опционально). При стороне B — ПЕРЕД монтажом B; иначе в конце цепочки.
+    // Свивка (опционально) — перед лужением, в конце цепочки.
     const twistOn = (document.getElementById('twistEnabled') || {}).checked;
-    if (twistOn && getTwistSelectionCount() > 0) {
-      const twistOp = { type: 'twist', opKey: 'twist', label: 'Свивка' };
-      const insBIdx = ops.findIndex(o => o.type === 'insTermB');
-      if (insBIdx >= 0) ops.splice(insBIdx, 0, twistOp);
-      else ops.push(twistOp);
-    }
+    if (twistOn && getTwistSelectionCount() > 0) ops.push({ type: 'twist', opKey: 'twist', label: 'Свивка', cat: 'Свивка' });
 
-    // Лужение (опционально, только без стороны В) — в самом конце цепочки, после свивки.
-    const tinOn = !sideB && (document.getElementById('tinEnabled') || {}).checked;
-    if (tinOn && getTinWireIndices().length > 0) ops.push({ type: 'tin', opKey: 'tin', label: 'Лужение' });
+    // Лужение (опционально, только без стороны В) — в самом конце цепочки.
+    const tinOn = endpointsOnSide_('B').length === 0 && (document.getElementById('tinEnabled') || {}).checked;
+    if (tinOn && getTinWireIndices().length > 0) ops.push({ type: 'tin', opKey: 'tin', label: 'Лужение', cat: 'Лужение' });
 
     return ops;
   }
@@ -1542,78 +2065,63 @@
     }
   }
 
-  function autoPickTemplate(opKey) {
+  function autoPickTemplate(opSpec) {
+    // opSpec: { opKey, cat?, side?, termArt? }. Совместимость: допускаем строку-opKey.
+    const spec  = (opSpec && typeof opSpec === 'object') ? opSpec : { opKey: opSpec };
+    const opKey = spec.opKey;
     if (selectedTemplates[opKey]) return selectedTemplates[opKey];
-    const cat = OP_CATEGORY_MAP[opKey];
+    const cat = spec.cat || OP_CATEGORY_MAP[opKey];
     if (!cat) return '';
 
     const n = s => (s || '')
       .replace(/\(A\)/g, '(А)').replace(/\(B\)/g, '(В)')  // Latin → Cyrillic in brackets
       .toLowerCase().replace(/[_\-|.+()\s]+/g, ' ').trim();
-    const target = n(cat);
-    if (!target) return '';
 
-    // Effective category: stored field, else part after last '|' in title
+    // Сторона из OP_CATEGORY_MAP отделяется от базовой категории: шаблоны хранят
+    // category БЕЗ стороны («Монтаж терминалов»), а сторону (A)/(B) — в title. Матчим по
+    // базовой категории, сторону выбираем по title (как pickCoaxTemplate_).
+    const stripSide = s => s.replace(/ [ав]$/, '');
+    const target     = n(cat);
+    const sideMatch  = target.match(/ ([ав])$/);
+    const sideWanted = sideMatch ? sideMatch[1] : '';       // 'а' | 'в' | ''
+    const targetBase = stripSide(target);
+    if (!targetBase) return '';
+
+    // Effective category: stored field, else part after last '|' in title; без стороны.
     const ec = t => {
       const stored = (t.category || '').trim();
-      if (stored) return n(stored);
-      const p = (t.title || '').split('|');
-      return p.length > 1 ? n(p[p.length - 1]) : '';
+      const raw = stored ? n(stored) : (() => {
+        const p = (t.title || '').split('|');
+        return p.length > 1 ? n(p[p.length - 1]) : '';
+      })();
+      return stripSide(raw);
     };
 
-    // Только точное совпадение effCat с target
-    const score = t => (ec(t) === target ? 1 : 0);
+    const best = (D.templates || []).filter(t => ec(t) === targetBase);
+    if (!best.length) return '';
 
-    const scored = (D.templates || []).map(t => ({ t, s: score(t) })).filter(x => x.s > 0);
-    if (!scored.length) return '';
-    const maxScore = Math.max(...scored.map(x => x.s));
-    const best = scored.filter(x => x.s === maxScore).map(x => x.t);
+    // Сторона по title: для side A — (А)/(A), для B — (B)/(В). Если таких нет — берём все.
+    const sideRe = sideWanted === 'а' ? /\([АA]\)/ : sideWanted === 'в' ? /\([BВ]\)/ : null;
+    let cands = best;
+    if (sideRe) {
+      const sided = best.filter(t => sideRe.test(String(t.title || '')));
+      if (sided.length) cands = sided;
+    }
+    if (cands.length === 1) return cands[0].id;
 
-    // Tiebreaker 1: side А/В — pick template whose effCat ends with same letter
-    if (best.length > 1) {
-      const sm = target.match(/ ([ав])$/);
-      if (sm) {
-        const hit = best.find(t => ec(t).endsWith(' ' + sm[1]));
-        if (hit) {
-          // Tiebreaker 2: терStep refinement
-          const sideKey = opKey.endsWith('A') ? 'A' : 'B';
-          const termSel = document.getElementById(`termSelect${sideKey}`);
-          const termComp = termSel ? getCompById(termSel.value) : null;
-          if (termComp) {
-            const terRec = findTerRecord_(termComp.art);
-            const step = terRec ? (terRec.step || '') : '';
-            if (step) {
-              const sd = step.replace(',', '.'), sc = step.replace('.', ',');
-              const sideCands = best.filter(t => ec(t).endsWith(' ' + sm[1]));
-              const stepHit = sideCands.find(t => t.title.includes(sd) || t.title.includes(sc));
-              if (stepHit) return stepHit.id;
-            }
-          }
-          return hit.id;
-        }
+    // Уточнение по шагу терминала (терStep) — среди кандидатов стороны. Артикул терминала
+    // берём из opSpec (эндпоинт), а не из общего селекта стороны.
+    if (spec.termArt) {
+      const terRec = findTerRecord_(spec.termArt);
+      const step   = terRec ? (terRec.step || '') : '';
+      if (step) {
+        const sd = step.replace(',', '.'), sc = step.replace('.', ',');
+        const stepHit = cands.find(t => t.title.includes(sd) || t.title.includes(sc));
+        if (stepHit) return stepHit.id;
       }
     }
 
-    // Tiebreaker 2 only (no side): терStep
-    if (best.length > 1) {
-      const isTermOp = ['prsTermA','insTermA','prsTermB','insTermB'].includes(opKey);
-      if (isTermOp) {
-        const sideKey = opKey.endsWith('A') ? 'A' : 'B';
-        const termSel = document.getElementById(`termSelect${sideKey}`);
-        const termComp = termSel ? getCompById(termSel.value) : null;
-        if (termComp) {
-          const terRec = findTerRecord_(termComp.art);
-          const step = terRec ? (terRec.step || '') : '';
-          if (step) {
-            const sd = step.replace(',', '.'), sc = step.replace('.', ',');
-            const hit = best.find(t => t.title.includes(sd) || t.title.includes(sc));
-            if (hit) return hit.id;
-          }
-        }
-      }
-    }
-
-    return best[0].id;
+    return cands[0].id;
   }
 
   function matchOpByTitle(title) {
@@ -1650,27 +2158,6 @@
     // Active wires array (ordered, filtered to those with a component selected)
     const activeWires = wireEntries.filter(w => w.compId);
 
-    // termQty = кол-во активных кабелей (контакт на каждый провод)
-    // connQty = всегда 1 (один разъём на сторону)
-    const numWires = activeWires.length || 1;
-
-    const sideAInfo = (termA || connA) ? {
-      termName: termA ? termA.name : '',
-      termArt:  termA ? termA.art  : '',
-      termQty:  termA ? numWires : 0,
-      connName: connA ? connA.name : '',
-      connArt:  connA ? connA.art  : '',
-      connQty:  connA ? 1 : 0,
-    } : null;
-
-    const sideBInfo = sideB && (termB || connB) ? {
-      termName: termB ? termB.name : '',
-      termArt:  termB ? termB.art  : '',
-      termQty:  termB ? numWires : 0,
-      connName: connB ? connB.name : '',
-      connArt:  connB ? connB.art  : '',
-      connQty:  connB ? 1 : 0,
-    } : null;
     const wires = activeWires.map(w => {
       const comp = getCompById(w.compId);
       const len  = advancedLengthMode ? (w.length || 0) : sharedLength;
@@ -1678,22 +2165,76 @@
         name:   comp ? comp.name : '',
         art:    comp ? comp.art  : '',
         qty:    w.qty || 1,
-        length: len,
+        length: len,   // длина по чертежу/БД как есть (припуски/запасы — отдельной логикой позже)
       };
     });
+
+    // Маршрут-провода эндпоинта = подмножество wires (с уже применённым запасом на свивку)
+    // по стабильным wire.idx (пусто = все активные).
+    // Порядок сборки эндпоинтов (как в getActiveOps: A1,A2,…,B1,B2…) — для определения ветвей.
+    const epOrder = {};
+    let _oi = 0;
+    ['A', 'B'].forEach(side => endpointsOnSide_(side).forEach(e => { epOrder[e.id] = _oi++; }));
+    // Разъём-источник провода = другой его конец (эндпоинт), собранный РАНЬШЕ (его ветвь
+    // приходит на текущий разъём заготовкой). Пусто = свободный конец / источник позже.
+    const sourceBranch_ = (ep, wIdx) => {
+      for (let i = 0; i < endpoints.length; i++) {
+        const o = endpoints[i];
+        if (o.id === ep.id || epOrder[o.id] >= epOrder[ep.id]) continue;
+        const r = (o.wireIdxs && o.wireIdxs.length) ? o.wireIdxs : activeWires.map(w => w.idx);
+        if (r.indexOf(wIdx) >= 0) { const c = o.connId ? getCompById(o.connId) : null; return c ? (c.name || c.art || '') : ''; }
+      }
+      return '';
+    };
+    const routedDetail_ = ep => {
+      const routed = new Set(routedWireIdxs_(ep));
+      const entries = activeWires.map((w, pos) => ({ w, pos })).filter(x => routed.has(x.w.idx));
+      return {
+        wires:   entries.map(x => wires[x.pos]),
+        sources: entries.map(x => sourceBranch_(ep, x.w.idx)),
+      };
+    };
 
     const activeOps = getActiveOps();
     const ops = activeOps.map(opSpec => {
       const matched = matchedOps[opSpec.opKey] || null;
-      return {
+      const op = {
         type:       opSpec.type,
-        wireIdx:    -1,  // -1 = use all wires (combined)
         templateId: (document.getElementById(`tmplSel_${opSpec.opKey}`) || {}).value || '',
         opNum:      matched ? (matched.opNumber || '') : '',
         tPrep:      (document.getElementById(`tPrep_${opSpec.opKey}`)    || {}).value || '',
         tOp:        (document.getElementById(`tOp_${opSpec.opKey}`)      || {}).value || '',
         tMachine:   (document.getElementById(`tMachine_${opSpec.opKey}`) || {}).value || '',
       };
+      // Резка: подмножество проводов по wireIdxs; зачистка (резка с разделкой) — op.strip.
+      if (opSpec.wireIdxs) {
+        const set = new Set(opSpec.wireIdxs);
+        op.wires = activeWires.map((w, pos) => ({ w, pos })).filter(x => set.has(x.w.idx)).map(x => wires[x.pos]);
+        if (opSpec.strip) op.strip = opSpec.strip;
+      }
+      // Резка/надевание/усадка ТУТ: материал + кол-во отрезков (1 на паяный конец).
+      if (opSpec.type === 'cutTut' || opSpec.type === 'insTut' || opSpec.type === 'heatTut') {
+        op.tutArt = opSpec.tutArt || ''; op.tutName = opSpec.tutName || ''; op.tutCount = opSpec.tutCount || 0;
+        if (opSpec.tutSegs) op.tutSegs = opSpec.tutSegs;
+      }
+      // Term/solder-операция: эндпоинт-снимок + маршрут-провода + сторона + флаг первого обжима.
+      if (opSpec.epId) {
+        const ep   = epById_(opSpec.epId);
+        const conn = ep && ep.connId ? getCompById(ep.connId) : null;
+        const term = ep && ep.termId ? getCompById(ep.termId) : null;
+        op.side      = opSpec.side;
+        op.firstTerm = !!opSpec.firstTerm;
+        op.ep = {
+          connArt: conn ? (conn.art || conn.name || '') : '', connName: conn ? (conn.name || '') : '',
+          termArt: term ? (term.art || term.name || '') : '', termName: term ? (term.name || '') : '',
+          sdrTmpl: ep ? ep.sdrTmpl : null, double: ep ? !!ep.double : false,
+          label: ep ? (ep.label || '') : '',   // наименование по чертежу (для сложных сборок)
+        };
+        const det = routedDetail_(ep);
+        op.wires = det.wires;
+        op.wireSources = det.sources;   // разъём-источник каждого провода (ветвь) или ''
+      }
+      return op;
     });
 
     const twist = {
@@ -1725,13 +2266,15 @@
             : ((sideB && termB && otpB) ? ((findTerRecord_(termB.art) || {}).strip || '') : tinStripLen),
     };
 
+    // Сложная сборка (>2 разъёмов) → в наименованиях п/ф пишем разъём по чертежу, не сторону.
+    const bigAssembly = endpoints.filter(e => e.connId || e.termId).length > 2;
+
     return {
       assemblyIndex: findKey(/индекс/i),
       assemblyName:  findKey(/наименование/i),
       partQty:       parseDecimal_(findKey(/кол[- ]?во|количеств/i)) || 1,
+      bigAssembly,
       wires,
-      sideA: sideAInfo,
-      sideB: sideBInfo,
       twist,
       tin,
       strip,

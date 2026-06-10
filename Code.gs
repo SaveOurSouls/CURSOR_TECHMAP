@@ -193,10 +193,11 @@ function saveSelectedRangeAsTemplateImpl_(formData) {
  * @param {string} templateId
  * @returns {Object} { title, sheetName, insertedRange }
  */
-function insertTemplate(templateId) {
+function insertTemplate(templateId, opts) {
   if (!templateId) {
     throw new Error('Не передан идентификатор шаблона.');
   }
+  opts = opts || {};
 
   const ss = SpreadsheetApp.getActive();
   const template = getTemplateById_(templateId);
@@ -204,11 +205,15 @@ function insertTemplate(templateId) {
   // Заменяем одноимённый лист, чтобы при ре-генерации не плодить суффиксы «-2».
   // Но сносим ТОЛЬКО лист-техкарту (имя в формате "CODE | Тип", содержит " | "),
   // чтобы случайно не удалить важный пользовательский лист с совпавшим именем.
-  const existingSheet = ss.getSheetByName(template.title);
-  if (existingSheet && template.title.indexOf(' | ') >= 0) ss.deleteSheet(existingSheet);
+  // opts.noReplace — генератор вставляет НЕСКОЛЬКО листов с одним шаблоном (N разъёмов):
+  // замена по заголовку снесла бы предыдущий разъём; чистку ре-гена делает purgeGeneratedSheets_.
+  if (!opts.noReplace) {
+    const existingSheet = ss.getSheetByName(template.title);
+    if (existingSheet && template.title.indexOf(' | ') >= 0) ss.deleteSheet(existingSheet);
+  }
 
-  // Create a new sheet named after the template; insert content starting at B2.
-  const targetSheet = createUniqueSheet_(ss, template.title);
+  // Create a new sheet named after the template (+ opts.nameSuffix для уникальности на операцию).
+  const targetSheet = createUniqueSheet_(ss, template.title + (opts.nameSuffix || ''));
   const targetRow = 2;
   const targetColumn = 2;
 
