@@ -932,7 +932,7 @@ function detectSections_(values) {
       const cell = String(values[r][c] || '').toLowerCase().trim();
       if (!cell) continue;
       if (tm  < 0 && /расс?ч[её]?тное\s*врем/i.test(cell))       { tm  = r; break; }
-      if (res < 0 && tm < 0 && /результат/.test(cell))            { res = r; break; }
+      if (res < 0 && tm < 0 && cell === 'результат')              { res = r; break; }
       if (kp  < 0 && cell.includes('комплектующ'))                { kp  = r; break; }
       if (/полуфабрикат|^п\/ф/.test(cell)) {
         if (res >= 0 || tm >= 0) { if (sfO < 0) { sfO = r; break; } }
@@ -1249,9 +1249,10 @@ function fillKompl_(sheet, ctx, colMap, op, config, wireData) {
   // Монтаж/пайка → комплектующее = РАЗЪЁМ (корпус), норма = 1 корпус × партия.
   const ep   = opEndpoint_(op);
   const kind = termKind_(op);
+  // ГРН (name) — из BOM КАК ЕСТЬ (пусто, если в BOM имени нет; НЕ дублируем артикул).
   const comp =
-      kind === 'prs' ? { art: ep.termArt || ep.termName || '', name: ep.termName || ep.termArt || '', norm: String(opTermCount_(op, config) * pQty) }
-    : (kind === 'ins' || kind === 'sdr') ? { art: ep.connArt || ep.connName || '', name: ep.connName || ep.connArt || '', norm: String(pQty) }
+      kind === 'prs' ? { art: ep.termArt || ep.termName || '', name: ep.termName || '', norm: String(opTermCount_(op, config) * pQty) }
+    : (kind === 'ins' || kind === 'sdr') ? { art: ep.connArt || ep.connName || '', name: ep.connName || '', norm: String(pQty) }
     : null;
 
   if (wires) {
@@ -1375,7 +1376,7 @@ function fillSfOut_(sheet, ctx, colMap, config, thisResult, op, isLast) {
     for (let c = 0; c < (ctx.values[r] || []).length; c++) {
       const cell = String((ctx.values[r] || [])[c] || '').toLowerCase().trim();
       if (!cell) continue;
-      if (fRes < 0 && /результат/.test(cell))                          { fRes   = r; break; }
+      if (fRes < 0 && cell === 'результат')                            { fRes   = r; break; }
       if (fRes >= 0 && fSfOut < 0 && /полуфабрикат|^п\/ф/.test(cell)) { fSfOut = r; break; }
     }
   }
